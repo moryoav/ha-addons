@@ -15,7 +15,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     @callback
     async def send_message(call: ServiceCall) -> None:
+        # Call Baileys
         result = await hass.async_add_executor_job(whatsapp.send_message, call.data)
+        # Fire a custom event with the result
+        hass.bus.async_fire(
+            "whatsapp_send_message_result",
+            {
+                "client_id": call.data["clientId"],
+                "to": call.data["to"],
+                "body": call.data["body"],
+                "sent_message": result,
+            },
+        )
 
     @callback
     async def set_status(call: ServiceCall) -> None:
