@@ -15,7 +15,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     @callback
     async def send_message(call: ServiceCall) -> None:
-        await hass.async_add_executor_job(whatsapp.send_message, call.data)
+        result = await hass.async_add_executor_job(whatsapp.send_message, call.data)
 
     @callback
     async def set_status(call: ServiceCall) -> None:
