@@ -122,12 +122,12 @@ fs.readFile("data/options.json", function (error, content) {
         const wapp = clients[message.clientId];
         wapp
           .sendMessage(message.to, message.body, message.options)
-          .then(() => {
-            res.send("OK");
+          .then((sentMsg) => {
+            res.json(sentMsg);
             logger.debug("Message successfully sended from addon.");
           })
           .catch((error) => {
-            res.send("KO");
+            res.status(500).json({ error: error.message });
             logger.error(error.message);
           });
       } else {
