@@ -10,7 +10,7 @@ class Whatsapp:
         return r.json()
 
     def set_status(self, data):
-        return requests.post(url_normalize(f'{HOST}/setStatus'), json=data).content == 'OK'
+        c
 
     def presence_subscribe(self, data):
         return requests.post(url_normalize(f'{HOST}/presenceSubscribe'), json=data).content == 'OK'
@@ -22,9 +22,8 @@ class Whatsapp:
         return requests.post(url_normalize(f'{HOST}/sendInfinityPresenceUpdate'), json=data).content == 'OK'
 
     def read_messages(self, data):
-        r = requests.post(url_normalize(f'{HOST}/readMessages'), json=data)
-        r.raise_for_status()
-        return r.json()
+        return requests.post(url_normalize(f'{HOST}/readMessages'), json=data).content == 'OK'
+
 
 
 
