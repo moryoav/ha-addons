@@ -218,18 +218,24 @@ fs.readFile("data/options.json", function (error, content) {
   });
 
   app.post("/readMessages", (req, res) => {
-    // 1) Validate we have a clientId and the clientId exists
     if (!req.body.clientId || !clients.hasOwnProperty(req.body.clientId)) {
-      logger.error("Error in read messages. Client ID not found or missing.");
+      logger.error("Error in read messages: Missing or invalid clientId");
       return res.status(400).send("KO");
     }
   
-    // 2) Grab the corresponding client
     const wapp = clients[req.body.clientId];
   
-    // 3) Use the readMessages() method you exposed
-    wapp
-      .readMessages(req.body.keys)
+    // We expect req.body.body to contain { keys: { id, remoteJid, fromMe } }
+    if (!req.body.body || !req.body.body.keys) {
+      logger.error("Error in read messages: 'body.keys' is missing");
+      return res.status(400).send("KO");
+    }
+  
+    // Because Baileys readMessages() takes an array of keys, wrap your single object in [ ... ]:
+    const singleKeyObject = req.body.body.keys;
+    const keysArray = [ singleKeyObject ];
+  
+    wapp.readMessages(keysArray)
       .then(() => {
         res.send("OK");
         logger.debug("Messages marked as read.");
@@ -239,6 +245,7 @@ fs.readFile("data/options.json", function (error, content) {
         logger.error(error.message);
       });
   });
+
 
   
   app.post("/sendInfinityPresenceUpdate", (req, res) => {
