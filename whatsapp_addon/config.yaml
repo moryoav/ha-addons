@@ -1,5 +1,5 @@
 name: WhatsappV2
-version: "1.4.1h"
+version: "1.4.1i"
 slug: whatsapp_addon
 description: (new) Whatsapp addon for send message from Home Assistant
 url: "https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon"
