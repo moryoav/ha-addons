@@ -261,6 +261,18 @@ class WhatsappClient extends EventEmitter {
     }
   };
 
+  readMessages = async (keys) => {
+    if (this.#status.disconnected || !this.#status.connected) {
+      throw new WhatsappDisconnectedError();
+    }
+    try {
+      await this.#conn.readMessages(keys);
+    } catch (err) {
+      throw new WhatsappError(err.output.payload.statusCode);
+    }
+  };
+
+  
   updateProfileStatus = async (status) => {
     if (this.#status.disconnected || !this.#status.connected) {
       throw new WhatsappDisconnectedError();
