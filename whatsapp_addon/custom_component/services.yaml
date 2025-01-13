@@ -113,9 +113,9 @@ read_messages:
       description: Which instance of whatsapp should be used
       required: true
       example: default
-    keys:
-      name: Message Keys
-      description: A WAMessageKey or an array of keys
+    key:
+      name: Message Key
+      description: A single WAMessageKey
       required: true
-      example: '[{"remoteJid":"44123456789@s.whatsapp.net","id":"BAE5CFC6DD10..."}]'
+      example: '{"remoteJid":"123456789@s.whatsapp.net","id":"BAE5CFC6DD10...","fromMe":false}'
       
