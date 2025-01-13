@@ -46,6 +46,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     @callback
     async def read_messages(call: ServiceCall) -> None:
+        # Just post the entire call.data dict to the addon
         await hass.async_add_executor_job(whatsapp.read_messages, call.data)
     
     hass.services.async_register(DOMAIN, 'send_message', send_message)
