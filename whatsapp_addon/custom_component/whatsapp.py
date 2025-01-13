@@ -22,7 +22,13 @@ class Whatsapp:
         return requests.post(url_normalize(f'{HOST}/sendInfinityPresenceUpdate'), json=data).content == 'OK'
 
     def read_messages(self, data):
-        r = requests.post(url_normalize(f'{HOST}/readMessages'), json=data)
+        # Transform a single "key" into an array of one
+        new_data = {
+            "clientId": data["clientId"],
+            "keys": [data["key"]]
+        }
+        r = requests.post(url_normalize(f'{HOST}/readMessages'), json=new_data)
         r.raise_for_status()
         return r.json()
+
 
