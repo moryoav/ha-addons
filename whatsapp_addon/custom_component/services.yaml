@@ -103,3 +103,19 @@ send_infinity_presence_update:
       description: Target User ID
       required: false
       example: 391234567890@s.whatsapp.net
+
+read_messages:
+  name: Read messages
+  description: Mark messages as read
+  fields:
+    clientId:
+      name: Client ID
+      description: Which instance of whatsapp should be used
+      required: true
+      example: default
+    keys:
+      name: Message Keys
+      description: A WAMessageKey or an array of keys
+      required: true
+      example: '[{"remoteJid":"44123456789@s.whatsapp.net","id":"BAE5CFC6DD10..."}]'
+      
