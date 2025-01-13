@@ -20,3 +20,9 @@ class Whatsapp:
 
     def send_infinity_presence_update(self, data):
         return requests.post(url_normalize(f'{HOST}/sendInfinityPresenceUpdate'), json=data).content == 'OK'
+
+    def read_messages(self, data):
+        r = requests.post(url_normalize(f'{HOST}/readMessages'), json=data)
+        r.raise_for_status()
+        return r.json()
+
