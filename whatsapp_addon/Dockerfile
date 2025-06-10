@@ -1,34 +1,39 @@
-# ─── Stage 1: build Baileys under Node 20 ──────────────────────────────────────
-FROM node:20-alpine AS build-baileys
-WORKDIR /Baileys
+ # ─── Stage 1: build Baileys under Node 20 ──────────────────────────────────────
 
-RUN npm pack baileys@latest \
- && tar -xzf baileys-*.tgz --strip-components=1 \
- \
+ FROM node:20-alpine AS build-baileys
+
+ # install git so npm can clone any git‐hosted deps
+ RUN apk add --no-cache git
+
+ WORKDIR /Baileys
+
+ RUN npm pack baileys@latest \
+  && tar -xzf baileys-*.tgz --strip-components=1 \
+  \
  # remove devDependencies so npm won’t even try to install ts-jest/etc.
- && sed -i '/"devDependencies": {/,/}/d' package.json \
- \
+  && sed -i '/"devDependencies": {/,/}/d' package.json \
+  \
  # now install only the real runtime deps
- && npm install --production \
- \
+  && npm install --production \
+  \
  # clean up
- && rm baileys-*.tgz
+  && rm baileys-*.tgz
 
-# ─── Stage 2: your HA addon base ──────────────────────────────────────────────
-ARG BUILD_FROM
-FROM $BUILD_FROM
+ # ─── Stage 2: your HA addon base ──────────────────────────────────────────────
+ ARG BUILD_FROM
+ FROM $BUILD_FROM
 
-# install only what you need at runtime
-RUN apk add --no-cache git npm
+ # install only what you need at runtime
+ RUN apk add --no-cache git npm
 
-# bring in the built Baileys code
-COPY --from=build-baileys /Baileys /Baileys
+ # bring in the built Baileys code
+ COPY --from=build-baileys /Baileys /Baileys
 
-# copy your addon on top
-COPY . /
+ # copy your addon on top
+ COPY . /
 
-RUN chmod a+x /run.sh /finish.sh \
- && npm install -f          # installs your other deps
+ RUN chmod a+x /run.sh /finish.sh \
+  && npm install -f          # installs your other deps
 
-EXPOSE 3000
-CMD [ "/run.sh" ]
+ EXPOSE 3000
+ CMD [ "/run.sh" ]
