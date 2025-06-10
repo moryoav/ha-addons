@@ -2,12 +2,16 @@
 FROM node:20-alpine AS build-baileys
 WORKDIR /Baileys
 
-# ensure npm thinks we're in production mode
-ENV NODE_ENV=production
-
 RUN npm pack baileys@latest \
  && tar -xzf baileys-*.tgz --strip-components=1 \
- && npm install \
+ \
+ # remove devDependencies so npm won’t even try to install ts-jest/etc.
+ && sed -i '/"devDependencies": {/,/}/d' package.json \
+ \
+ # now install only the real runtime deps
+ && npm install --production \
+ \
+ # clean up
  && rm baileys-*.tgz
 
 # ─── Stage 2: your HA addon base ──────────────────────────────────────────────
