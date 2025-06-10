@@ -1,18 +1,28 @@
+# ─── Stage 1: build Baileys under Node 20 ──────────────────────────────────────
+FROM node:20-alpine AS build-baileys
+WORKDIR /Baileys
+
+# fetch latest baileys tarball, unpack it, install production deps
+RUN npm pack baileys@latest \
+ && tar -xzf baileys-*.tgz --strip-components=1 \
+ && npm install --production \
+ && rm baileys-*.tgz
+
+# ─── Stage 2: your HA addon base ──────────────────────────────────────────────
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# RUN apk add --no-cache git npm
-# allow edge/community and install nodejs-current (v20+) + npm + git
-RUN echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" \
-     >> /etc/apk/repositories \
- && apk update \
- && apk add --no-cache nodejs-current npm git
+# install only what you need at runtime
+RUN apk add --no-cache git npm
 
+# bring in the built Baileys code
+COPY --from=build-baileys /Baileys /Baileys
+
+# copy your addon on top
 COPY . /
-RUN chmod a+x /run.sh
-RUN chmod a+x /finish.sh
 
-RUN cd /Baileys && npm i -f && cd .. && npm install -f
+RUN chmod a+x /run.sh /finish.sh \
+ && npm install -f          # installs your other deps
 
 EXPOSE 3000
 CMD [ "/run.sh" ]
