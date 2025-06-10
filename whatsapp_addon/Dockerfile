@@ -1,3 +1,4 @@
+ARG BUILD_FROM
 FROM node:20-alpine AS build-baileys
 
 # we need git to fetch any git‐hosted deps
@@ -17,7 +18,7 @@ RUN npm pack baileys@latest \
  && rm baileys-*.tgz
 
  # ─── Stage 2: your HA addon base ──────────────────────────────────────────────
- ARG BUILD_FROM
+ 
  FROM ${BUILD_FROM}
 
  # install only what you need at runtime
