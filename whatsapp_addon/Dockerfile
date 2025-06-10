@@ -2,10 +2,12 @@
 FROM node:20-alpine AS build-baileys
 WORKDIR /Baileys
 
-# grab latest baileys tarball, unpack it, install *only* prod deps, then clean up
+# ensure npm thinks we're in production mode
+ENV NODE_ENV=production
+
 RUN npm pack baileys@latest \
  && tar -xzf baileys-*.tgz --strip-components=1 \
- && npm install --omit=dev \
+ && npm install \
  && rm baileys-*.tgz
 
 # ─── Stage 2: your HA addon base ──────────────────────────────────────────────
