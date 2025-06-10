@@ -1,16 +1,17 @@
 export const makeMutex = () => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let task = Promise.resolve() as Promise<any>
 
 	let taskTimeout: NodeJS.Timeout | undefined
 
 	return {
 		mutex<T>(code: () => Promise<T> | T): Promise<T> {
-			task = (async() => {
+			task = (async () => {
 				// wait for the previous task to complete
 				// if there is an error, we swallow so as to not block the queue
 				try {
 					await task
-				} catch{ }
+				} catch {}
 
 				try {
 					// execute the current task
@@ -23,7 +24,7 @@ export const makeMutex = () => {
 			// we replace the existing task, appending the new piece of execution to it
 			// so the next task will have to wait for this one to finish
 			return task
-		},
+		}
 	}
 }
 
@@ -34,7 +35,7 @@ export const makeKeyedMutex = () => {
 
 	return {
 		mutex<T>(key: string, task: () => Promise<T> | T): Promise<T> {
-			if(!map[key]) {
+			if (!map[key]) {
 				map[key] = makeMutex()
 			}
 
