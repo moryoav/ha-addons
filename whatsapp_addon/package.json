@@ -1,6 +1,6 @@
 {
   "name": "whatsapp_hass_addon",
-  "version": "1.4.1i",
+  "version": "1.4.2",
   "description": "",
   "main": "index.js",
   "scripts": {
