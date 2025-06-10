@@ -18,7 +18,7 @@ RUN npm pack baileys@latest \
 
  # ─── Stage 2: your HA addon base ──────────────────────────────────────────────
  ARG BUILD_FROM
- FROM $BUILD_FROM
+ FROM ${BUILD_FROM}
 
  # install only what you need at runtime
  RUN apk add --no-cache git npm
