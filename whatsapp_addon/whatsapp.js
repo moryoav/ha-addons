@@ -99,17 +99,35 @@ class WhatsappClient extends EventEmitter {
   };
 
   #toId = (phone) => {
-    phone = phone.toString();
+    phone = phone.toString().trim();
     if (!phone) throw new Error("Invalid phone");
 
     return `${phone.replace("+", "")}${
       !phone.endsWith("@s.whatsapp.net") &&
       !phone.endsWith("@g.us") &&
-      !phone.endsWith("@broadcast")
+      !phone.endsWith("@broadcast") &&
+      !phone.endsWith("@lid")
         ? "@s.whatsapp.net"
         : ""
     }`;
   };
+
+  #isDirectJid = (phone) => {
+    phone = phone.toString();
+    return (
+      phone.endsWith("@s.whatsapp.net") ||
+      phone.endsWith("@g.us") ||
+      phone.endsWith("@broadcast") ||
+      phone.endsWith("@lid")
+    );
+  };
+
+  #getErrorCode = (err) =>
+    err?.output?.payload?.statusCode ??
+    err?.output?.statusCode ??
+    err?.statusCode ??
+    err?.message ??
+    "unknown";
 
   #reconnect = () => {
     if (this.#status.attempt++ > this.#attempts || this.#status.disconnected) {
@@ -198,25 +216,29 @@ class WhatsappClient extends EventEmitter {
   };
 
   sendMessage = async (phone, msg, options) => {
-    phone = phone.toString();
+    phone = phone.toString().trim();
+
     if (this.#status.disconnected || !this.#status.connected) {
       throw new WhatsappDisconnectedError();
     }
 
     const id = this.#toId(phone);
 
-    const [result] = await this.#conn.onWhatsApp(id);
-
-    if (
-      result ||
-      phone.endsWith("@s.whatsapp.net") ||
-      phone.endsWith("@g.us") ||
-      phone.endsWith("@broadcast")
-    ) {
+    if (this.#isDirectJid(phone)) {
       try {
         return await this.#conn.sendMessage(id, msg, options);
       } catch (err) {
-        throw new WhatsappError(err.output.payload.statusCode);
+        throw new WhatsappError(this.#getErrorCode(err));
+      }
+    }
+
+    const [result] = await this.#conn.onWhatsApp(id);
+
+    if (result) {
+      try {
+        return await this.#conn.sendMessage(id, msg, options);
+      } catch (err) {
+        throw new WhatsappError(this.#getErrorCode(err));
       }
     }
 
@@ -237,7 +259,7 @@ class WhatsappClient extends EventEmitter {
     try {
       await this.#conn.sendPresenceUpdate(type, id);
     } catch (err) {
-      throw new WhatsappError(err.output.payload.statusCode);
+      throw new WhatsappError(this.#getErrorCode(err));
     }
   };
 
@@ -246,7 +268,17 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappDisconnectedError();
     }
 
+    phone = phone.toString().trim();
     const id = this.#toId(phone);
+
+    if (this.#isDirectJid(phone)) {
+      try {
+        await this.#conn.presenceSubscribe(id);
+      } catch (err) {
+        throw new WhatsappError(this.#getErrorCode(err));
+      }
+      return;
+    }
 
     const [result] = await this.#conn.onWhatsApp(id);
 
@@ -254,7 +286,7 @@ class WhatsappClient extends EventEmitter {
       try {
         await this.#conn.presenceSubscribe(id);
       } catch (err) {
-        throw new WhatsappError(err.output.payload.statusCode);
+        throw new WhatsappError(this.#getErrorCode(err));
       }
     } else {
       throw new WhatsappNumberNotFoundError(phone);
@@ -268,11 +300,10 @@ class WhatsappClient extends EventEmitter {
     try {
       await this.#conn.readMessages(keys);
     } catch (err) {
-      throw new WhatsappError(err.output.payload.statusCode);
+      throw new WhatsappError(this.#getErrorCode(err));
     }
   };
 
-  
   updateProfileStatus = async (status) => {
     if (this.#status.disconnected || !this.#status.connected) {
       throw new WhatsappDisconnectedError();
@@ -281,7 +312,7 @@ class WhatsappClient extends EventEmitter {
     try {
       await this.#conn.updateProfileStatus(status);
     } catch (err) {
-      throw new WhatsappError(err.output.payload.statusCode);
+      throw new WhatsappError(this.#getErrorCode(err));
     }
   };
 }
@@ -307,9 +338,8 @@ class WhatsappDisconnectedError extends Error {
 class WhatsappError extends Error {
   #errors = {
     428: "Connection Closed",
-    408: "Connection Lost",
-    440: "Connection Replaced",
     408: "Timed Out",
+    440: "Connection Replaced",
     401: "Logged Out",
     500: "Bad Session",
     515: "Restart Required",
@@ -321,7 +351,7 @@ class WhatsappError extends Error {
     this.name = "WhatsappError";
     this.code = Number(this.message);
     this.message = `Send message failed. Whatsapp error ${this.message}: ${
-      this.#errors[this.code]
+      this.#errors[this.code] || "Unknown Error"
     }`;
   }
 }
