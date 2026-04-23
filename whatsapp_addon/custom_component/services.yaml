@@ -1,6 +1,9 @@
 send_message:
   name: Send message
-  description: Send a Whatsapp message
+  description: >
+    Send a Whatsapp message.
+    This action also returns response data when called with response_variable,
+    including sent_message and message_id.
   fields:
     clientId:
       name: Client ID
