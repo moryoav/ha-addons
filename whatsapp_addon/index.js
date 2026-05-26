@@ -1,12 +1,15 @@
+const { installLibsignalLogFilter } = require("./libsignal-log-filter");
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const axios = require("axios");
 const fs = require("fs");
-const { WhatsappClient } = require("./whatsapp");
 
 var logger = require("log4js").getLogger();
 logger.level = "info";
+installLibsignalLogFilter({ logger });
+
+const { WhatsappClient } = require("./whatsapp");
 
 var qrimage = require("qr-image");
 

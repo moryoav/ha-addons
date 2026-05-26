@@ -1,4 +1,4 @@
-# Home Assistant Add-on: Whatsapp add-on
+# Home Assistant Add-on: WhatsappV2
 
 ## How to use
 
@@ -8,13 +8,22 @@ Go to configuration page in clients input box digit the desired clientId. This o
 
 ### **How to get a User ID**
 
-The user id is made from three parts:
+A WhatsApp target id can use one of these formats:
 
-- Country code (Example 39 (Italy))
-- User's number
-- And a static part: @s.whatsapp.net (for users) @g.us (for groups)
+- Phone-number user JID: `391234567890@s.whatsapp.net`
+- New WhatsApp LID user JID: `90855889203418@lid`
+- Group JID: `1234567890-123456789@g.us`
+- Broadcast JID: `status@broadcast`
 
-For example for Italian number _3456789010_ the user id is the following _393456789010@s.whatsapp.net_
+If you only pass a phone number, the add-on appends `@s.whatsapp.net`. If Home Assistant receives or stores an `@lid` id, pass it back exactly as received. Do not convert it to a phone-number JID.
+
+When replying to an incoming event, the safest target is usually:
+
+```jinja2
+{{ trigger.event.data.key.remoteJid }}
+```
+
+The add-on suppresses duplicate inbound phone/LID deliveries when WhatsApp sends the same message twice with different `remoteJid` values during the LID migration.
 
 ### **Send a simple text message**
 
@@ -26,6 +35,20 @@ data:
   body:
     text: Hi it's a simple text message
 ```
+
+### **Send a message and capture the response**
+
+```yaml
+- service: whatsapp.send_message
+  response_variable: whatsapp_result
+  data:
+    clientId: default
+    to: 391234567890@s.whatsapp.net
+    body:
+      text: Hi, this response contains the sent WhatsApp message id
+```
+
+The response includes `client_id`, `to`, `body`, `sent_message`, and `message_id`. For compatibility with older automations, the integration also fires `whatsapp_send_message_result` after a message is sent.
 
 ### **How to send an image**
 
@@ -49,7 +72,7 @@ data:
   to: 391234567890@s.whatsapp.net
   body:
     audio:
-      url: "https://github.com/giuseppecastaldo/ha-addons/blob/main/whatsapp_addon/examples/hello_world.mp3?raw=true"
+      url: "https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/examples/hello_world.mp3?raw=true"
     ptt: true # Send audio as a voice
 ```
 
@@ -75,14 +98,34 @@ data:
   userId: 391234567890@s.whatsapp.net
 ```
 
+### **How to mark a received message as read**
+
+```yaml
+service: whatsapp.read_messages
+data:
+  clientId: "{{ trigger.event.data.clientId }}"
+  body:
+    keys:
+      id: "{{ trigger.event.data.key.id }}"
+      remoteJid: "{{ trigger.event.data.key.remoteJid }}"
+      fromMe: "{{ trigger.event.data.key.fromMe }}"
+```
+
+`read_messages` expects the key from the received `new_whatsapp_message` event.
+
 ---
 
 ## Events
 
-| Event type               | Description                           |
-| ------------------------ | ------------------------------------- |
-| new_whatsapp_message     | The message that was received         |
-| whatsapp_presence_update | Presence of contact in a chat updated |
+| Event type                   | Description                                  |
+| ---------------------------- | -------------------------------------------- |
+| new_whatsapp_message         | The message that was received                |
+| whatsapp_presence_update     | Presence of contact in a chat updated        |
+| whatsapp_send_message_result | Result event fired after sending a message   |
+
+`new_whatsapp_message` event data includes the configured `clientId`, the detected message `type`, the Baileys `key`, and the message payload. The dedupe layer runs before this event is fired, so automations should only see one event for the same WhatsApp message id/content pair.
+
+Known recoverable libsignal `Bad MAC` and session lifecycle console logs are filtered by the add-on. They are summarized as counts in the add-on log and do not change authentication, session state, or message handling.
 
 ---
 
@@ -107,6 +150,27 @@ data:
         body:
           text: pong
   mode: single
+```
+
+## Mark incoming messages as read
+
+```yaml
+- alias: Mark WhatsApp messages as read
+  description: ""
+  trigger:
+    - platform: event
+      event_type: new_whatsapp_message
+  condition: []
+  action:
+    - service: whatsapp.read_messages
+      data:
+        clientId: "{{ trigger.event.data.clientId }}"
+        body:
+          keys:
+            id: "{{ trigger.event.data.key.id }}"
+            remoteJid: "{{ trigger.event.data.key.remoteJid }}"
+            fromMe: "{{ trigger.event.data.key.fromMe }}"
+  mode: queued
 ```
 
 ## Arrive at home

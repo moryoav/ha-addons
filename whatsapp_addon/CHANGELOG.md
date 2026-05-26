@@ -1,3 +1,44 @@
+## 1.4.19
+
+- Updated repository metadata and documentation for the `moryoav/ha-addons` fork.
+- Documented fork-only changes since the original add-on, including LID ids, inbound dedupe, send response data, read receipts, Baileys updates, and libsignal log filtering.
+- Bumped the add-on version so Home Assistant can detect this documentation release.
+
+## 1.4.18
+
+- Suppressed known recoverable libsignal `Bad MAC` and session lifecycle console noise.
+- Added compact periodic summary logging for filtered libsignal messages without stack traces, message bodies, or session objects.
+- Added tests for the libsignal log filter.
+
+## 1.4.17
+
+- Added inbound message deduplication before firing `new_whatsapp_message` into Home Assistant.
+- Deduplicates the same WhatsApp message id, direction, detected type, and normalized payload hash while ignoring `remoteJid`, which can differ between phone-number JIDs and LID JIDs.
+- Logs dropped duplicate metadata and allows/logs same-key collisions when the payload differs.
+- Added tests for duplicate, collision, missing id, different id, and TTL expiry behavior.
+
+## 1.4.16
+
+- Added support for direct `@lid` WhatsApp identifiers alongside `@s.whatsapp.net`, `@g.us`, and `@broadcast` ids.
+- Kept direct JIDs from being rewritten as phone-number JIDs.
+
+## 1.4.15
+
+- Pinned the add-on build to `@whiskeysockets/baileys@6.7.18`.
+- Cleaned up the Baileys build stage and runtime Docker image setup.
+
+## 1.4.14
+
+- Added service response data for `whatsapp.send_message` when called from Home Assistant with `response_variable`.
+- Continued firing `whatsapp_send_message_result` for compatibility with existing automations.
+
+## 1.4.1a - 1.4.13
+
+- Moved active add-on metadata to the `moryoav/ha-addons` fork and the `WhatsappV2` add-on name.
+- Added `whatsapp.read_messages` support to mark received messages as read.
+- Added the add-on HTTP `readMessages` route and Baileys read receipt bridge.
+- Updated package, Docker, and runtime setup across the fork maintenance releases.
+
 ## 1.4.1
 
 - Bug QR-Code fixed

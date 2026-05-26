@@ -1,10 +1,10 @@
 {
   "name": "whatsapp_hass_addon",
-  "version": "1.4.13",
+  "version": "1.4.19",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node ./test/message-dedupe.test.js",
+    "test": "node ./test/message-dedupe.test.js && node ./test/libsignal-log-filter.test.js",
     "start": "node ./index.js"
   },
   "author": "Giuseppe Castaldo",
