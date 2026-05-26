@@ -73,6 +73,34 @@ const onMsg = (msg, key) => {
   logger.debug(`New message event fired from ${key}.`);
 };
 
+const onDuplicateMsg = (duplicate, key) => {
+  logger.info("Duplicate WhatsApp message dropped.", {
+    clientId: key,
+    messageId: duplicate.keyId,
+    type: duplicate.type,
+    firstRemoteJid: duplicate.firstRemoteJid,
+    duplicateRemoteJid: duplicate.duplicateRemoteJid,
+    firstSeenAt: duplicate.firstSeenAt,
+    duplicateSeenAt: duplicate.duplicateSeenAt,
+    ageMs: duplicate.ageMs,
+  });
+};
+
+const onDedupeCollision = (collision, key) => {
+  logger.warn("WhatsApp message dedupe key collision; message allowed.", {
+    clientId: key,
+    messageId: collision.keyId,
+    type: collision.type,
+    firstRemoteJid: collision.firstRemoteJid,
+    remoteJid: collision.remoteJid,
+    firstSeenAt: collision.firstSeenAt,
+    collisionAt: collision.collisionAt,
+    ageMs: collision.ageMs,
+    firstPayloadHash: collision.firstPayloadHash,
+    payloadHash: collision.payloadHash,
+  });
+};
+
 const onPresenceUpdate = (presence, key) => {
   axios.post(
     "http://supervisor/core/api/events/whatsapp_presence_update",
@@ -100,6 +128,10 @@ const init = (key) => {
   clients[key].on("qr", (qr) => onQr(qr, key));
   clients[key].once("ready", () => onReady(key));
   clients[key].on("msg", (msg) => onMsg(msg, key));
+  clients[key].on("msg_duplicate", (duplicate) => onDuplicateMsg(duplicate, key));
+  clients[key].on("msg_dedupe_collision", (collision) =>
+    onDedupeCollision(collision, key)
+  );
   clients[key].on("logout", () => onLogout(key));
   clients[key].on("presence_update", (presence) =>
     onPresenceUpdate(presence, key)

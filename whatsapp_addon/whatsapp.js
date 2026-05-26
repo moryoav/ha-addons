@@ -6,6 +6,7 @@ const {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
 } = require("./Baileys");
+const { MessageDedupe } = require("./message-dedupe");
 
 const MessageType = {
   text: "conversation",
@@ -24,6 +25,7 @@ class WhatsappClient extends EventEmitter {
   #sendPresenceUpdateInterval;
   #timeout;
   #attempts;
+  #messageDedupe;
   #offline;
   #refreshMs;
 
@@ -49,6 +51,7 @@ class WhatsappClient extends EventEmitter {
     this.#attempts = attempts;
     this.#offline = offline;
     this.#refreshMs = refreshMs || this.#toMilliseconds(6, 0, 0);
+    this.#messageDedupe = new MessageDedupe();
     this.connect();
   }
 
@@ -164,6 +167,17 @@ class WhatsappClient extends EventEmitter {
       if (msg.hasOwnProperty("message") && !msg.key.fromMe) {
         delete msg.message.messageContextInfo;
         const messageType = Object.keys(msg.message)[0];
+        const dedupeResult = this.#messageDedupe.check(msg, messageType);
+
+        if (dedupeResult.duplicate) {
+          this.emit("msg_duplicate", dedupeResult);
+          return;
+        }
+
+        if (dedupeResult.collision) {
+          this.emit("msg_dedupe_collision", dedupeResult);
+        }
+
         this.emit("msg", { type: messageType, ...msg });
       }
     });
