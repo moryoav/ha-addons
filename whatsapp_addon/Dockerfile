@@ -4,7 +4,7 @@ FROM node:20-alpine AS build-baileys
 RUN apk add --no-cache git
 WORKDIR /Baileys
 
-RUN npm pack @whiskeysockets/baileys@6.7.18 \
+RUN npm pack @whiskeysockets/baileys@6.7.23 \
  && tar -xzf whiskeysockets-baileys-*.tgz --strip-components=1 \
  && sed -i '/"devDependencies": {/,/}/d' package.json \
  && npm install --production --ignore-scripts \
@@ -14,8 +14,8 @@ FROM ${BUILD_FROM}
 
 RUN apk add --no-cache git npm
 
-COPY --from=build-baileys /Baileys /Baileys
 COPY . /
+COPY --from=build-baileys /Baileys /Baileys
 
 RUN chmod a+x /run.sh /finish.sh \
  && npm install -f

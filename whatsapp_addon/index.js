@@ -22,6 +22,32 @@ app.use(bodyParser.json());
 
 const clients = {};
 
+const summarizeId = (id) => {
+  if (!id) return undefined;
+  const value = id.toString();
+  return value.length <= 10
+    ? value
+    : `${value.slice(0, 6)}...${value.slice(-4)}`;
+};
+
+const summarizeJid = (jid) => {
+  if (!jid) return undefined;
+  const value = jid.toString();
+  const server = value.includes("@") ? value.split("@").pop() : value;
+  return `***@${server}`;
+};
+
+const summarizeMessageDebug = (msg) => ({
+  hasMessage: msg.hasMessage,
+  fromMe: msg.fromMe,
+  type: msg.type,
+  messageId: summarizeId(msg.messageId),
+  remoteJid: summarizeJid(msg.remoteJid),
+  participant: summarizeJid(msg.participant),
+  messageStubType: msg.messageStubType,
+  messageTimestamp: msg.messageTimestamp,
+});
+
 const onReady = (key) => {
   logger.info(key, "client is ready.");
   axios.post(
@@ -72,8 +98,41 @@ const onMsg = (msg, key) => {
         Authorization: `Bearer ${process.env.SUPERVISOR_TOKEN}`,
       },
     }
-  );
-  logger.debug(`New message event fired from ${key}.`);
+  )
+    .then(() => {
+      logger.info("New WhatsApp message event fired.", {
+        clientId: key,
+        type: msg.type,
+        messageId: summarizeId(msg?.key?.id),
+        remoteJid: summarizeJid(msg?.key?.remoteJid),
+      });
+    })
+    .catch((error) => {
+      logger.error("Failed to fire new WhatsApp message event.", {
+        clientId: key,
+        messageId: summarizeId(msg?.key?.id),
+        status: error?.response?.status,
+        error: error?.message,
+      });
+    });
+};
+
+const onMsgUpsert = (upsert, key) => {
+  logger.info("WhatsApp messages.upsert received.", {
+    clientId: key,
+    count: upsert.count,
+    type: upsert.type,
+    requestId: summarizeId(upsert.requestId),
+    messages: upsert.messages.map(summarizeMessageDebug),
+  });
+};
+
+const onIgnoredMsg = (ignored, key) => {
+  logger.info("WhatsApp message ignored before Home Assistant event.", {
+    clientId: key,
+    reason: ignored.reason,
+    message: summarizeMessageDebug(ignored.message),
+  });
 };
 
 const onDuplicateMsg = (duplicate, key) => {
@@ -81,8 +140,8 @@ const onDuplicateMsg = (duplicate, key) => {
     clientId: key,
     messageId: duplicate.keyId,
     type: duplicate.type,
-    firstRemoteJid: duplicate.firstRemoteJid,
-    duplicateRemoteJid: duplicate.duplicateRemoteJid,
+    firstRemoteJid: summarizeJid(duplicate.firstRemoteJid),
+    duplicateRemoteJid: summarizeJid(duplicate.duplicateRemoteJid),
     firstSeenAt: duplicate.firstSeenAt,
     duplicateSeenAt: duplicate.duplicateSeenAt,
     ageMs: duplicate.ageMs,
@@ -94,8 +153,8 @@ const onDedupeCollision = (collision, key) => {
     clientId: key,
     messageId: collision.keyId,
     type: collision.type,
-    firstRemoteJid: collision.firstRemoteJid,
-    remoteJid: collision.remoteJid,
+    firstRemoteJid: summarizeJid(collision.firstRemoteJid),
+    remoteJid: summarizeJid(collision.remoteJid),
     firstSeenAt: collision.firstSeenAt,
     collisionAt: collision.collisionAt,
     ageMs: collision.ageMs,
@@ -131,6 +190,8 @@ const init = (key) => {
   clients[key].on("qr", (qr) => onQr(qr, key));
   clients[key].once("ready", () => onReady(key));
   clients[key].on("msg", (msg) => onMsg(msg, key));
+  clients[key].on("msg_upsert", (upsert) => onMsgUpsert(upsert, key));
+  clients[key].on("msg_ignored", (ignored) => onIgnoredMsg(ignored, key));
   clients[key].on("msg_duplicate", (duplicate) => onDuplicateMsg(duplicate, key));
   clients[key].on("msg_dedupe_collision", (collision) =>
     onDedupeCollision(collision, key)

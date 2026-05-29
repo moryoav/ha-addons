@@ -132,6 +132,22 @@ class WhatsappClient extends EventEmitter {
     err?.message ??
     "unknown";
 
+  #getMessageType = (msg) => {
+    if (!msg?.message) return undefined;
+    return Object.keys(msg.message).find((key) => key !== "messageContextInfo");
+  };
+
+  #summarizeMessage = (msg) => ({
+    hasMessage: !!msg?.message,
+    fromMe: !!msg?.key?.fromMe,
+    messageId: msg?.key?.id,
+    remoteJid: msg?.key?.remoteJid,
+    participant: msg?.key?.participant,
+    type: this.#getMessageType(msg),
+    messageStubType: msg?.messageStubType,
+    messageTimestamp: msg?.messageTimestamp,
+  });
+
   #reconnect = () => {
     if (this.#status.attempt++ > this.#attempts || this.#status.disconnected) {
       this.#status.reconnecting = false;
@@ -161,17 +177,47 @@ class WhatsappClient extends EventEmitter {
     this.#refreshInterval = setInterval(() => this.restart(), this.#refreshMs);
     if (this.#offline) this.setSendPresenceUpdateInterval("unavailable");
 
-    this.#conn.ev.on("messages.upsert", async ({ messages }) => {
-      const msg = messages[0];
+    this.#conn.ev.on("messages.upsert", async ({ messages, type, requestId }) => {
+      this.emit("msg_upsert", {
+        count: messages?.length || 0,
+        type,
+        requestId,
+        messages: (messages || []).map((msg) => this.#summarizeMessage(msg)),
+      });
 
-      if (msg.hasOwnProperty("message") && !msg.key.fromMe) {
+      for (const msg of messages || []) {
+        if (!msg?.message) {
+          this.emit("msg_ignored", {
+            reason: "missing_message",
+            message: this.#summarizeMessage(msg),
+          });
+          continue;
+        }
+
+        if (msg.key?.fromMe) {
+          this.emit("msg_ignored", {
+            reason: "from_me",
+            message: this.#summarizeMessage(msg),
+          });
+          continue;
+        }
+
         delete msg.message.messageContextInfo;
-        const messageType = Object.keys(msg.message)[0];
+        const messageType = this.#getMessageType(msg);
+
+        if (!messageType) {
+          this.emit("msg_ignored", {
+            reason: "missing_message_type",
+            message: this.#summarizeMessage(msg),
+          });
+          continue;
+        }
+
         const dedupeResult = this.#messageDedupe.check(msg, messageType);
 
         if (dedupeResult.duplicate) {
           this.emit("msg_duplicate", dedupeResult);
-          return;
+          continue;
         }
 
         if (dedupeResult.collision) {

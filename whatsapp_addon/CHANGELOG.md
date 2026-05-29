@@ -1,3 +1,10 @@
+## 1.4.20
+
+- Updated the runtime Baileys package pin to `@whiskeysockets/baileys@6.7.23`.
+- Ensured the Docker image uses the freshly built Baileys package after copying add-on source files.
+- Added receive-path diagnostics for `messages.upsert`, ignored inbound messages, and successful/failed `new_whatsapp_message` event firing without logging message bodies or full chat ids.
+- Processed every Baileys message in each `messages.upsert` batch instead of only the first message.
+
 ## 1.4.19
 
 - Updated repository metadata and documentation for the `moryoav/ha-addons` fork.
