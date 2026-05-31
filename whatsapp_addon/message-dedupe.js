@@ -2,6 +2,27 @@ const crypto = require("crypto");
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 1000;
+const MEDIA_PAYLOAD_KEYS = new Set([
+  "fileEncSha256",
+  "fileLength",
+  "fileSha256",
+  "mediaKey",
+  "mimetype",
+]);
+const VOLATILE_PAYLOAD_KEYS = new Set([
+  "directPath",
+  "jpegThumbnail",
+  "mediaKeyTimestamp",
+  "scanLengths",
+  "scansSidecar",
+  "thumbnailDirectPath",
+  "thumbnailEncSha256",
+  "thumbnailSha256",
+  "url",
+]);
+
+const hasMediaPayloadKey = (value) =>
+  Object.keys(value).some((key) => MEDIA_PAYLOAD_KEYS.has(key));
 
 const normalizeForHash = (value, seen = new WeakSet()) => {
   if (value === undefined) return undefined;
@@ -34,8 +55,11 @@ const normalizeForHash = (value, seen = new WeakSet()) => {
     return normalized;
   }
 
+  const omitVolatilePayloadKeys = hasMediaPayloadKey(value);
   const normalized = {};
   for (const key of Object.keys(value).sort()) {
+    if (omitVolatilePayloadKeys && VOLATILE_PAYLOAD_KEYS.has(key)) continue;
+
     const result = normalizeForHash(value[key], seen);
     if (result !== undefined) normalized[key] = result;
   }
@@ -168,7 +192,9 @@ class MessageDedupe {
 module.exports = {
   DEFAULT_MAX_ENTRIES,
   DEFAULT_TTL_MS,
+  MEDIA_PAYLOAD_KEYS,
   MessageDedupe,
+  VOLATILE_PAYLOAD_KEYS,
   hashMessagePayload,
   stableStringify,
 };

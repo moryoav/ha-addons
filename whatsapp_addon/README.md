@@ -29,7 +29,7 @@ This add-on is maintained in the `moryoav/ha-addons` fork. The current fork keep
 - The add-on metadata and installation URL now point at `https://github.com/moryoav/ha-addons`.
 - Baileys is updated to `@whiskeysockets/baileys@6.7.23` and built into the add-on image during Docker build.
 - Direct WhatsApp IDs can be phone-based JIDs, group/broadcast JIDs, or new LID JIDs such as `90855889203418@lid`.
-- Inbound duplicate phone/LID events are dropped before `new_whatsapp_message` is fired into Home Assistant. The duplicate check ignores `remoteJid`, hashes the normalized message payload, and uses a 5 minute in-memory TTL.
+- Inbound duplicate phone/LID events are dropped before `new_whatsapp_message` is fired into Home Assistant. The duplicate check ignores `remoteJid`, hashes the normalized message payload without volatile media wrapper fields, and uses a 5 minute in-memory TTL.
 - If the same WhatsApp message id and type arrives with different content, the message is allowed and a collision warning is logged.
 - `whatsapp.send_message` returns Home Assistant response data when called with `response_variable`; the existing `whatsapp_send_message_result` event is still fired.
 - `whatsapp.read_messages` marks received messages as read by passing the received Baileys message key back to the add-on.

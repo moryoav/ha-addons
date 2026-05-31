@@ -29,6 +29,41 @@ const createMessage = ({
   },
 });
 
+const createImagePayload = ({
+  caption = "same caption",
+  fileSha256 = Buffer.from("file-sha"),
+  fileEncSha256 = Buffer.from("enc-sha"),
+  mediaKey = "same-media-key",
+  includeThumbnail = false,
+  url = "https://mmg.whatsapp.net/a",
+  directPath = "/v/t62/a",
+  mediaKeyTimestamp = 1780239123,
+  scanLengths = [1, 2, 3],
+  scansSidecar = Buffer.from("scan-sidecar"),
+} = {}) => {
+  const payload = {
+    caption,
+    directPath,
+    fileEncSha256,
+    fileLength: "12345",
+    fileSha256,
+    height: 1280,
+    mediaKey,
+    mediaKeyTimestamp,
+    mimetype: "image/jpeg",
+    scanLengths,
+    scansSidecar,
+    url,
+    width: 960,
+  };
+
+  if (includeThumbnail) {
+    payload.jpegThumbnail = Buffer.from("thumbnail");
+  }
+
+  return payload;
+};
+
 {
   const dedupe = createDedupe();
 
@@ -49,6 +84,51 @@ const createMessage = ({
   assert.strictEqual(result.duplicate, true);
   assert.strictEqual(result.firstRemoteJid, "972522241857@s.whatsapp.net");
   assert.strictEqual(result.duplicateRemoteJid, "90855889203418@lid");
+}
+
+{
+  const dedupe = createDedupe();
+
+  assert.strictEqual(
+    dedupe.check(
+      createMessage({
+        id: "observed-image-duplicate",
+        remoteJid: "237434533077127@lid",
+        type: "imageMessage",
+        payload: createImagePayload({
+          includeThumbnail: true,
+          mediaKeyTimestamp: 1780239128,
+          url: "https://mmg.whatsapp.net/lid-copy",
+          directPath: "/v/t62/lid-copy",
+        }),
+      }),
+      "imageMessage"
+    ).duplicate,
+    false
+  );
+
+  now += 10;
+  const result = dedupe.check(
+    createMessage({
+      id: "observed-image-duplicate",
+      remoteJid: "972525662800@s.whatsapp.net",
+      type: "imageMessage",
+      payload: createImagePayload({
+        includeThumbnail: false,
+        mediaKeyTimestamp: { low: 1780239123, high: 0, unsigned: true },
+        url: "https://mmg.whatsapp.net/phone-copy",
+        directPath: "/v/t62/phone-copy",
+        scanLengths: [4, 5, 6],
+        scansSidecar: Buffer.from("different-scan-sidecar"),
+      }),
+    }),
+    "imageMessage"
+  );
+
+  assert.strictEqual(result.duplicate, true);
+  assert.strictEqual(result.collision, false);
+  assert.strictEqual(result.firstRemoteJid, "237434533077127@lid");
+  assert.strictEqual(result.duplicateRemoteJid, "972525662800@s.whatsapp.net");
 }
 
 {
@@ -76,6 +156,62 @@ const createMessage = ({
   const result = dedupe.check(
     createMessage({ id: "msg-4", payload: "different" }),
     "conversation"
+  );
+
+  assert.strictEqual(result.duplicate, false);
+  assert.strictEqual(result.collision, true);
+}
+
+{
+  const dedupe = createDedupe();
+
+  assert.strictEqual(
+    dedupe.check(
+      createMessage({
+        id: "non-media-url-collision",
+        type: "customMessage",
+        payload: { url: "https://example.invalid/a" },
+      }),
+      "customMessage"
+    ).collision,
+    false
+  );
+
+  const result = dedupe.check(
+    createMessage({
+      id: "non-media-url-collision",
+      type: "customMessage",
+      payload: { url: "https://example.invalid/b" },
+    }),
+    "customMessage"
+  );
+
+  assert.strictEqual(result.duplicate, false);
+  assert.strictEqual(result.collision, true);
+}
+
+{
+  const dedupe = createDedupe();
+
+  assert.strictEqual(
+    dedupe.check(
+      createMessage({
+        id: "image-collision",
+        type: "imageMessage",
+        payload: createImagePayload({ fileSha256: Buffer.from("file-a") }),
+      }),
+      "imageMessage"
+    ).collision,
+    false
+  );
+
+  const result = dedupe.check(
+    createMessage({
+      id: "image-collision",
+      type: "imageMessage",
+      payload: createImagePayload({ fileSha256: Buffer.from("file-b") }),
+    }),
+    "imageMessage"
   );
 
   assert.strictEqual(result.duplicate, false);

@@ -1,3 +1,8 @@
+## 1.4.21
+
+- Fixed inbound dedupe for media messages delivered twice during LID migration when WhatsApp keeps the same message id but changes wrapper-only media fields such as thumbnails, CDN paths, scan sidecars, or media key timestamp representation.
+- Kept the collision guard for same-id messages whose stable media/content identity differs.
+
 ## 1.4.20
 
 - Updated the runtime Baileys package pin to `@whiskeysockets/baileys@6.7.23`.

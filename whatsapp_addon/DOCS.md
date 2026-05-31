@@ -123,7 +123,7 @@ data:
 | whatsapp_presence_update     | Presence of contact in a chat updated        |
 | whatsapp_send_message_result | Result event fired after sending a message   |
 
-`new_whatsapp_message` event data includes the configured `clientId`, the detected message `type`, the Baileys `key`, and the message payload. The dedupe layer runs before this event is fired, so automations should only see one event for the same WhatsApp message id/content pair.
+`new_whatsapp_message` event data includes the configured `clientId`, the detected message `type`, the Baileys `key`, and the message payload. The dedupe layer runs before this event is fired, so automations should only see one event for the same WhatsApp message id/content pair. Media dedupe ignores wrapper-only fields such as thumbnails, CDN paths, scan sidecars, and media key timestamp representation because WhatsApp can vary those between phone-number and LID deliveries of the same message.
 
 Known recoverable libsignal `Bad MAC` and session lifecycle console logs are filtered by the add-on. They are summarized as counts in the add-on log and do not change authentication, session state, or message handling.
 
