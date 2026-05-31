@@ -1,0 +1,93 @@
+rules:
+  # Bronze
+  action-setup: done
+  appropriate-polling:
+    status: exempt
+    comment: The integration does not poll; the add-on pushes inbound message and presence events to Home Assistant.
+  brands: done
+  common-modules: done
+  config-flow-test-coverage: done
+  config-flow: done
+  dependency-transparency: done
+  docs-actions: done
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup:
+    status: exempt
+    comment: The integration does not create entities or subscribe entity lifecycle events.
+  entity-unique-id:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entities.
+  has-entity-name:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entities.
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entities to mark unavailable.
+  integration-owner: done
+  log-when-unavailable:
+    status: exempt
+    comment: Service action failures are returned to the caller; there is no background polling loop that would log availability changes.
+  parallel-updates:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entity updates.
+  reauthentication-flow:
+    status: exempt
+    comment: The integration does not authenticate with credentials; WhatsApp account pairing is handled by the add-on QR flow.
+  test-coverage: done
+
+  # Gold
+  devices:
+    status: exempt
+    comment: The integration connects to a local add-on service and does not represent physical or logical Home Assistant devices.
+  diagnostics: done
+  discovery-update-info:
+    status: exempt
+    comment: The add-on is configured by URL and has no discovery payload with mutable network information.
+  discovery:
+    status: exempt
+    comment: The add-on does not advertise itself through a Home Assistant discovery mechanism.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: The integration exposes no devices; additional WhatsApp sessions are add-on clients used by service actions.
+  entity-category:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entities.
+  entity-device-class:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entities.
+  entity-disabled-by-default:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entities.
+  entity-translations:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entities.
+  exception-translations: done
+  icon-translations:
+    status: exempt
+    comment: The integration exposes service actions and events only, with no entity icons.
+  reconfiguration-flow: done
+  repair-issues:
+    status: exempt
+    comment: Connection issues are handled during setup and service calls; there are no persistent device repairs to create.
+  stale-devices:
+    status: exempt
+    comment: The integration exposes no devices, so there are no stale devices to remove.

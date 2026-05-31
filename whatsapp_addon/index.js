@@ -211,6 +211,15 @@ fs.readFile("data/options.json", function (error, content) {
 
   app.listen(port, () => logger.info(`Whatsapp Addon started.`));
 
+  app.get("/health", (req, res) => {
+    const clientIds = Object.keys(clients);
+    res.json({
+      status: "ok",
+      client_count: clientIds.length,
+      clients: clientIds,
+    });
+  });
+
   app.post("/sendMessage", (req, res) => {
     const message = req.body;
     if (message.hasOwnProperty("clientId")) {

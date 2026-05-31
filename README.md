@@ -1,11 +1,8 @@
-[![Buy Me a Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/zkfpkdwyhyq)
-[![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
+# WhatsApp for Home Assistant
 
-# Home Assistant Add-on: WhatsappV2
+Send WhatsApp messages from Home Assistant automations and receive WhatsApp message and presence events through the companion add-on.
 
-_Write your Whatsapp message from Home Assistant_
-
-<img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
+<img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="320"/>
 
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
@@ -19,43 +16,207 @@ _Write your Whatsapp message from Home Assistant_
 [armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
 [i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
 
-A WhatsApp API client that connects through the WhatsApp Web browser app
+This repository contains two pieces:
 
-**NOTE:** I can't guarantee you will not be blocked by using this method, although it has worked for me. WhatsApp does not allow bots or unofficial clients on their platform, so this shouldn't be considered totally safe.
+- `whatsapp_addon`: the Home Assistant add-on that runs the local WhatsApp Web client bridge.
+- `custom_components/whatsapp`: the Home Assistant integration that exposes actions, diagnostics, setup flow support, and add-on connectivity.
 
-## This fork
+The integration talks only to the local add-on HTTP API. WhatsApp account pairing is handled by the add-on QR-code flow.
 
-This repository is the active fork at:
+## Important limitation
 
-```text
-https://github.com/moryoav/ha-addons
-```
+This project uses WhatsApp Web through an unofficial client library. WhatsApp does not officially support bots or unofficial clients, so account restrictions or blocking are possible. Use a dedicated account if that risk matters to you.
 
-Notable changes since the original add-on include:
+## Installation
 
-- Add-on metadata now points at this fork and the add-on is published as `WhatsappV2`.
-- Baileys is built from `@whiskeysockets/baileys@6.7.18` during the add-on build.
-- WhatsApp LID identifiers such as `90855889203418@lid` are accepted alongside phone-number JIDs such as `972522241857@s.whatsapp.net`.
-- Duplicate inbound phone/LID events are deduplicated before Home Assistant receives `new_whatsapp_message`.
-- `whatsapp.send_message` can return response data to Home Assistant automations and also fires `whatsapp_send_message_result` for compatibility.
-- `whatsapp.read_messages` is available for marking received messages as read.
-- Recoverable libsignal `Bad MAC` and session lifecycle console noise is summarized instead of dumping stack traces and session objects to the add-on log.
+### 1. Install the add-on
 
-See [whatsapp_addon/DOCS.md](whatsapp_addon/DOCS.md) for usage examples and [whatsapp_addon/CHANGELOG.md](whatsapp_addon/CHANGELOG.md) for release notes.
-
-## Installation guide
-Install add-on from this repository:
+Add this repository as a Home Assistant add-on repository:
 
 ```text
 https://github.com/moryoav/ha-addons
 ```
 
-Start the add-on and in a few seconds you will see a persistent notification with QRCode, please scan this one with Whatsapp Mobile app.
+Install and start the `WhatsappV2` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. Scan it with the WhatsApp mobile app.
 
-After add-on installation restart Home Assistant and then copy the following code in _configuration.yaml_
+### 2. Install the integration
+
+Install the integration with HACS as a custom repository until it is accepted as a HACS default:
+
+1. Open HACS.
+2. Open the three-dot menu and choose custom repositories.
+3. Add `https://github.com/moryoav/ha-addons`.
+4. Select category `Integration`.
+5. Install `WhatsApp`.
+6. Restart Home Assistant.
+
+Manual installation is also supported by copying `custom_components/whatsapp` into:
+
+```text
+/config/custom_components/whatsapp
+```
+
+### 3. Configure the integration
+
+In Home Assistant, go to:
+
+```text
+Settings > Devices & services > Add integration > WhatsApp
+```
+
+Enter the local add-on URL. The default is:
+
+```text
+http://whatsapp_addon:3000
+```
+
+If that hostname is not reachable in your installation, use the add-on hostname or IP address that Home Assistant can reach, including port `3000`.
+
+## Configuration parameters
+
+### Add-on
+
+The add-on accepts these options:
+
+- `clients`: one or more WhatsApp session names. The default is `default`.
+
+Each client gets its own QR-code pairing flow and persisted add-on session data.
+
+### Integration
+
+The integration setup flow accepts:
+
+- `Add-on URL`: the local HTTP URL for the running add-on.
+
+You can update the URL later by reconfiguring the integration from the integration entry menu.
+
+## Actions
+
+The integration registers these Home Assistant actions under the `whatsapp` domain:
+
+- `whatsapp.send_message`: send text, media, location, reactions, or any payload supported by the add-on.
+- `whatsapp.set_status`: set the WhatsApp account status text.
+- `whatsapp.presence_subscribe`: subscribe to presence updates for a contact.
+- `whatsapp.send_presence_update`: send a one-shot presence update.
+- `whatsapp.send_infinity_presence_update`: send a long-running presence update.
+- `whatsapp.read_messages`: mark received messages as read.
+
+`whatsapp.send_message` can return response data when called with `response_variable`; it also fires the compatibility event `whatsapp_send_message_result`.
+
+## Events
+
+The add-on fires these Home Assistant events:
+
+| Event type | Description |
+| --- | --- |
+| `new_whatsapp_message` | A received WhatsApp message. |
+| `whatsapp_presence_update` | A contact presence update. |
+| `whatsapp_send_message_result` | Compatibility result event after sending a message. |
+
+`new_whatsapp_message` includes the configured `clientId`, the detected message `type`, the Baileys message `key`, and the message payload.
+
+## Supported identifiers
+
+Message targets can use:
+
+- Phone-number user JID, such as `391234567890@s.whatsapp.net`.
+- WhatsApp LID user JID, such as `90855889203418@lid`.
+- Group JID, such as `1234567890-123456789@g.us`.
+- Broadcast JID, such as `status@broadcast`.
+
+When replying to an incoming event, the safest target is usually:
+
+```jinja2
+{{ trigger.event.data.key.remoteJid }}
+```
+
+## Examples
+
+### Send a text message
 
 ```yaml
-whatsapp:
+service: whatsapp.send_message
+data:
+  clientId: default
+  to: 391234567890@s.whatsapp.net
+  body:
+    text: Hi from Home Assistant
 ```
 
-Then restart Home Assistant. If all went well you will see a _whatsapp.send_message_ service.
+### Capture the sent message id
+
+```yaml
+- service: whatsapp.send_message
+  response_variable: whatsapp_result
+  data:
+    clientId: default
+    to: 391234567890@s.whatsapp.net
+    body:
+      text: This call stores the sent WhatsApp message id.
+```
+
+### Reply to `!ping`
+
+```yaml
+- alias: WhatsApp ping pong
+  trigger:
+    - platform: event
+      event_type: new_whatsapp_message
+  condition:
+    - condition: template
+      value_template: "{{ trigger.event.data.message.conversation == '!ping' }}"
+  action:
+    - service: whatsapp.send_message
+      data:
+        clientId: "{{ trigger.event.data.clientId }}"
+        to: "{{ trigger.event.data.key.remoteJid }}"
+        body:
+          text: pong
+  mode: single
+```
+
+### Mark incoming messages as read
+
+```yaml
+- alias: Mark WhatsApp messages as read
+  trigger:
+    - platform: event
+      event_type: new_whatsapp_message
+  action:
+    - service: whatsapp.read_messages
+      data:
+        clientId: "{{ trigger.event.data.clientId }}"
+        body:
+          keys:
+            id: "{{ trigger.event.data.key.id }}"
+            remoteJid: "{{ trigger.event.data.key.remoteJid }}"
+            fromMe: "{{ trigger.event.data.key.fromMe }}"
+  mode: queued
+```
+
+## Data updates
+
+The integration does not poll WhatsApp. The add-on pushes message and presence events into Home Assistant as they arrive, and actions call the local add-on API on demand.
+
+## Diagnostics
+
+The integration supports Home Assistant diagnostics. Diagnostics include whether an add-on URL is configured, whether the add-on health endpoint is reachable, and the number of configured add-on clients. The configured URL and message contents are not included.
+
+## Troubleshooting
+
+- If setup cannot connect, confirm the add-on is running and the configured URL is reachable from Home Assistant.
+- If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
+- If messages are not received, check the add-on logs for QR-code, session, and WhatsApp connection messages.
+- If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
+- Recoverable libsignal `Bad MAC` and session lifecycle messages are summarized by the add-on instead of logging full stack traces or session data.
+
+## Removal
+
+1. Delete the WhatsApp integration from Home Assistant.
+2. Remove the `WhatsappV2` add-on.
+3. Delete `/config/custom_components/whatsapp` if you installed manually.
+4. Restart Home Assistant.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development notes, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CHANGELOG.md](CHANGELOG.md) for release history.

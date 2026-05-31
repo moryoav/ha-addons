@@ -1,3 +1,10 @@
+## 1.4.22
+
+- Added an add-on `/health` endpoint for the HACS-managed integration setup flow and diagnostics.
+- Stopped overwriting an existing `/config/custom_components/whatsapp` integration when HACS or a manual install already manages it.
+- Aligned the package license metadata with the repository Apache-2.0 license.
+- Updated add-on documentation and removed the donation badge.
+
 ## 1.4.21
 
 - Fixed inbound dedupe for media messages delivered twice during LID migration when WhatsApp keeps the same message id but changes wrapper-only media fields such as thumbnails, CDN paths, scan sidecars, or media key timestamp representation.
