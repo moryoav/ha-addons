@@ -8,6 +8,9 @@ else
 
   mkdir -p config/custom_components/whatsapp
   cp --recursive /custom_component/* config/custom_components/whatsapp/
+  mv \
+    config/custom_components/whatsapp/manifest.json.template \
+    config/custom_components/whatsapp/manifest.json
   bashio::log.info "Installed bundled custom component."
 fi
 

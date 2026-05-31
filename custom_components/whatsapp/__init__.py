@@ -82,6 +82,8 @@ READ_MESSAGES_SCHEMA = vol.Schema(
 
 ServiceHandler = Callable[[WhatsappClient, dict[str, Any]], Awaitable[Any]]
 
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the WhatsApp integration and register service actions."""
