@@ -26,9 +26,21 @@ This project uses WhatsApp Web through an unofficial client library. WhatsApp do
 
 - No HTTP port is published to the LAN.
 - The local bridge API is used from the Home Assistant add-on network.
-- AppArmor is enabled.
+- A custom AppArmor profile is included and AppArmor is enabled.
 - No Docker API access, host network, host PID, host UTS, `full_access`, privileged capabilities, or elevated Supervisor role are used.
 - `/config` is mounted read-write only to preserve compatibility with legacy custom component installs.
+- A Supervisor watchdog uses the local `/health` endpoint.
+- Ingress is not enabled because this add-on has no web UI; QR pairing is shown through Home Assistant persistent notifications.
+
+## Stable and canary builds
+
+Use the default repository URL for stable releases:
+
+```text
+https://github.com/moryoav/ha-addons
+```
+
+This repository does not currently publish a separate canary or `next` branch. If a canary channel is introduced later, it will be documented with its `#branch` repository URL and a distinct add-on name.
 
 ## Installation
 

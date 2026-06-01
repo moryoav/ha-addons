@@ -35,14 +35,26 @@ The packaged add-on follows the current Home Assistant app presentation guidance
 
 - No HTTP port is published to the LAN.
 - The local bridge API is used from the Home Assistant add-on network.
-- AppArmor is enabled.
+- A custom AppArmor profile is included and AppArmor is enabled.
 - No Docker API access.
 - No host network, host PID, or host UTS access.
 - No `full_access` mode.
 - No privileged capabilities.
 - No elevated Supervisor role.
+- A Supervisor watchdog uses the local `/health` endpoint.
+- Ingress is not enabled because the add-on has no web UI; QR pairing is shown through Home Assistant persistent notifications.
 
 The `/config` mount is read-write so the add-on can preserve compatibility with legacy manual installs. When HACS or a manual install already manages `/config/custom_components/whatsapp`, the add-on leaves those files in place.
+
+## Stable and canary builds
+
+Use the default repository URL for stable releases:
+
+```text
+https://github.com/moryoav/ha-addons
+```
+
+This repository does not currently publish a separate canary or `next` branch. If a canary channel is introduced later, it will be documented with its `#branch` repository URL and a distinct add-on name.
 
 ## Installation
 

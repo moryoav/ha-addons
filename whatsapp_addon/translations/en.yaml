@@ -1,5 +1,5 @@
 ---
 configuration:
   clients:
-    name: Clients
-    description: Create other clients
+    name: WhatsApp sessions
+    description: Session names that can be used as clientId values in Home Assistant actions.

@@ -2,6 +2,13 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.23
+
+- Added a custom AppArmor profile, Supervisor watchdog metadata, stable stage metadata, and current Home Assistant app map syntax for the add-on.
+- Rebuilt app and integration icon assets as square PNG files to meet Home Assistant presentation requirements.
+- Documented stable/no-canary availability, no-Ingress behavior, support paths, license, and add-on security posture in the add-on docs.
+- Clarified the add-on configuration translation for WhatsApp session names.
+
 ## 1.4.22
 
 - Added a HACS-compatible `custom_components/whatsapp` integration with config flow setup, reconfiguration, diagnostics, translated service errors, and service schemas.

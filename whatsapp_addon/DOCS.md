@@ -2,9 +2,35 @@
 
 ## How to use
 
-### **How to add other Whatsapp sessions**
+## Configuration
 
-Go to configuration page in clients input box digit the desired clientId. This one represents an identifier for the session.
+The add-on option is:
+
+- `clients`: one or more WhatsApp session names. The default is `default`.
+
+Each session name becomes the `clientId` used by Home Assistant actions. Every client has its own persisted WhatsApp pairing state under the add-on data folder.
+
+### **How to add other WhatsApp sessions**
+
+Open the add-on configuration page and add another value under `clients`. Use that value as the `clientId` in Home Assistant actions.
+
+## Stable and canary builds
+
+Use the default repository URL for stable releases:
+
+```text
+https://github.com/moryoav/ha-addons
+```
+
+This repository does not currently publish a separate canary or `next` branch. If a canary channel is introduced later, it will be documented with its `#branch` repository URL and a distinct add-on name.
+
+## Security and network access
+
+The add-on exposes no Home Assistant LAN port and has no web UI, so Ingress is not enabled. QR pairing is shown through Home Assistant persistent notifications.
+
+The add-on includes a custom AppArmor profile, runs without host networking, Docker API access, privileged capabilities, `full_access`, host PID, or host UTS, and uses the default Supervisor API role. A watchdog calls the local `/health` endpoint so Supervisor can monitor the app after startup.
+
+The `/config` mount is read-write only for legacy compatibility component installation. If HACS or a manual install already manages `/config/custom_components/whatsapp`, the add-on leaves those files in place.
 
 ### **How to get a User ID**
 
@@ -257,3 +283,11 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
         message: Contact is online!
   mode: single
 ```
+
+## Support and issues
+
+For help, start with the root [README](../README.md), [SUPPORT](../SUPPORT.md), and [CHANGELOG](../CHANGELOG.md). If you find a bug, open an issue on GitHub and include the add-on version, Home Assistant version, add-on logs with secrets redacted, and the relevant automation or action payload.
+
+## License
+
+This add-on is published under the Apache License 2.0. See the repository [LICENSE](../LICENSE) file for the full license text.

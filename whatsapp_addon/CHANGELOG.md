@@ -1,3 +1,10 @@
+## 1.4.23
+
+- Added a custom AppArmor profile, Supervisor watchdog metadata, stable stage metadata, and current Home Assistant app map syntax.
+- Rebuilt the app icon as a square PNG file to meet Home Assistant presentation requirements.
+- Documented stable/no-canary availability, no-Ingress behavior, support paths, license, and security posture in the add-on docs.
+- Clarified the configuration translation for WhatsApp session names.
+
 ## 1.4.22
 
 - Added an add-on `/health` endpoint for the HACS-managed integration setup flow and diagnostics.
