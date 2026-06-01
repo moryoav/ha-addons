@@ -1,5 +1,7 @@
 # WhatsApp for Home Assistant
 
+[![HACS][hacs-badge]][hacs-url] [![release][release-badge]][release-url] ![downloads][downloads-badge] [![license][license-badge]][license-url]
+
 Send WhatsApp messages from Home Assistant automations and receive WhatsApp message and presence events through the companion add-on.
 
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="320"/>
@@ -27,9 +29,26 @@ The integration talks only to the local add-on HTTP API. WhatsApp account pairin
 
 This project uses WhatsApp Web through an unofficial client library. WhatsApp does not officially support bots or unofficial clients, so account restrictions or blocking are possible. Use a dedicated account if that risk matters to you.
 
+## Security notes
+
+The packaged add-on follows the current Home Assistant app presentation guidance where it is relevant to this project:
+
+- No HTTP port is published to the LAN.
+- The local bridge API is used from the Home Assistant add-on network.
+- AppArmor is enabled.
+- No Docker API access.
+- No host network, host PID, or host UTS access.
+- No `full_access` mode.
+- No privileged capabilities.
+- No elevated Supervisor role.
+
+The `/config` mount is read-write so the add-on can preserve compatibility with legacy manual installs. When HACS or a manual install already manages `/config/custom_components/whatsapp`, the add-on leaves those files in place.
+
 ## Installation
 
 ### 1. Install the add-on
+
+[![Add the WhatsApp add-on repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
 Add this repository as a Home Assistant add-on repository:
 
@@ -37,9 +56,13 @@ Add this repository as a Home Assistant add-on repository:
 https://github.com/moryoav/ha-addons
 ```
 
+[![Open the WhatsappV2 add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
+
 Install and start the `WhatsappV2` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. Scan it with the WhatsApp mobile app.
 
 ### 2. Install the integration
+
+[![Open the WhatsApp HACS repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=moryoav&repository=ha-addons&category=integration)
 
 Install the integration with HACS as a custom repository until it is accepted as a HACS default:
 
@@ -59,6 +82,8 @@ Manual installation is also supported by copying `custom_components/whatsapp` in
 ### 3. Configure the integration
 
 In Home Assistant, go to:
+
+[![Add the WhatsApp integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=whatsapp)
 
 ```text
 Settings > Devices & services > Add integration > WhatsApp
@@ -215,3 +240,11 @@ The integration supports Home Assistant diagnostics. Diagnostics include whether
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development notes, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CHANGELOG.md](CHANGELOG.md) for release history.
+
+[hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=flat-square
+[hacs-url]: https://github.com/hacs/integration
+[release-badge]: https://img.shields.io/github/v/release/moryoav/ha-addons?style=flat-square
+[release-url]: https://github.com/moryoav/ha-addons/releases
+[downloads-badge]: https://img.shields.io/github/downloads/moryoav/ha-addons/total?style=flat-square
+[license-badge]: https://img.shields.io/github/license/moryoav/ha-addons?style=flat-square
+[license-url]: https://github.com/moryoav/ha-addons/blob/main/LICENSE

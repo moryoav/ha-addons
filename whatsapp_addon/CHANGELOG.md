@@ -2,6 +2,8 @@
 
 - Added an add-on `/health` endpoint for the HACS-managed integration setup flow and diagnostics.
 - Added Supervisor discovery registration so the HACS-managed integration can detect the add-on automatically without a URL prompt.
+- Added Home Assistant My links to the add-on README and documented the add-on security posture.
+- Improved the add-on store description and explicitly enabled AppArmor in add-on metadata.
 - Stopped overwriting an existing `/config/custom_components/whatsapp` integration when HACS or a manual install already manages it.
 - Moved the bundled compatibility component manifest to a runtime template so repository Hassfest validation only sees the HACS integration.
 - Aligned the package license metadata with the repository Apache-2.0 license.

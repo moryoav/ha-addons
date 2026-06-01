@@ -22,13 +22,25 @@ This add-on runs the local WhatsApp Web bridge used by the `whatsapp` Home Assis
 
 This project uses WhatsApp Web through an unofficial client library. WhatsApp does not officially support bots or unofficial clients, so account restrictions or blocking are possible. Use a dedicated account if that risk matters to you.
 
+## Security notes
+
+- No HTTP port is published to the LAN.
+- The local bridge API is used from the Home Assistant add-on network.
+- AppArmor is enabled.
+- No Docker API access, host network, host PID, host UTS, `full_access`, privileged capabilities, or elevated Supervisor role are used.
+- `/config` is mounted read-write only to preserve compatibility with legacy custom component installs.
+
 ## Installation
+
+[![Add the WhatsApp add-on repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
 Add this repository as a Home Assistant add-on repository:
 
 ```text
 https://github.com/moryoav/ha-addons
 ```
+
+[![Open the WhatsappV2 add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
 Install and start `WhatsappV2`. In a few seconds, Home Assistant should show a persistent notification with a QR code. Scan it with the WhatsApp mobile app.
 

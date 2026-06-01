@@ -13,7 +13,10 @@ All notable changes to this repository are documented here.
 - Added `SECURITY.md`, `SUPPORT.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `AGENTS.md`.
 - Added an add-on `/health` endpoint so setup and diagnostics can verify add-on availability.
 - Added Supervisor discovery registration from the add-on and automatic add-on detection in the integration, removing the need to enter a URL.
+- Added Home Assistant My links for the add-on repository, add-on page, HACS repository, and integration setup flow.
+- Documented the add-on security posture against the Home Assistant app presentation guidance.
 - Changed the add-on startup behavior so it does not overwrite an existing HACS-managed `/config/custom_components/whatsapp` integration.
+- Improved the add-on store description and explicitly enabled AppArmor in add-on metadata.
 - Moved the bundled legacy add-on component manifest to a runtime template so Hassfest validates only the HACS integration.
 - Aligned the add-on package license metadata with the repository Apache-2.0 license.
 - Removed the donation badge from the root and add-on README files.
