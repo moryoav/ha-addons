@@ -1,3 +1,9 @@
+## 1.4.28
+
+- Expanded the installation guide with numbered add-on, HACS, manual integration, and setup-flow steps.
+- Added a Home Assistant HACS repository button to the add-on README.
+- Replaced relative documentation links with GitHub links that work from the Home Assistant add-on page.
+
 ## 1.4.27
 
 - Fixed the Ingress web UI route when Home Assistant opens the add-on through `/app/<slug>` and forwards the root path as `//`.

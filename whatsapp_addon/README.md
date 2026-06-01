@@ -46,19 +46,87 @@ This repository does not currently publish a separate canary or `next` branch. I
 
 ## Installation
 
+### 1. Add the add-on repository
+
 [![Add the WhatsApp add-on repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Add this repository as a Home Assistant add-on repository:
+Use the button above to add this repository to Home Assistant's Apps store.
+
+If you prefer to do it manually:
+
+1. Go to **Settings** -> **Apps**.
+2. Open the menu in the top right.
+3. Choose **Repositories**.
+4. Add this repository URL:
 
 ```text
 https://github.com/moryoav/ha-addons
 ```
 
+### 2. Install and start the add-on
+
 [![Open the WhatsappV2 add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start `WhatsappV2`. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
+Use the button above after adding the repository. It opens the `WhatsappV2` add-on page.
 
-For the modern integration setup, install `custom_components/whatsapp` through HACS or manually. The add-on advertises its local API through Supervisor discovery, so the integration does not ask for a URL.
+1. Install `WhatsappV2`.
+2. Review the add-on options.
+3. Start the add-on.
+
+In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
+
+### 3. Install the custom integration
+
+The add-on runs the local WhatsApp bridge. The `whatsapp` custom integration exposes the Home Assistant actions, events, diagnostics, and setup flow that use that bridge. Install the integration with HACS or manually.
+
+#### HACS
+
+[![Open the WhatsApp HACS repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=moryoav&repository=ha-addons&category=integration)
+
+Use the button above to add and open the WhatsApp custom repository in HACS.
+
+If you prefer to do it manually:
+
+1. Open HACS.
+2. Add a custom repository.
+3. Use this URL:
+
+```text
+https://github.com/moryoav/ha-addons
+```
+
+4. Select category **Integration**.
+5. Install **WhatsApp**.
+6. Restart Home Assistant.
+
+#### Manual
+
+Copy:
+
+```text
+custom_components/whatsapp
+```
+
+to:
+
+```text
+/config/custom_components/whatsapp
+```
+
+Then restart Home Assistant.
+
+### 4. Add the integration
+
+[![Add the WhatsApp integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=whatsapp)
+
+Use the button above after Home Assistant restarts. It opens the **WhatsApp** integration setup flow.
+
+In Home Assistant:
+
+1. Go to **Settings** -> **Devices & services**.
+2. Add integration **WhatsApp**.
+
+The add-on advertises its local API through Supervisor discovery, so the integration does not ask for a URL. If setup cannot detect the add-on yet, confirm `WhatsappV2` is running, then restart the add-on and submit the setup flow again.
 
 ## Add-on options
 
@@ -76,6 +144,6 @@ The add-on also registers a Supervisor discovery message on startup so Home Assi
 
 ## Documentation
 
-See [../README.md](../README.md) for HACS integration setup, actions, events, examples, troubleshooting, and removal instructions.
+See [the repository README](https://github.com/moryoav/ha-addons/blob/main/README.md) for HACS integration setup, actions, events, examples, troubleshooting, and removal instructions.
 
-See [DOCS.md](DOCS.md) for additional action examples and [CHANGELOG.md](CHANGELOG.md) for add-on release notes.
+See [the add-on documentation](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md) for additional action examples and [the add-on changelog](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/CHANGELOG.md) for release notes.
