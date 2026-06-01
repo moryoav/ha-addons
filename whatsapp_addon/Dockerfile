@@ -20,5 +20,5 @@ COPY --from=build-baileys /Baileys /Baileys
 RUN chmod a+x /run.sh /finish.sh \
  && npm install -f
 
-EXPOSE 3000
+EXPOSE 3000 8099
 CMD [ "/run.sh" ]

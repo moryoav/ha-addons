@@ -30,7 +30,9 @@ This project uses WhatsApp Web through an unofficial client library. WhatsApp do
 - No Docker API access, host network, host PID, host UTS, `full_access`, privileged capabilities, or elevated Supervisor role are used.
 - `/config` is mounted read-write only to preserve compatibility with legacy custom component installs.
 - A Supervisor watchdog uses the local `/health` endpoint.
-- Ingress is not enabled because this add-on has no web UI; QR pairing is shown through Home Assistant persistent notifications.
+- Home Assistant Ingress is enabled for the add-on web UI.
+- The web UI listener only accepts the Supervisor ingress proxy address, and no HTTP port is published to the LAN.
+- QR pairing is shown in the add-on web UI and through Home Assistant persistent notifications.
 
 ## Stable and canary builds
 
@@ -54,7 +56,7 @@ https://github.com/moryoav/ha-addons
 
 [![Open the WhatsappV2 add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start `WhatsappV2`. In a few seconds, Home Assistant should show a persistent notification with a QR code. Scan it with the WhatsApp mobile app.
+Install and start `WhatsappV2`. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
 
 For the modern integration setup, install `custom_components/whatsapp` through HACS or manually. The add-on advertises its local API through Supervisor discovery, so the integration does not ask for a URL.
 
@@ -63,6 +65,8 @@ For the modern integration setup, install `custom_components/whatsapp` through H
 - `clients`: one or more WhatsApp session names. The default is `default`.
 
 Each client gets its own persisted session and must be referenced by `clientId` in service calls.
+
+The add-on page includes an Open Web UI action through Home Assistant Ingress. The web UI shows each configured session, its connection state, and the current QR code when a session is waiting for pairing.
 
 ## Compatibility behavior
 

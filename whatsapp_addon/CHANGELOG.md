@@ -1,3 +1,9 @@
+## 1.4.26
+
+- Added a Home Assistant Ingress web UI with session status and QR pairing display.
+- Served the web UI on a dedicated ingress listener that only accepts the Supervisor ingress proxy while keeping the add-on API on the existing internal port.
+- Updated add-on metadata so Home Assistant shows the Open Web UI action.
+
 ## 1.4.25
 
 - Removed the unsupported custom `services` metadata entry so Home Assistant Supervisor accepts the add-on repository again while keeping the required `discovery` declaration.

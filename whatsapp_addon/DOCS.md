@@ -26,11 +26,15 @@ This repository does not currently publish a separate canary or `next` branch. I
 
 ## Security and network access
 
-The add-on exposes no Home Assistant LAN port and has no web UI, so Ingress is not enabled. QR pairing is shown through Home Assistant persistent notifications.
+The add-on exposes no Home Assistant LAN port. Home Assistant Ingress is enabled for the add-on web UI, and the web UI listener only accepts the Supervisor ingress proxy address. QR pairing is shown in the add-on web UI and through Home Assistant persistent notifications.
 
 The add-on includes a custom AppArmor profile, runs without host networking, Docker API access, privileged capabilities, `full_access`, host PID, or host UTS, and uses the default Supervisor API role. A watchdog calls the local `/health` endpoint so Supervisor can monitor the app after startup.
 
 The `/config` mount is read-write only for legacy compatibility component installation. If HACS or a manual install already manages `/config/custom_components/whatsapp`, the add-on leaves those files in place.
+
+## Web UI
+
+Open the add-on page and select Open Web UI. The Ingress UI shows each configured WhatsApp session, its connection state, and the current pairing QR code when a session is waiting for pairing.
 
 ### **How to get a User ID**
 

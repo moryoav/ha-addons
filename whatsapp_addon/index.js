@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const axios = require("axios");
 const fs = require("fs");
+const { createWebUiApp, INGRESS_PORT } = require("./webui");
 
 var logger = require("log4js").getLogger();
 logger.level = "info";
@@ -21,6 +22,23 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 const clients = {};
+const clientStates = {};
+
+const currentIsoTime = () => new Date().toISOString();
+
+const setClientState = (key, state) => {
+  clientStates[key] = {
+    clientId: key,
+    ...clientStates[key],
+    ...state,
+    updatedAt: currentIsoTime(),
+  };
+};
+
+const createQrDataUrl = (qr) =>
+  `data:image/png;base64,${qrimage
+    .imageSync(qr, { type: "png" })
+    .toString("base64")}`;
 
 const summarizeId = (id) => {
   if (!id) return undefined;
@@ -49,6 +67,13 @@ const summarizeMessageDebug = (msg) => ({
 });
 
 const onReady = (key) => {
+  setClientState(key, {
+    state: "connected",
+    connectedAt: currentIsoTime(),
+    disconnectedAt: null,
+    lastErrorCode: null,
+    qrDataUrl: null,
+  });
   logger.info(key, "client is ready.");
   axios.post(
     "http://supervisor/core/api/services/persistent_notification/dismiss",
@@ -69,15 +94,19 @@ const onQr = (qr, key) => {
     "require authentication over QRCode, please see your notifications..."
   );
 
-  var code = qrimage.image(qr, { type: "png" });
+  try {
+    const qrDataUrl = createQrDataUrl(qr);
+    setClientState(key, {
+      state: "pairing",
+      lastQrAt: currentIsoTime(),
+      qrDataUrl,
+    });
 
-  code.on("readable", function () {
-    var img_string = code.read().toString("base64");
     axios.post(
       "http://supervisor/core/api/services/persistent_notification/create",
       {
         title: `Whatsapp QRCode (${key})`,
-        message: `Please scan the following QRCode for **${key}** client... ![QRCode](data:image/png;base64,${img_string})`,
+        message: `Please scan the following QRCode for **${key}** client... ![QRCode](${qrDataUrl})`,
         notification_id: `whatsapp_addon_qrcode_${key}`,
       },
       {
@@ -86,6 +115,20 @@ const onQr = (qr, key) => {
         },
       }
     );
+  } catch (error) {
+    logger.error("Failed to generate WhatsApp QR code image.", {
+      clientId: key,
+      error: error?.message,
+    });
+  }
+};
+
+const onDisconnected = (statusCode, key) => {
+  setClientState(key, {
+    state: "reconnecting",
+    disconnectedAt: currentIsoTime(),
+    lastErrorCode: statusCode || null,
+    qrDataUrl: null,
   });
 };
 
@@ -215,6 +258,11 @@ const registerDiscovery = () => {
 };
 
 const onLogout = async (key) => {
+  setClientState(key, {
+    state: "logged_out",
+    disconnectedAt: currentIsoTime(),
+    qrDataUrl: null,
+  });
   logger.info(`Client ${key} was logged out. Restarting...`);
   fs.rm(`/data/${key}`, { recursive: true });
 
@@ -222,11 +270,21 @@ const onLogout = async (key) => {
 };
 
 const init = (key) => {
+  setClientState(key, {
+    state: "connecting",
+    qrDataUrl: null,
+  });
   clients[key] = new WhatsappClient({ path: `/data/${key}` });
 
-  clients[key].on("restart", () => logger.debug(`${key} client restarting...`));
+  clients[key].on("restart", () => {
+    setClientState(key, { state: "restarting" });
+    logger.debug(`${key} client restarting...`);
+  });
   clients[key].on("qr", (qr) => onQr(qr, key));
-  clients[key].once("ready", () => onReady(key));
+  clients[key].on("ready", () => onReady(key));
+  clients[key].on("disconnected", (statusCode) =>
+    onDisconnected(statusCode, key)
+  );
   clients[key].on("msg", (msg) => onMsg(msg, key));
   clients[key].on("msg_upsert", (upsert) => onMsgUpsert(upsert, key));
   clients[key].on("msg_ignored", (ignored) => onIgnoredMsg(ignored, key));
@@ -418,5 +476,9 @@ fs.readFile("data/options.json", function (error, content) {
   app.listen(port, () => {
     logger.info(`Whatsapp Addon started.`);
     registerDiscovery();
+  });
+
+  createWebUiApp({ clients, clientStates }).listen(INGRESS_PORT, () => {
+    logger.info(`Whatsapp Addon ingress web UI started.`);
   });
 });

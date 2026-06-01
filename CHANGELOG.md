@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.26
+
+- Added a Home Assistant Ingress web UI for the WhatsApp add-on with session status and QR pairing display.
+- Kept the existing integration API on the internal add-on port while serving the web UI on an ingress-only listener.
+- Documented the new Ingress entry point and QR pairing options.
+
 ## 1.4.25
 
 - Removed the unsupported custom `services` metadata entry so Home Assistant Supervisor accepts the add-on repository again while keeping the required `discovery` declaration.
