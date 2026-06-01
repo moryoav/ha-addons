@@ -64,13 +64,9 @@ In Home Assistant, go to:
 Settings > Devices & services > Add integration > WhatsApp
 ```
 
-Enter the local add-on URL. The default is:
+No URL is required. The add-on advertises itself through Supervisor discovery, and the integration stores the detected local add-on URL automatically.
 
-```text
-http://whatsapp_addon:3000
-```
-
-If that hostname is not reachable in your installation, use the add-on hostname or IP address that Home Assistant can reach, including port `3000`.
+If the integration cannot detect the add-on yet, confirm the `WhatsappV2` add-on is installed and running, then submit the setup flow again or restart the add-on.
 
 ## Configuration parameters
 
@@ -84,11 +80,9 @@ Each client gets its own QR-code pairing flow and persisted add-on session data.
 
 ### Integration
 
-The integration setup flow accepts:
+The integration has no user-entered setup parameters. It detects the running add-on through Home Assistant Supervisor discovery.
 
-- `Add-on URL`: the local HTTP URL for the running add-on.
-
-You can update the URL later by reconfiguring the integration from the integration entry menu.
+You can use the integration entry menu to reconfigure later; reconfiguration rediscovers the add-on URL automatically.
 
 ## Actions
 
@@ -196,15 +190,15 @@ data:
 
 ## Data updates
 
-The integration does not poll WhatsApp. The add-on pushes message and presence events into Home Assistant as they arrive, and actions call the local add-on API on demand.
+The integration does not poll WhatsApp. The add-on pushes message and presence events into Home Assistant as they arrive, advertises its local API through Supervisor discovery, and actions call the local add-on API on demand.
 
 ## Diagnostics
 
-The integration supports Home Assistant diagnostics. Diagnostics include whether an add-on URL is configured, whether the add-on health endpoint is reachable, and the number of configured add-on clients. The configured URL and message contents are not included.
+The integration supports Home Assistant diagnostics. Diagnostics include whether the add-on was detected, whether the add-on health endpoint is reachable, and the number of configured add-on clients. The detected URL and message contents are not included.
 
 ## Troubleshooting
 
-- If setup cannot connect, confirm the add-on is running and the configured URL is reachable from Home Assistant.
+- If setup cannot connect, confirm the add-on is installed and running, then restart the add-on so it can publish Supervisor discovery.
 - If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
 - If messages are not received, check the add-on logs for QR-code, session, and WhatsApp connection messages.
 - If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
@@ -214,8 +208,9 @@ The integration supports Home Assistant diagnostics. Diagnostics include whether
 
 1. Delete the WhatsApp integration from Home Assistant.
 2. Remove the `WhatsappV2` add-on.
-3. Delete `/config/custom_components/whatsapp` if you installed manually.
-4. Restart Home Assistant.
+3. Remove any legacy `whatsapp:` YAML from `configuration.yaml` if you still have it.
+4. Delete `/config/custom_components/whatsapp` if you installed manually.
+5. Restart Home Assistant.
 
 ## Development
 

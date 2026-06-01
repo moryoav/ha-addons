@@ -7,8 +7,14 @@ from typing import Final
 DOMAIN: Final = "whatsapp"
 
 CONF_URL: Final = "url"
-DEFAULT_URL: Final = "http://whatsapp_addon:3000"
 DEFAULT_TIMEOUT: Final = 10
+ADDON_DISCOVERY_SERVICE: Final = DOMAIN
+ADDON_PORT: Final = 3000
+ADDON_FALLBACK_HOSTS: Final = (
+    "ea396823-whatsapp-addon",
+    "whatsapp-addon",
+    "whatsapp_addon",
+)
 
 SERVICE_SEND_MESSAGE: Final = "send_message"
 SERVICE_SET_STATUS: Final = "set_status"

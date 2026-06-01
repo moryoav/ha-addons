@@ -3,6 +3,7 @@
   "name": "WhatsApp",
   "codeowners": ["@moryoav"],
   "config_flow": true,
+  "after_dependencies": ["hassio"],
   "documentation": "https://github.com/moryoav/ha-addons",
   "integration_type": "service",
   "iot_class": "local_push",

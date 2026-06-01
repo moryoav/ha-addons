@@ -32,7 +32,7 @@ https://github.com/moryoav/ha-addons
 
 Install and start `WhatsappV2`. In a few seconds, Home Assistant should show a persistent notification with a QR code. Scan it with the WhatsApp mobile app.
 
-For the modern integration setup, install `custom_components/whatsapp` through HACS or manually, then add the WhatsApp integration from Home Assistant's Devices & services page.
+For the modern integration setup, install `custom_components/whatsapp` through HACS or manually. The add-on advertises its local API through Supervisor discovery, so the integration does not ask for a URL.
 
 ## Add-on options
 
@@ -43,6 +43,8 @@ Each client gets its own persisted session and must be referenced by `clientId` 
 ## Compatibility behavior
 
 If `/config/custom_components/whatsapp/manifest.json` already exists, the add-on leaves it in place so HACS can manage the integration. If no custom component exists, the add-on installs its bundled compatibility component.
+
+The add-on also registers a Supervisor discovery message on startup so Home Assistant can create or update the WhatsApp integration automatically.
 
 ## Documentation
 

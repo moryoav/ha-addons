@@ -176,6 +176,38 @@ const onPresenceUpdate = (presence, key) => {
   logger.debug(`New presence event fired from ${key}.`);
 };
 
+const registerDiscovery = () => {
+  const hostname = process.env.HOSTNAME;
+  const addonUrl = `http://${hostname || "whatsapp-addon"}:${port}`;
+
+  axios
+    .post(
+      "http://supervisor/discovery",
+      {
+        service: "whatsapp",
+        config: {
+          url: addonUrl,
+          host: hostname,
+          port,
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.SUPERVISOR_TOKEN}`,
+        },
+      }
+    )
+    .then(() => {
+      logger.info("Registered WhatsApp add-on discovery.", { url: addonUrl });
+    })
+    .catch((error) => {
+      logger.warn("Failed to register WhatsApp add-on discovery.", {
+        status: error?.response?.status,
+        error: error?.message,
+      });
+    });
+};
+
 const onLogout = async (key) => {
   logger.info(`Client ${key} was logged out. Restarting...`);
   fs.rm(`/data/${key}`, { recursive: true });
@@ -210,6 +242,7 @@ fs.readFile("data/options.json", function (error, content) {
   });
 
   app.listen(port, () => logger.info(`Whatsapp Addon started.`));
+  registerDiscovery();
 
   app.get("/health", (req, res) => {
     const clientIds = Object.keys(clients);

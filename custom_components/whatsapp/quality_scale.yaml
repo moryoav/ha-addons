@@ -52,12 +52,8 @@ rules:
     status: exempt
     comment: The integration connects to a local add-on service and does not represent physical or logical Home Assistant devices.
   diagnostics: done
-  discovery-update-info:
-    status: exempt
-    comment: The add-on is configured by URL and has no discovery payload with mutable network information.
-  discovery:
-    status: exempt
-    comment: The add-on does not advertise itself through a Home Assistant discovery mechanism.
+  discovery-update-info: done
+  discovery: done
   docs-data-update: done
   docs-examples: done
   docs-known-limitations: done

@@ -3,30 +3,19 @@
     "step": {
       "user": {
         "title": "WhatsApp Add-on",
-        "description": "Connect Home Assistant to the local WhatsApp add-on HTTP API.",
-        "data": {
-          "url": "Add-on URL"
-        },
-        "data_description": {
-          "url": "Full local URL for the WhatsApp add-on, including protocol and port."
-        }
+        "description": "Home Assistant will detect the local WhatsApp add-on automatically. Start the add-on and submit again if it is not detected yet."
       },
       "reconfigure": {
         "title": "Reconfigure WhatsApp Add-on",
-        "description": "Update the local WhatsApp add-on HTTP API URL.",
-        "data": {
-          "url": "Add-on URL"
-        },
-        "data_description": {
-          "url": "Full local URL for the WhatsApp add-on, including protocol and port."
-        }
+        "description": "Home Assistant will rediscover the local WhatsApp add-on automatically."
       }
     },
     "error": {
-      "cannot_connect": "Could not connect to the WhatsApp add-on.",
-      "invalid_url": "Enter a valid HTTP or HTTPS URL."
+      "cannot_connect": "Could not detect a running WhatsApp add-on."
     },
     "abort": {
+      "already_configured": "WhatsApp is already configured.",
+      "cannot_connect": "Could not detect a running WhatsApp add-on.",
       "single_instance_allowed": "WhatsApp is already configured.",
       "reconfigure_successful": "WhatsApp was reconfigured successfully."
     }
