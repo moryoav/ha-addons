@@ -79,7 +79,3 @@ The add-on also registers a Supervisor discovery message on startup so Home Assi
 See [../README.md](../README.md) for HACS integration setup, actions, events, examples, troubleshooting, and removal instructions.
 
 See [DOCS.md](DOCS.md) for additional action examples and [CHANGELOG.md](CHANGELOG.md) for add-on release notes.
-
-## Release note
-
-Every add-on change should bump `whatsapp_addon/config.yaml` so Home Assistant can detect the update.

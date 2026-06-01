@@ -3,6 +3,29 @@ const path = require("path");
 const INGRESS_PORT = 8099;
 const INGRESS_PROXY_IP = "172.30.32.2";
 
+const escapeHtmlAttribute = (value) =>
+  String(value).replace(/[&<>"']/g, (char) => {
+    const replacements = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return replacements[char];
+  });
+
+const normalizeRequestUrl = (url) => (url || "/").replace(/^\/{2,}/, "/");
+
+const normalizeBaseHref = (ingressPath) => {
+  if (!ingressPath) return "./";
+
+  const path = String(ingressPath).trim();
+  if (!path || path.includes("://") || path.startsWith("//")) return "./";
+
+  return `${path.replace(/\/+$/, "")}/`;
+};
+
 const normalizeRemoteAddress = (address) =>
   (address || "").replace(/^::ffff:/, "").replace(/^\[|\]$/g, "");
 
@@ -56,13 +79,19 @@ const createStatusSnapshot = ({ clients, clientStates }) => {
   };
 };
 
-const renderWebUi = () => `<!doctype html>
+const getIngressPath = (req) =>
+  req?.get?.("X-Ingress-Path") || req?.get?.("x-ingress-path") || "";
+
+const renderWebUi = ({ ingressPath } = {}) => {
+  const baseHref = escapeHtmlAttribute(normalizeBaseHref(ingressPath));
+
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <base href="./">
+  <base href="${baseHref}">
   <title>WhatsApp Add-on</title>
   <style>
     :root {
@@ -502,6 +531,7 @@ const renderWebUi = () => `<!doctype html>
   </script>
 </body>
 </html>`;
+};
 
 const createWebUiApp = ({ clients, clientStates }) => {
   const express = require("express");
@@ -510,20 +540,24 @@ const createWebUiApp = ({ clients, clientStates }) => {
   app.disable("x-powered-by");
   app.use(createIngressGuard());
   app.use((req, res, next) => {
+    req.url = normalizeRequestUrl(req.url);
+    next();
+  });
+  app.use((req, res, next) => {
     res.set("Cache-Control", "no-store");
     next();
   });
 
-  app.get("/", (req, res) => {
-    res.type("html").send(renderWebUi());
-  });
-
-  app.get("/api/status", (req, res) => {
+  app.get(/\/api\/status$/, (req, res) => {
     res.json(createStatusSnapshot({ clients, clientStates }));
   });
 
-  app.get("/assets/logo.png", (req, res) => {
+  app.get(/\/assets\/logo\.png$/, (req, res) => {
     res.sendFile(path.join(__dirname, "logo.png"));
+  });
+
+  app.get("*", (req, res) => {
+    res.type("html").send(renderWebUi({ ingressPath: getIngressPath(req) }));
   });
 
   return app;
@@ -534,7 +568,10 @@ module.exports = {
   createIngressGuard,
   createStatusSnapshot,
   createWebUiApp,
+  getIngressPath,
   isIngressProxyAddress,
   isIngressProxyRequest,
+  normalizeBaseHref,
+  normalizeRequestUrl,
   renderWebUi,
 };

@@ -1,3 +1,9 @@
+## 1.4.27
+
+- Fixed the Ingress web UI route when Home Assistant opens the add-on through `/app/<slug>` and forwards the root path as `//`.
+- Used the Home Assistant `X-Ingress-Path` header for web UI asset and status API links.
+- Removed an internal release-process note from the user-facing add-on README.
+
 ## 1.4.26
 
 - Added a Home Assistant Ingress web UI with session status and QR pairing display.

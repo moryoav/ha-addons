@@ -4,6 +4,8 @@ const {
   createIngressGuard,
   createStatusSnapshot,
   isIngressProxyAddress,
+  normalizeBaseHref,
+  normalizeRequestUrl,
   renderWebUi,
 } = require("../webui");
 
@@ -89,10 +91,21 @@ const testStatusSnapshot = () => {
   assert.strictEqual(snapshot.clients[2].connectedAt, "2026-06-01T00:01:00.000Z");
 };
 
+const testPathNormalization = () => {
+  assert.strictEqual(normalizeRequestUrl("//"), "/");
+  assert.strictEqual(normalizeRequestUrl("//api/status"), "/api/status");
+  assert.strictEqual(normalizeRequestUrl("/api/status"), "/api/status");
+  assert.strictEqual(normalizeBaseHref(""), "./");
+  assert.strictEqual(normalizeBaseHref("/api/hassio_ingress/token"), "/api/hassio_ingress/token/");
+  assert.strictEqual(normalizeBaseHref("/api/hassio_ingress/token/"), "/api/hassio_ingress/token/");
+  assert.strictEqual(normalizeBaseHref("//example.com/bad"), "./");
+};
+
 const testRenderWebUi = () => {
-  const html = renderWebUi();
+  const html = renderWebUi({ ingressPath: "/api/hassio_ingress/token" });
 
   assert.ok(html.includes("<title>WhatsApp Add-on</title>"));
+  assert.ok(html.includes('<base href="/api/hassio_ingress/token/">'));
   assert.ok(html.includes('src="assets/logo.png"'));
   assert.ok(html.includes('fetch("api/status"'));
 };
@@ -100,6 +113,7 @@ const testRenderWebUi = () => {
 testIngressAddressGuard();
 testIngressMiddleware();
 testStatusSnapshot();
+testPathNormalization();
 testRenderWebUi();
 
 console.log("webui tests passed");

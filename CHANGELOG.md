@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.27
+
+- Fixed the add-on Ingress web UI when Home Assistant opens it through the `/app/<slug>` route and forwards the root path as `//`.
+- Used the Home Assistant `X-Ingress-Path` header for web UI asset and status API links.
+- Removed an internal release-process note from the add-on README.
+
 ## 1.4.26
 
 - Added a Home Assistant Ingress web UI for the WhatsApp add-on with session status and QR pairing display.
