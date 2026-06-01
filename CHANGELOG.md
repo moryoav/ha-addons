@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.24
+
+- Declared the WhatsApp Supervisor discovery service in add-on metadata so `/discovery` registration is allowed and no longer logs a 403 warning.
+- Registered HTTP routes before starting the add-on server and publishing Supervisor discovery.
+
 ## 1.4.23
 
 - Added a custom AppArmor profile, Supervisor watchdog metadata, stable stage metadata, and current Home Assistant app map syntax for the add-on.

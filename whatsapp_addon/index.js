@@ -201,7 +201,13 @@ const registerDiscovery = () => {
       logger.info("Registered WhatsApp add-on discovery.", { url: addonUrl });
     })
     .catch((error) => {
-      logger.warn("Failed to register WhatsApp add-on discovery.", {
+      const status = error?.response?.status;
+      const message =
+        status === 403
+          ? "Supervisor denied WhatsApp add-on discovery registration. The add-on metadata must declare discovery service 'whatsapp'."
+          : "Failed to register WhatsApp add-on discovery.";
+      logger.warn(message, {
+        service: "whatsapp",
         status: error?.response?.status,
         error: error?.message,
       });
@@ -240,9 +246,6 @@ fs.readFile("data/options.json", function (error, content) {
   options.clients.forEach((key) => {
     init(key);
   });
-
-  app.listen(port, () => logger.info(`Whatsapp Addon started.`));
-  registerDiscovery();
 
   app.get("/health", (req, res) => {
     const clientIds = Object.keys(clients);
@@ -410,5 +413,10 @@ fs.readFile("data/options.json", function (error, content) {
       logger.error("Error in presence update. Please specify client ID.");
       res.send("KO");
     }
+  });
+
+  app.listen(port, () => {
+    logger.info(`Whatsapp Addon started.`);
+    registerDiscovery();
   });
 });
