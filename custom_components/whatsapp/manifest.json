@@ -1,0 +1,14 @@
+{
+  "domain": "whatsapp",
+  "name": "WhatsApp",
+  "after_dependencies": ["hassio"],
+  "codeowners": ["@moryoav"],
+  "config_flow": true,
+  "documentation": "https://github.com/moryoav/ha-addons",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/moryoav/ha-addons/issues",
+  "quality_scale": "gold",
+  "requirements": [],
+  "version": "1.4.22"
+}

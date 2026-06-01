@@ -1,0 +1,26 @@
+# Changelog
+
+All notable changes to this repository are documented here.
+
+## 1.4.22
+
+- Added a HACS-compatible `custom_components/whatsapp` integration with config flow setup, reconfiguration, diagnostics, translated service errors, and service schemas.
+- Added Home Assistant test scaffolding for config flow, setup, service error, and diagnostics behavior.
+- Added `hacs.json`, HACS validation, and Hassfest validation workflows for HACS publishing readiness.
+- Added local brand assets for the HACS integration.
+- Added Home Assistant quality scale tracking for the WhatsApp integration.
+- Added root project documentation for installation, actions, events, diagnostics, troubleshooting, limitations, and removal.
+- Added `SECURITY.md`, `SUPPORT.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `AGENTS.md`.
+- Added an add-on `/health` endpoint so setup and diagnostics can verify add-on availability.
+- Added Supervisor discovery registration from the add-on and automatic add-on detection in the integration, removing the need to enter a URL.
+- Added Home Assistant My links for the add-on repository, add-on page, HACS repository, and integration setup flow.
+- Documented the add-on security posture against the Home Assistant app presentation guidance.
+- Changed the add-on startup behavior so it does not overwrite an existing HACS-managed `/config/custom_components/whatsapp` integration.
+- Improved the add-on store description and explicitly enabled AppArmor in add-on metadata.
+- Moved the bundled legacy add-on component manifest to a runtime template so Hassfest validates only the HACS integration.
+- Aligned the add-on package license metadata with the repository Apache-2.0 license.
+- Removed the donation badge from the root and add-on README files.
+
+## Earlier releases
+
+Earlier add-on-specific release notes are maintained in `whatsapp_addon/CHANGELOG.md`.

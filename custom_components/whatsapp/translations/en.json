@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "WhatsApp Add-on",
+        "description": "Home Assistant will detect the local WhatsApp add-on automatically. Start the add-on and submit again if it is not detected yet."
+      },
+      "reconfigure": {
+        "title": "Reconfigure WhatsApp Add-on",
+        "description": "Home Assistant will rediscover the local WhatsApp add-on automatically."
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not detect a running WhatsApp add-on."
+    },
+    "abort": {
+      "already_configured": "WhatsApp is already configured.",
+      "cannot_connect": "Could not detect a running WhatsApp add-on.",
+      "single_instance_allowed": "WhatsApp is already configured.",
+      "reconfigure_successful": "WhatsApp was reconfigured successfully."
+    }
+  },
+  "exceptions": {
+    "api_request_failed": {
+      "message": "Could not complete {action}: {error}"
+    },
+    "cannot_connect": {
+      "message": "Could not connect to the WhatsApp add-on while running {action}."
+    },
+    "not_configured": {
+      "message": "Set up the WhatsApp integration before calling this action."
+    }
+  }
+}

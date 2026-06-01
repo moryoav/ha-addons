@@ -1,3 +1,14 @@
+## 1.4.22
+
+- Added an add-on `/health` endpoint for the HACS-managed integration setup flow and diagnostics.
+- Added Supervisor discovery registration so the HACS-managed integration can detect the add-on automatically without a URL prompt.
+- Added Home Assistant My links to the add-on README and documented the add-on security posture.
+- Improved the add-on store description and explicitly enabled AppArmor in add-on metadata.
+- Stopped overwriting an existing `/config/custom_components/whatsapp` integration when HACS or a manual install already manages it.
+- Moved the bundled compatibility component manifest to a runtime template so repository Hassfest validation only sees the HACS integration.
+- Aligned the package license metadata with the repository Apache-2.0 license.
+- Updated add-on documentation and removed the donation badge.
+
 ## 1.4.21
 
 - Fixed inbound dedupe for media messages delivered twice during LID migration when WhatsApp keeps the same message id but changes wrapper-only media fields such as thumbnails, CDN paths, scan sidecars, or media key timestamp representation.

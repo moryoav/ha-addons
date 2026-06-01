@@ -1,10 +1,11 @@
 name: WhatsappV2
-version: "1.4.21"
+version: "1.4.22"
 slug: whatsapp_addon
-description: (new) Whatsapp addon for send message from Home Assistant
+description: WhatsApp Web bridge for Home Assistant actions and events
 url: "https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon"
 homeassistant_api: true
 hassio_api: true
+apparmor: true
 arch:
   - armhf
   - armv7

@@ -1,0 +1,154 @@
+send_message:
+  name: Send message
+  description: Send a WhatsApp message through the configured add-on.
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to send the message from.
+      required: true
+      example: default
+      selector:
+        text:
+    to:
+      name: Target
+      description: WhatsApp phone, LID, group, or broadcast JID.
+      required: true
+      example: 391234567890@s.whatsapp.net
+      selector:
+        text:
+    body:
+      name: Body
+      description: Message payload accepted by the WhatsApp add-on.
+      required: true
+      advanced: true
+      selector:
+        object:
+    options:
+      name: Options
+      description: Optional Baileys send options, such as quoted message data.
+      required: false
+      advanced: true
+      selector:
+        object:
+
+set_status:
+  name: Set status
+  description: Set the WhatsApp account status message.
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:
+    status:
+      name: Status
+      description: New WhatsApp status message.
+      required: true
+      example: Available
+      selector:
+        text:
+
+presence_subscribe:
+  name: Presence subscribe
+  description: Subscribe to WhatsApp presence updates for a contact.
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:
+    userId:
+      name: Target user ID
+      description: WhatsApp phone or LID JID to monitor.
+      required: true
+      example: 391234567890@s.whatsapp.net
+      selector:
+        text:
+
+send_presence_update:
+  name: Send presence update
+  description: Send a one-shot WhatsApp presence update.
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:
+    type:
+      name: Presence type
+      description: Presence state to send.
+      required: true
+      example: composing
+      selector:
+        select:
+          options:
+            - unavailable
+            - available
+            - composing
+            - recording
+            - paused
+    to:
+      name: Target
+      description: Optional WhatsApp phone or LID JID.
+      required: false
+      example: 391234567890@s.whatsapp.net
+      selector:
+        text:
+
+send_infinity_presence_update:
+  name: Send long-running presence update
+  description: Send a long-running WhatsApp presence update.
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:
+    type:
+      name: Presence type
+      description: Presence state to send.
+      required: true
+      example: composing
+      selector:
+        select:
+          options:
+            - unavailable
+            - available
+            - composing
+            - recording
+            - paused
+    to:
+      name: Target
+      description: Optional WhatsApp phone or LID JID.
+      required: false
+      example: 391234567890@s.whatsapp.net
+      selector:
+        text:
+
+read_messages:
+  name: Read messages
+  description: Mark one or more received WhatsApp messages as read.
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:
+    body:
+      name: Body
+      description: Object containing the Baileys message key under keys.
+      required: true
+      example: >
+        {"keys": {"id": "3EB06268136248946FF3D5", "remoteJid": "391234567890@s.whatsapp.net", "fromMe": false}}
+      selector:
+        object:
