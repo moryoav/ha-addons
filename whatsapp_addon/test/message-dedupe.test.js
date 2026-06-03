@@ -64,6 +64,23 @@ const createImagePayload = ({
   return payload;
 };
 
+const createQuotedReplyPayload = ({
+  participant = "83614691811332@lid",
+  mentionedJid = ["83614691811332@lid"],
+} = {}) => ({
+  text: "Mark as done",
+  previewType: "NONE",
+  contextInfo: {
+    stanzaId: "3EB01A0F21F375F568B95A",
+    participant,
+    mentionedJid,
+    quotedMessage: {
+      conversation: "same quoted message",
+    },
+  },
+  inviteLinkGroupTypeV2: "DEFAULT",
+});
+
 {
   const dedupe = createDedupe();
 
@@ -129,6 +146,47 @@ const createImagePayload = ({
   assert.strictEqual(result.collision, false);
   assert.strictEqual(result.firstRemoteJid, "237434533077127@lid");
   assert.strictEqual(result.duplicateRemoteJid, "972525662800@s.whatsapp.net");
+}
+
+{
+  const dedupe = createDedupe();
+
+  assert.strictEqual(
+    dedupe.check(
+      createMessage({
+        id: "observed-quoted-reply-duplicate",
+        remoteJid: "90855889203418@lid",
+        type: "extendedTextMessage",
+        payload: createQuotedReplyPayload({
+          participant: "83614691811332@lid",
+          mentionedJid: ["83614691811332@lid"],
+        }),
+        messageTimestamp: 1780478259,
+      }),
+      "extendedTextMessage"
+    ).duplicate,
+    false
+  );
+
+  now += 10;
+  const result = dedupe.check(
+    createMessage({
+      id: "observed-quoted-reply-duplicate",
+      remoteJid: "972522241857@s.whatsapp.net",
+      type: "extendedTextMessage",
+      payload: createQuotedReplyPayload({
+        participant: "16823500132@s.whatsapp.net",
+        mentionedJid: ["16823500132@s.whatsapp.net"],
+      }),
+      messageTimestamp: { low: 1780478254, high: 0, unsigned: true },
+    }),
+    "extendedTextMessage"
+  );
+
+  assert.strictEqual(result.duplicate, true);
+  assert.strictEqual(result.collision, false);
+  assert.strictEqual(result.firstRemoteJid, "90855889203418@lid");
+  assert.strictEqual(result.duplicateRemoteJid, "972522241857@s.whatsapp.net");
 }
 
 {

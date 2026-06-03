@@ -20,14 +20,38 @@ const VOLATILE_PAYLOAD_KEYS = new Set([
   "thumbnailSha256",
   "url",
 ]);
+const DIRECT_USER_JID_PLACEHOLDER = "[direct-user-jid]";
+const UNSTABLE_JID_PAYLOAD_KEYS = new Set([
+  "author",
+  "mentionedJid",
+  "participant",
+  "senderLid",
+  "senderPn",
+]);
 
 const hasMediaPayloadKey = (value) =>
   Object.keys(value).some((key) => MEDIA_PAYLOAD_KEYS.has(key));
 
-const normalizeForHash = (value, seen = new WeakSet()) => {
+const isDirectUserJid = (value) =>
+  typeof value === "string" && /^[^@\s]+@(s\.whatsapp\.net|lid)$/.test(value);
+
+const isUnstableJidPayloadKey = (key) =>
+  typeof key === "string" &&
+  (UNSTABLE_JID_PAYLOAD_KEYS.has(key) || key.toLowerCase().endsWith("jid"));
+
+const normalizePayloadString = (value, key) => {
+  if (isUnstableJidPayloadKey(key) && isDirectUserJid(value)) {
+    return DIRECT_USER_JID_PLACEHOLDER;
+  }
+
+  return value;
+};
+
+const normalizeForHash = (value, seen = new WeakSet(), keyHint) => {
   if (value === undefined) return undefined;
   if (value === null) return null;
   if (typeof value === "bigint") return value.toString();
+  if (typeof value === "string") return normalizePayloadString(value, keyHint);
   if (typeof value !== "object") return value;
 
   if (Buffer.isBuffer(value)) {
@@ -48,7 +72,7 @@ const normalizeForHash = (value, seen = new WeakSet()) => {
 
   if (Array.isArray(value)) {
     const normalized = value.map((item) => {
-      const result = normalizeForHash(item, seen);
+      const result = normalizeForHash(item, seen, keyHint);
       return result === undefined ? null : result;
     });
     seen.delete(value);
@@ -60,7 +84,7 @@ const normalizeForHash = (value, seen = new WeakSet()) => {
   for (const key of Object.keys(value).sort()) {
     if (omitVolatilePayloadKeys && VOLATILE_PAYLOAD_KEYS.has(key)) continue;
 
-    const result = normalizeForHash(value[key], seen);
+    const result = normalizeForHash(value[key], seen, key);
     if (result !== undefined) normalized[key] = result;
   }
 
@@ -192,8 +216,10 @@ class MessageDedupe {
 module.exports = {
   DEFAULT_MAX_ENTRIES,
   DEFAULT_TTL_MS,
+  DIRECT_USER_JID_PLACEHOLDER,
   MEDIA_PAYLOAD_KEYS,
   MessageDedupe,
+  UNSTABLE_JID_PAYLOAD_KEYS,
   VOLATILE_PAYLOAD_KEYS,
   hashMessagePayload,
   stableStringify,

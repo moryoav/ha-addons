@@ -1,3 +1,9 @@
+## 1.4.29
+
+- Fixed inbound dedupe for quoted/reply messages delivered twice during LID migration when the quoted `contextInfo.participant` or other direct-user JID context fields differ between `@lid` and `@s.whatsapp.net`.
+- Kept same-id collision behavior for genuinely different stable message content.
+- Added a regression test based on the observed quoted reply duplicate trace shape.
+
 ## 1.4.28
 
 - Expanded the installation guide with numbered add-on, HACS, manual integration, and setup-flow steps.
