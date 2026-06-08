@@ -4,6 +4,7 @@ All notable changes to this repository are documented here.
 
 ## 1.4.28
 
+- Fixed the scheduled lock workflow after GitHub's longer workflow tokens exceeded the old lock action's token-length validation.
 - Expanded the add-on installation guide with numbered add-on, HACS, manual integration, and setup-flow steps.
 - Added a Home Assistant HACS repository button to the add-on README.
 - Replaced add-on README relative documentation links with GitHub links that work from the Home Assistant add-on page.
