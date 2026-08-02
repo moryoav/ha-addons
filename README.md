@@ -78,20 +78,19 @@ Install and start the `WhatsappV2` add-on. In a few seconds, Home Assistant shou
 
 [![Open the WhatsApp HACS repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=moryoav&repository=ha-addons&category=integration)
 
-Install the integration with HACS as a custom repository until it is accepted as a HACS default:
+WhatsApp is available in the default HACS catalog, so no custom repository setup is required.
 
-1. Open HACS.
-2. Open the three-dot menu and choose custom repositories.
-3. Add `https://github.com/moryoav/ha-addons`.
-4. Select category `Integration`.
-5. Install `WhatsApp`.
-6. Restart Home Assistant.
+1. Select the button above, or open HACS and search for **WhatsApp** under **Integrations**.
+2. Select **WhatsApp** and choose **Download**.
+3. Restart Home Assistant.
 
-Manual installation is also supported by copying `custom_components/whatsapp` into:
+As a manual fallback, copy `custom_components/whatsapp` into:
 
 ```text
 /config/custom_components/whatsapp
 ```
+
+Then restart Home Assistant.
 
 ### 3. Configure the integration
 
@@ -257,7 +256,7 @@ The integration supports Home Assistant diagnostics. Diagnostics include whether
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development notes, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CHANGELOG.md](CHANGELOG.md) for release history.
 
-[hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=flat-square
+[hacs-badge]: https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=flat-square
 [hacs-url]: https://github.com/hacs/integration
 [release-badge]: https://img.shields.io/github/v/release/moryoav/ha-addons?style=flat-square
 [release-url]: https://github.com/moryoav/ha-addons/releases

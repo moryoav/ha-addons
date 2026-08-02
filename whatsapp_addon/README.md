@@ -55,9 +55,10 @@ Use the button above to add this repository to Home Assistant's Apps store.
 If you prefer to do it manually:
 
 1. Go to **Settings** -> **Apps**.
-2. Open the menu in the top right.
-3. Choose **Repositories**.
-4. Add this repository URL:
+2. Select **Install app**.
+3. Open the menu in the top right.
+4. Choose **Repositories**.
+5. Add this repository URL:
 
 ```text
 https://github.com/moryoav/ha-addons
@@ -75,7 +76,7 @@ Use the button above after adding the repository. It opens the `WhatsappV2` add-
 
 In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
 
-### 3. Install the custom integration
+### 3. Install the integration
 
 The add-on runs the local WhatsApp bridge. The `whatsapp` custom integration exposes the Home Assistant actions, events, diagnostics, and setup flow that use that bridge. Install the integration with HACS or manually.
 
@@ -83,21 +84,11 @@ The add-on runs the local WhatsApp bridge. The `whatsapp` custom integration exp
 
 [![Open the WhatsApp HACS repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=moryoav&repository=ha-addons&category=integration)
 
-Use the button above to add and open the WhatsApp custom repository in HACS.
+WhatsApp is available in the default HACS catalog, so no custom repository setup is required.
 
-If you prefer to do it manually:
-
-1. Open HACS.
-2. Add a custom repository.
-3. Use this URL:
-
-```text
-https://github.com/moryoav/ha-addons
-```
-
-4. Select category **Integration**.
-5. Install **WhatsApp**.
-6. Restart Home Assistant.
+1. Select the button above, or open HACS and search for **WhatsApp** under **Integrations**.
+2. Select **WhatsApp** and choose **Download**.
+3. Restart Home Assistant.
 
 #### Manual
 
