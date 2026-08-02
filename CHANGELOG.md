@@ -2,6 +2,10 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.30
+
+- Simplified the HACS installation instructions now that WhatsApp is available in the default HACS catalog.
+
 ## 1.4.29
 
 - Fixed inbound deduplication for quoted WhatsApp replies during LID migration.
