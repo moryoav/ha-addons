@@ -44,7 +44,7 @@ rules:
     comment: The integration exposes service actions and events only, with no entity updates.
   reauthentication-flow:
     status: exempt
-    comment: The integration does not authenticate with credentials; WhatsApp account pairing is handled by the add-on QR flow.
+    comment: The optional local API token is configured in add-on options and delivered or refreshed through Supervisor discovery; the integration does not accept or renew credentials, and WhatsApp pairing remains in the add-on QR flow.
   test-coverage: done
 
   # Gold

@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 
 from . import WhatsappRuntimeData
 from .client import WhatsappApiError
-from .const import CONF_URL
+from .const import CONF_API_TOKEN, CONF_URL
 
 
 async def async_get_config_entry_diagnostics(
@@ -21,6 +21,7 @@ async def async_get_config_entry_diagnostics(
         "entry": {
             "title": entry.title,
             "url_configured": bool(entry.data.get(CONF_URL)),
+            "api_token_configured": bool(entry.data.get(CONF_API_TOKEN)),
         },
         "addon": {
             "available": False,

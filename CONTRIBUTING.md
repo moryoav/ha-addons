@@ -21,7 +21,7 @@ When reporting a bug, please include:
 
 - The version of WhatsApp for Home Assistant you are using.
 - Your Home Assistant version.
-- Whether you installed through HACS, manually, or from the add-on bundled compatibility component.
+- Whether you installed the integration through HACS or manually.
 - Your architecture, such as `amd64` or `aarch64`.
 - Clear steps to reproduce the issue.
 - Relevant logs from Home Assistant or the add-on.
@@ -83,9 +83,16 @@ For integration changes, verify that Home Assistant can:
 
 Run the Python tests when changing the custom integration:
 
+```powershell
+pytest
+```
+
+Run the add-on tests when changing its JavaScript runtime or HTTP API:
+
 ```bash
-python -m pip install -r requirements_test.txt
-pytest --cov=custom_components.whatsapp --cov-report=term-missing
+cd whatsapp_addon
+npm ci
+npm test
 ```
 
 For add-on changes, verify that the add-on can:
@@ -95,7 +102,8 @@ For add-on changes, verify that the add-on can:
 - Pair a client through QR code.
 - Send a message.
 - Fire `new_whatsapp_message` and `whatsapp_presence_update` events when relevant.
-- Preserve HACS-managed `/config/custom_components/whatsapp` files.
+- Authenticate API calls when `api_token` is configured.
+- Leave Home Assistant's `/config` directory untouched.
 
 For HACS readiness, the HACS and Hassfest GitHub Actions should pass without ignored checks before opening a HACS/default submission.
 

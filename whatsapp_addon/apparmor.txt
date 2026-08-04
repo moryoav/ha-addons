@@ -3,7 +3,6 @@
 profile whatsapp_addon flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
-  file,
   network inet stream,
   network inet6 stream,
   network inet dgram,
@@ -28,10 +27,23 @@ profile whatsapp_addon flags=(attach_disconnected,mediate_deleted) {
 
   # Bashio, runtime state, and temporary files.
   /usr/lib/bashio/** ix,
-  /tmp/** rwk,
-  /data/** rwk,
+  /tmp/{,**} rwk,
+  /data/{,**} rwk,
 
-  # Legacy compatibility component install path.
-  /config/custom_components/ r,
-  /config/custom_components/whatsapp/** rwk,
+  # Packaged application code and dependencies are read-only.
+  /run.sh rix,
+  /api.js r,
+  /index.js r,
+  /libsignal-log-filter.js r,
+  /logo.png r,
+  /message-dedupe.js r,
+  /runtime.js r,
+  /validation.js r,
+  /webui.js r,
+  /whatsapp.js r,
+  /package.json r,
+  /package-lock.json r,
+  /node_modules/ r,
+  /node_modules/** rm,
+
 }

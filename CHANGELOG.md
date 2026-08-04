@@ -2,6 +2,36 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.31
+
+- Added `whatsapp.check_number`, a response-only action that checks a phone
+  number's WhatsApp registration and returns its normalized JID and available
+  LID without pretending to validate groups or arbitrary LIDs.
+- Added optional bearer-token protection for the internal add-on API, carried
+  to the integration through Supervisor discovery, and removed permissive CORS
+  headers from the non-browser bridge API.
+- Added strict client-name and phone-target validation, stable structured API
+  errors, lookup rate limiting, privacy-safe logging, and a minimal versioned
+  health/capability contract.
+- Retired the bundled legacy custom-component installer and removed the
+  add-on's read-write `/config` mount and cleanup behavior. Existing legacy
+  files are left untouched for safe migration to HACS.
+- Replaced broad AppArmor file access with explicit read-only runtime rules and
+  writable add-on data/runtime paths.
+- Made the runtime dependency install reproducible and ensured the packaged
+  Baileys 6.7.23 tree cannot be mixed with the older vendored source tree.
+- Moved add-on builds to the pinned base image directly so current Supervisor
+  releases no longer need the retired `BUILD_FROM` input, and removed the
+  `armhf`, `armv7`, and `i386` platforms unsupported by Home Assistant since
+  2025.12.
+- Replaced obsolete Supervisor watchdog and duplicate web-UI metadata with a
+  native container health check and Ingress-native UI configuration.
+- Updated CI to test the declared minimum and current stable Home Assistant
+  releases, run add-on Node tests, lint add-on assets, and build the add-on
+  image on every push and pull request.
+- Expanded installation, migration, compatibility, response-semantics,
+  security, and privacy documentation with clearly synthetic identifiers.
+
 ## 1.4.30
 
 - Simplified the HACS installation instructions now that WhatsApp is available in the default HACS catalog.

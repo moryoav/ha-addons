@@ -9,12 +9,23 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryError,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 
-from .client import WhatsappApiError, WhatsappCannotConnect, WhatsappClient
+from .client import (
+    WhatsappApiError,
+    WhatsappCannotConnect,
+    WhatsappClient,
+    WhatsappUnsupportedCapability,
+    normalize_phone_target,
+)
 from .const import (
     ATTR_BODY,
     ATTR_CLIENT_ID,
@@ -23,9 +34,11 @@ from .const import (
     ATTR_TO,
     ATTR_TYPE,
     ATTR_USER_ID,
+    CONF_API_TOKEN,
     CONF_URL,
     DOMAIN,
     PRESENCE_TYPES,
+    SERVICE_CHECK_NUMBER,
     SERVICE_PRESENCE_SUBSCRIBE,
     SERVICE_READ_MESSAGES,
     SERVICE_SEND_INFINITY_PRESENCE_UPDATE,
@@ -48,6 +61,13 @@ SEND_MESSAGE_SCHEMA = vol.Schema(
         vol.Required(ATTR_TO): cv.string,
         vol.Required(ATTR_BODY): dict,
         vol.Optional(ATTR_OPTIONS): dict,
+    }
+)
+
+CHECK_NUMBER_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CLIENT_ID): cv.string,
+        vol.Required(ATTR_TO): cv.string,
     }
 )
 
@@ -99,7 +119,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if hass.services.has_service(DOMAIN, SERVICE_SEND_MESSAGE):
         return True
 
-    async def async_send_message(call: ServiceCall) -> dict[str, Any]:
+    async def async_send_message(call: ServiceCall) -> dict[str, Any] | None:
         result = await _async_call_api(
             hass,
             SERVICE_SEND_MESSAGE,
@@ -116,10 +136,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         hass.bus.async_fire("whatsapp_send_message_result", event_data)
 
-        return {
-            **event_data,
-            "message_id": result.get("key", {}).get("id"),
-        }
+        if call.return_response:
+            message_key = result.get("key")
+            return {
+                **event_data,
+                "message_id": message_key.get("id")
+                if isinstance(message_key, dict)
+                else None,
+            }
+        return None
+
+    async def async_check_number(call: ServiceCall) -> dict[str, Any]:
+        try:
+            jid = normalize_phone_target(call.data[ATTR_TO])
+        except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_phone_target",
+            ) from err
+
+        return await _async_call_api(
+            hass,
+            SERVICE_CHECK_NUMBER,
+            {**call.data, ATTR_TO: jid},
+            lambda client, data: client.async_check_number(data),
+        )
 
     async def async_set_status(call: ServiceCall) -> None:
         await _async_call_api(
@@ -170,6 +211,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
     hass.services.async_register(
         DOMAIN,
+        SERVICE_CHECK_NUMBER,
+        async_check_number,
+        schema=CHECK_NUMBER_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
         SERVICE_SET_STATUS,
         async_set_status,
         schema=SET_STATUS_SCHEMA,
@@ -204,7 +252,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up WhatsApp from a config entry."""
-    client = WhatsappClient(async_get_clientsession(hass), entry.data[CONF_URL])
+    try:
+        client = WhatsappClient(
+            async_get_clientsession(hass),
+            entry.data[CONF_URL],
+            api_token=entry.data.get(CONF_API_TOKEN),
+        )
+    except ValueError as err:
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key="invalid_api_token_config",
+        ) from err
 
     try:
         await client.async_health()
@@ -227,9 +285,9 @@ def _get_client(hass: HomeAssistant) -> WhatsappClient:
         if isinstance(runtime_data, WhatsappRuntimeData):
             return runtime_data.client
 
-    raise _home_assistant_error(
-        "not_configured",
-        "Set up the WhatsApp integration before calling this action.",
+    raise ServiceValidationError(
+        translation_domain=DOMAIN,
+        translation_key="not_configured",
     )
 
 
@@ -244,31 +302,45 @@ async def _async_call_api(
 
     try:
         return await handler(client, data)
+    except WhatsappUnsupportedCapability as err:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="addon_too_old",
+        ) from err
     except WhatsappCannotConnect as err:
-        raise _home_assistant_error(
-            "cannot_connect",
-            f"Could not connect to the WhatsApp add-on while running {action}.",
-            {"action": action},
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="cannot_connect",
+            translation_placeholders={"action": action},
         ) from err
     except WhatsappApiError as err:
-        raise _home_assistant_error(
-            "api_request_failed",
-            f"Could not complete {action}: {err}",
-            {"action": action, "error": str(err)},
-        ) from err
+        if err.code in {"invalid_request", "client_not_found", "number_not_found"}:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key=err.code,
+            ) from err
 
-
-def _home_assistant_error(
-    translation_key: str,
-    fallback_message: str,
-    translation_placeholders: dict[str, str] | None = None,
-) -> HomeAssistantError:
-    """Create a translated error when the installed Home Assistant supports it."""
-    try:
-        return HomeAssistantError(
+        translated_api_errors = {
+            "unauthorized": "unauthorized",
+            "client_disconnected": "client_disconnected",
+            "rate_limited": "rate_limited",
+            "upstream_error": "upstream_error",
+        }
+        translation_key = translated_api_errors.get(err.code, "api_request_failed")
+        error_code = err.code or (
+            f"http_{err.status}" if err.status is not None else "unknown"
+        )
+        if err.code == "rate_limited":
+            translation_placeholders = {}
+        elif err.code in translated_api_errors:
+            translation_placeholders = {"action": action}
+        else:
+            translation_placeholders = {
+                "action": action,
+                "error_code": error_code,
+            }
+        raise HomeAssistantError(
             translation_domain=DOMAIN,
             translation_key=translation_key,
             translation_placeholders=translation_placeholders,
-        )
-    except TypeError:
-        return HomeAssistantError(fallback_message)
+        ) from err
