@@ -147,7 +147,12 @@ jobs:
             "whatsapp-addon:ci-${{ matrix.arch }}")" = '["/init"]'
           smoke_network=""
           smoke_supervisor=""
+          smoke_target=""
           cleanup() {
+            exit_code=$?
+            if [[ -n "${smoke_target}" ]]; then
+              docker rm --force "${smoke_target}" >/dev/null 2>&1 || true
+            fi
             if [[ -n "${smoke_supervisor}" ]]; then
               docker rm --force "${smoke_supervisor}" >/dev/null 2>&1 || true
             fi
@@ -156,29 +161,45 @@ jobs:
             fi
             sudo apparmor_parser --remove \
               "${ADDON_PATH}/apparmor.txt" || true
+            trap - EXIT
+            exit "${exit_code}"
           }
           trap cleanup EXIT
           sudo apparmor_parser --replace "${ADDON_PATH}/apparmor.txt"
           smoke_network="whatsapp-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          docker network create "${smoke_network}" >/dev/null
+          docker network create --internal "${smoke_network}" >/dev/null
           smoke_supervisor="$(docker run --detach \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --no-healthcheck \
+            --rm \
             --network "${smoke_network}" \
             --network-alias supervisor \
             --entrypoint /usr/bin/node \
             "whatsapp-addon:ci-${{ matrix.arch }}" \
             -e "const http=require('node:http');
+            const responses=new Map([
+            ['/supervisor/ping',{result:'ok',data:{}}],
+            ['/addons/self/info',{result:'ok',data:{name:'WhatsApp CI',
+            description:'AppArmor startup smoke test',version:'ci',
+            update_available:false}}],
+            ['/info',{result:'ok',data:{operating_system:'CI',arch:'amd64',
+            machine:'generic-x86-64',homeassistant:'ci',supervisor:'ci'}}],
+            ['/addons/self/options/config',{result:'ok',
+            data:{log_level:'info'}}]]);
             http.createServer((request,response)=>{
             response.setHeader('Content-Type','application/json');
-            if(request.url==='/addons/self/options/config'){
-            response.end(JSON.stringify({result:'ok',
-            data:{log_level:'info'}}));return}
-            response.statusCode=503;
+            const body=request.method==='GET'&&responses.get(request.url);
+            if(body){response.end(JSON.stringify(body));return}
+            response.statusCode=404;
             response.end(JSON.stringify({result:'error',
-            message:'Unavailable in CI'}))}).listen(80,'0.0.0.0')")"
+            message:'Endpoint not mocked'}))}).listen(8080,'0.0.0.0')")"
           mock_ready=false
           for _ in {1..20}; do
             if docker exec "${smoke_supervisor}" curl --fail --silent \
-              http://127.0.0.1/addons/self/options/config \
+              --max-time 1 \
+              http://127.0.0.1:8080/addons/self/options/config \
               | jq --exit-status '.data.log_level == "info"' >/dev/null; then
               mock_ready=true
               break
@@ -186,10 +207,12 @@ jobs:
             sleep 0.25
           done
           test "${mock_ready}" = true
-          timeout --signal=TERM 30s docker run --rm \
+          smoke_target="whatsapp-target-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          timeout --signal=TERM --kill-after=5s 30s docker run --rm \
+            --name "${smoke_target}" \
             --security-opt apparmor=whatsapp_addon \
             --network "${smoke_network}" \
-            --env SUPERVISOR_API=http://supervisor \
+            --env SUPERVISOR_API=http://supervisor:8080 \
             --env SUPERVISOR_TOKEN=ci \
             "whatsapp-addon:ci-${{ matrix.arch }}" \
             /usr/bin/node -e \
