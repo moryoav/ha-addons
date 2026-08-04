@@ -26,8 +26,10 @@ This project uses WhatsApp Web through an unofficial client library. WhatsApp do
 - The local bridge API is used from the Home Assistant add-on network and can
   optionally require a bearer token.
 - The bridge API does not enable cross-origin browser access.
-- A custom AppArmor profile keeps packaged code and dependencies read-only and
-  limits persistent writes to the add-on data and required runtime paths.
+- A custom AppArmor profile gives the trusted base-image bootstrap its standard
+  startup permissions, then runs the network-facing Node bridge in a restricted
+  child profile where packaged code and dependencies are read-only and writes
+  are limited to temporary and persistent session data.
 - No Docker API access, host network, host PID, host UTS, `full_access`, privileged capabilities, or elevated Supervisor role are used.
 - The add-on has no `/config` mount and cannot install, overwrite, or remove
   custom integrations.

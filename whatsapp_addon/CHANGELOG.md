@@ -1,3 +1,12 @@
+## 1.4.32
+
+- Fixed add-on startup under AppArmor by giving the trusted base-image
+  bootstrap its standard file access and moving the network-facing Node bridge
+  into a restricted read-only child profile with writes limited to temporary
+  and persistent session data.
+- Added static and real-entrypoint container smoke tests for the required
+  read-and-execute access.
+
 ## 1.4.31
 
 - Added the `/onWhatsApp` registration lookup used by
