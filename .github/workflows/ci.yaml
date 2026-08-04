@@ -145,24 +145,52 @@ jobs:
           test "$(docker image inspect \
             --format '{{json .Config.Entrypoint}}' \
             "whatsapp-addon:ci-${{ matrix.arch }}")" = '["/init"]'
-          smoke_cache="$(mktemp -d)"
-          smoke_config="${smoke_cache}/addons.self.options.config.cache"
-          chmod 0700 "${smoke_cache}"
-          printf '%s' '{"log_level":"info"}' > "${smoke_config}"
-          chmod 0600 "${smoke_config}"
+          smoke_network=""
+          smoke_supervisor=""
           cleanup() {
+            if [[ -n "${smoke_supervisor}" ]]; then
+              docker rm --force "${smoke_supervisor}" >/dev/null 2>&1 || true
+            fi
+            if [[ -n "${smoke_network}" ]]; then
+              docker network rm "${smoke_network}" >/dev/null 2>&1 || true
+            fi
             sudo apparmor_parser --remove \
               "${ADDON_PATH}/apparmor.txt" || true
-            rm -f -- "${smoke_config}"
-            rmdir -- "${smoke_cache}"
           }
           trap cleanup EXIT
           sudo apparmor_parser --replace "${ADDON_PATH}/apparmor.txt"
+          smoke_network="whatsapp-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker network create "${smoke_network}" >/dev/null
+          smoke_supervisor="$(docker run --detach \
+            --network "${smoke_network}" \
+            --network-alias supervisor \
+            --entrypoint /usr/bin/node \
+            "whatsapp-addon:ci-${{ matrix.arch }}" \
+            -e "const http=require('node:http');
+            http.createServer((request,response)=>{
+            response.setHeader('Content-Type','application/json');
+            if(request.url==='/addons/self/options/config'){
+            response.end(JSON.stringify({result:'ok',
+            data:{log_level:'info'}}));return}
+            response.statusCode=503;
+            response.end(JSON.stringify({result:'error',
+            message:'Unavailable in CI'}))}).listen(80,'0.0.0.0')")"
+          mock_ready=false
+          for _ in {1..20}; do
+            if docker exec "${smoke_supervisor}" curl --fail --silent \
+              http://127.0.0.1/addons/self/options/config \
+              | jq --exit-status '.data.log_level == "info"' >/dev/null; then
+              mock_ready=true
+              break
+            fi
+            sleep 0.25
+          done
+          test "${mock_ready}" = true
           timeout --signal=TERM 30s docker run --rm \
             --security-opt apparmor=whatsapp_addon \
-            --env CACHE_DIR=/data/.bashio \
-            --mount \
-            "type=bind,source=${smoke_cache},target=/data/.bashio,readonly" \
+            --network "${smoke_network}" \
+            --env SUPERVISOR_API=http://supervisor \
+            --env SUPERVISOR_TOKEN=ci \
             "whatsapp-addon:ci-${{ matrix.arch }}" \
             /usr/bin/node -e \
             "(async()=>{const fs=require('node:fs');
