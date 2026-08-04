@@ -145,10 +145,23 @@ jobs:
           test "$(docker image inspect \
             --format '{{json .Config.Entrypoint}}' \
             "whatsapp-addon:ci-${{ matrix.arch }}")" = '["/init"]'
+          smoke_cache="$(mktemp -d)"
+          smoke_config="${smoke_cache}/addons.self.options.config.cache"
+          chmod 0700 "${smoke_cache}"
+          printf '%s' '{"log_level":"info"}' > "${smoke_config}"
+          chmod 0600 "${smoke_config}"
+          cleanup() {
+            sudo apparmor_parser --remove \
+              "${ADDON_PATH}/apparmor.txt" || true
+            rm -f -- "${smoke_config}"
+            rmdir -- "${smoke_cache}"
+          }
+          trap cleanup EXIT
           sudo apparmor_parser --replace "${ADDON_PATH}/apparmor.txt"
-          trap 'sudo apparmor_parser --remove "${ADDON_PATH}/apparmor.txt"' EXIT
           timeout --signal=TERM 30s docker run --rm \
             --security-opt apparmor=whatsapp_addon \
+            --mount \
+            "type=bind,source=${smoke_cache},target=/tmp/.bashio,readonly" \
             "whatsapp-addon:ci-${{ matrix.arch }}" \
             /usr/bin/node -e \
             "(async()=>{const fs=require('node:fs');
