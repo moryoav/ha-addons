@@ -160,8 +160,9 @@ jobs:
           sudo apparmor_parser --replace "${ADDON_PATH}/apparmor.txt"
           timeout --signal=TERM 30s docker run --rm \
             --security-opt apparmor=whatsapp_addon \
+            --env CACHE_DIR=/data/.bashio \
             --mount \
-            "type=bind,source=${smoke_cache},target=/tmp/.bashio,readonly" \
+            "type=bind,source=${smoke_cache},target=/data/.bashio,readonly" \
             "whatsapp-addon:ci-${{ matrix.arch }}" \
             /usr/bin/node -e \
             "(async()=>{const fs=require('node:fs');
