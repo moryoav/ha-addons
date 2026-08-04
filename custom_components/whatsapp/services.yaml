@@ -1,6 +1,8 @@
 send_message:
   fields:
     clientId:
+      name: Client ID
+      description: The add-on client session to send the message from.
       required: true
       example: default
       selector:
@@ -24,6 +26,8 @@ send_message:
 check_number:
   fields:
     clientId:
+      name: Client ID
+      description: The add-on client session to use.
       required: true
       example: default
       selector:
@@ -37,6 +41,8 @@ check_number:
 set_status:
   fields:
     clientId:
+      name: Client ID
+      description: The add-on client session to use.
       required: true
       example: default
       selector:
@@ -50,11 +56,15 @@ set_status:
 presence_subscribe:
   fields:
     clientId:
+      name: Client ID
+      description: The add-on client session to use.
       required: true
       example: default
       selector:
         text:
     userId:
+      name: Target user ID
+      description: The WhatsApp phone or LID JID to monitor.
       required: true
       example: 12025550123@s.whatsapp.net
       selector:
@@ -63,6 +73,8 @@ presence_subscribe:
 send_presence_update:
   fields:
     clientId:
+      name: Client ID
+      description: The add-on client session to use.
       required: true
       example: default
       selector:
@@ -87,6 +99,8 @@ send_presence_update:
 send_infinity_presence_update:
   fields:
     clientId:
+      name: Client ID
+      description: The add-on client session to use.
       required: true
       example: default
       selector:
@@ -111,6 +125,8 @@ send_infinity_presence_update:
 read_messages:
   fields:
     clientId:
+      name: Client ID
+      description: The add-on client session to use.
       required: true
       example: default
       selector:

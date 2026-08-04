@@ -25,10 +25,6 @@
       "name": "Send message",
       "description": "Sends a WhatsApp message through the configured add-on.",
       "fields": {
-        "clientId": {
-          "name": "Client ID",
-          "description": "The add-on client session to send the message from."
-        },
         "to": {
           "name": "Target",
           "description": "The WhatsApp phone, LID, group, or broadcast JID to receive the message."
@@ -47,10 +43,6 @@
       "name": "Check number",
       "description": "Checks whether one phone number is registered with WhatsApp.",
       "fields": {
-        "clientId": {
-          "name": "Client ID",
-          "description": "The add-on client session to use."
-        },
         "to": {
           "name": "Phone number",
           "description": "An international phone number, optionally prefixed with +, or its @s.whatsapp.net JID."
@@ -61,10 +53,6 @@
       "name": "Set status",
       "description": "Sets the WhatsApp account status message.",
       "fields": {
-        "clientId": {
-          "name": "Client ID",
-          "description": "The add-on client session to use."
-        },
         "status": {
           "name": "Status",
           "description": "The new WhatsApp status message."
@@ -73,26 +61,12 @@
     },
     "presence_subscribe": {
       "name": "Subscribe to presence",
-      "description": "Subscribes to WhatsApp presence updates for a contact.",
-      "fields": {
-        "clientId": {
-          "name": "Client ID",
-          "description": "The add-on client session to use."
-        },
-        "userId": {
-          "name": "Target user ID",
-          "description": "The WhatsApp phone or LID JID to monitor."
-        }
-      }
+      "description": "Subscribes to WhatsApp presence updates for a contact."
     },
     "send_presence_update": {
       "name": "Send presence update",
       "description": "Sends a one-shot WhatsApp presence update.",
       "fields": {
-        "clientId": {
-          "name": "Client ID",
-          "description": "The add-on client session to use."
-        },
         "type": {
           "name": "Presence type",
           "description": "The presence state to send."
@@ -107,10 +81,6 @@
       "name": "Send long-running presence update",
       "description": "Sends a long-running WhatsApp presence update.",
       "fields": {
-        "clientId": {
-          "name": "Client ID",
-          "description": "The add-on client session to use."
-        },
         "type": {
           "name": "Presence type",
           "description": "The presence state to send."
@@ -125,10 +95,6 @@
       "name": "Mark messages as read",
       "description": "Marks one or more received WhatsApp messages as read.",
       "fields": {
-        "clientId": {
-          "name": "Client ID",
-          "description": "The add-on client session to use."
-        },
         "body": {
           "name": "Body",
           "description": "An object containing the Baileys message key under keys."

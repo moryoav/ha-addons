@@ -365,8 +365,8 @@ async def test_service_action_failures_use_translated_exception_types(
     assert exc_info.value.translation_key == translation_key
 
 
-def test_service_descriptions_are_fully_translated() -> None:
-    """Test service YAML contains UI metadata only and translations are complete."""
+def test_service_descriptions_are_complete() -> None:
+    """Test service metadata is translated or provided for legacy camel-case fields."""
     integration_dir = (
         Path(__file__).resolve().parents[3] / "custom_components" / "whatsapp"
     )
@@ -381,8 +381,14 @@ def test_service_descriptions_are_fully_translated() -> None:
         assert "description" not in service
         assert translations[service_name]["name"]
         assert translations[service_name]["description"]
+        translated_fields = translations[service_name].get("fields", {})
         for field_name, field in service.get("fields", {}).items():
-            assert "name" not in field
-            assert "description" not in field
-            assert translations[service_name]["fields"][field_name]["name"]
-            assert translations[service_name]["fields"][field_name]["description"]
+            if field_name in translated_fields:
+                assert "name" not in field
+                assert "description" not in field
+                assert translated_fields[field_name]["name"]
+                assert translated_fields[field_name]["description"]
+            else:
+                assert field["name"]
+                assert field["description"]
+                assert field_name in {"clientId", "userId"}
