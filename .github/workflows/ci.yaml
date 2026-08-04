@@ -138,3 +138,33 @@ jobs:
           if(typeof baileys.default!=='function')
           throw new Error('Baileys socket export is unavailable')})()
           .catch(error=>{console.error(error);process.exitCode=1})"
+
+      - name: Smoke-test AppArmor startup permissions
+        if: matrix.arch == 'amd64'
+        run: |
+          test "$(docker image inspect \
+            --format '{{json .Config.Entrypoint}}' \
+            "whatsapp-addon:ci-${{ matrix.arch }}")" = '["/init"]'
+          sudo apparmor_parser --replace "${ADDON_PATH}/apparmor.txt"
+          trap 'sudo apparmor_parser --remove "${ADDON_PATH}/apparmor.txt"' EXIT
+          timeout --signal=TERM 30s docker run --rm \
+            --security-opt apparmor=whatsapp_addon \
+            "whatsapp-addon:ci-${{ matrix.arch }}" \
+            /usr/bin/node -e \
+            "(async()=>{const fs=require('node:fs');
+            const dns=require('node:dns').promises;
+            const profile=fs.readFileSync('/proc/self/attr/current','utf8');
+            if(!profile.includes('whatsapp_addon//node'))
+            throw new Error('Node child profile is inactive');
+            let writeDenied=false;
+            try{fs.appendFileSync('/package.json','x')}
+            catch(error){writeDenied=['EACCES','EPERM'].includes(error.code)}
+            if(!writeDenied)throw new Error('Packaged files are writable');
+            fs.readFileSync('/etc/ssl/certs/ca-certificates.crt');
+            await dns.lookup('localhost');
+            const path='/tmp/apparmor-smoke';
+            fs.writeFileSync(path,'ok');fs.unlinkSync(path);
+            const baileys=await import('@whiskeysockets/baileys');
+            if(typeof baileys.default!=='function')
+            throw new Error('Baileys unavailable')})()
+            .catch(error=>{console.error(error);process.exitCode=1})"

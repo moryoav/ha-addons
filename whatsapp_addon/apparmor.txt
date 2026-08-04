@@ -3,14 +3,16 @@
 profile whatsapp_addon flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
+  # The trusted Home Assistant base-image bootstrap uses S6 Overlay and Bashio.
+  file,
   network inet stream,
   network inet6 stream,
   network inet dgram,
   network inet6 dgram,
   signal (send) set=(kill,term,int,hup,cont),
 
-  # S6 overlay and shell helpers.
-  /init ix,
+  # Trusted S6 overlay and shell bootstrap.
+  /init rix,
   /bin/** ix,
   /usr/bin/** ix,
   /usr/local/bin/** ix,
@@ -29,21 +31,29 @@ profile whatsapp_addon flags=(attach_disconnected,mediate_deleted) {
   /usr/lib/bashio/** ix,
   /tmp/{,**} rwk,
   /data/{,**} rwk,
-
-  # Packaged application code and dependencies are read-only.
   /run.sh rix,
-  /api.js r,
-  /index.js r,
-  /libsignal-log-filter.js r,
-  /logo.png r,
-  /message-dedupe.js r,
-  /runtime.js r,
-  /validation.js r,
-  /webui.js r,
-  /whatsapp.js r,
-  /package.json r,
-  /package-lock.json r,
-  /node_modules/ r,
-  /node_modules/** rm,
 
+  # Constrain the long-lived, network-facing application.
+  /usr/bin/node cx -> node,
+
+  profile node flags=(attach_disconnected,mediate_deleted) {
+    #include <abstractions/base>
+    #include <abstractions/nameservice>
+    #include <abstractions/ssl_certs>
+
+    network inet stream,
+    network inet6 stream,
+    network inet dgram,
+    network inet6 dgram,
+    signal (receive) peer=whatsapp_addon,
+    signal (receive) peer=*_whatsapp_addon,
+
+    # Runtime code and container metadata are read-only. Native modules may be
+    # memory-mapped, and only temporary and persistent session data is writable.
+    /** r,
+    /usr/bin/node mr,
+    /node_modules/{,**} mr,
+    /tmp/{,**} rwk,
+    /data/{,**} rwk,
+  }
 }

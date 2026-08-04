@@ -34,9 +34,11 @@ The packaged add-on follows the current Home Assistant app presentation guidance
 - The local bridge API is used from the Home Assistant add-on network and can
   optionally require a bearer token.
 - The bridge API does not enable cross-origin browser access.
-- A custom AppArmor profile is included and AppArmor is enabled; packaged code
-  and dependencies are read-only, while persistent writes are limited to the
-  add-on data and required runtime paths.
+- A custom AppArmor profile is included and AppArmor is enabled. The trusted
+  base-image bootstrap uses the standard Home Assistant startup permissions,
+  then the network-facing Node bridge runs in a restricted child profile where
+  packaged code and dependencies are read-only and writes are limited to
+  temporary and persistent session data.
 - No Docker API access.
 - No host network, host PID, or host UTS access.
 - No `full_access` mode.

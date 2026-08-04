@@ -42,10 +42,14 @@ for the add-on web UI, and the web UI listener only accepts the Supervisor
 ingress proxy address. QR pairing is shown in the add-on web UI and through Home
 Assistant persistent notifications.
 
-The add-on includes a custom AppArmor profile, runs without host networking,
-Docker API access, privileged capabilities, `full_access`, host PID, or host
-UTS, and uses the default Supervisor API role. A native container health check
-calls the local `/health` endpoint after startup.
+The add-on includes a custom AppArmor profile. Its trusted base-image bootstrap
+uses the standard Home Assistant startup permissions, then the network-facing
+Node bridge runs in a restricted child profile where packaged files are
+read-only and writes are limited to temporary and persistent session data. The
+add-on runs without host networking, Docker API access, privileged capabilities,
+`full_access`, host PID, or host UTS, and uses the default Supervisor API role.
+A native container health check calls the local `/health` endpoint after
+startup.
 
 The add-on has no `/config` mount. It cannot install, overwrite, or remove a
 custom integration. Version 1.4.31 retired the bundled legacy component; an

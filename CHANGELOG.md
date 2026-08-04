@@ -2,6 +2,15 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.32
+
+- Fixed add-on startup under AppArmor by giving the trusted Home Assistant
+  base-image bootstrap its standard file access, then transitioning the
+  network-facing Node bridge into a restricted read-only child profile with
+  writes limited to temporary and persistent session data.
+- Added static and real-entrypoint container smoke tests for the required
+  startup permissions.
+
 ## 1.4.31
 
 - Added `whatsapp.check_number`, a response-only action that checks a phone
