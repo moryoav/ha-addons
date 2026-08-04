@@ -6,15 +6,13 @@ Write WhatsApp messages from Home Assistant and receive WhatsApp message events.
 
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
-![Supports armhf Architecture][armhf-shield]
-![Supports armv7 Architecture][armv7-shield]
-![Supports i386 Architecture][i386-shield]
 
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
-[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
-[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
-[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
+
+Supported architectures are `aarch64` and `amd64`. Release 1.4.31 removes
+`armhf`, `armv7`, and `i386`, which Home Assistant has not supported since
+2025.12.
 
 This add-on runs the local WhatsApp Web bridge used by the `whatsapp` Home Assistant integration in this repository.
 
@@ -25,11 +23,17 @@ This project uses WhatsApp Web through an unofficial client library. WhatsApp do
 ## Security notes
 
 - No HTTP port is published to the LAN.
-- The local bridge API is used from the Home Assistant add-on network.
-- A custom AppArmor profile is included and AppArmor is enabled.
+- The local bridge API is used from the Home Assistant add-on network and can
+  optionally require a bearer token.
+- The bridge API does not enable cross-origin browser access.
+- A custom AppArmor profile keeps packaged code and dependencies read-only and
+  limits persistent writes to the add-on data and required runtime paths.
 - No Docker API access, host network, host PID, host UTS, `full_access`, privileged capabilities, or elevated Supervisor role are used.
-- `/config` is mounted read-write only to preserve compatibility with legacy custom component installs.
-- A Supervisor watchdog uses the local `/health` endpoint.
+- The add-on has no `/config` mount and cannot install, overwrite, or remove
+  custom integrations.
+- A native container health check uses the public local `/health` endpoint,
+  whose response contains only non-sensitive status, version, capability, and
+  client count metadata.
 - Home Assistant Ingress is enabled for the add-on web UI.
 - The web UI listener only accepts the Supervisor ingress proxy address, and no HTTP port is published to the LAN.
 - QR pairing is shown in the add-on web UI and through Home Assistant persistent notifications.
@@ -106,6 +110,10 @@ to:
 
 Then restart Home Assistant.
 
+Add-on releases before 1.4.31 could install a bundled legacy component. The
+current add-on leaves that existing directory untouched. Install the current
+integration through HACS so it is updated independently from the add-on.
+
 ### 4. Add the integration
 
 [![Add the WhatsApp integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=whatsapp)
@@ -121,17 +129,45 @@ The add-on advertises its local API through Supervisor discovery, so the integra
 
 ## Add-on options
 
-- `clients`: one or more WhatsApp session names. The default is `default`.
+- `clients`: one or more unique WhatsApp session names. The default is
+  `default`. Names must start with a letter or digit, may contain letters,
+  digits, `_`, and `-`, and may be at most 64 characters long.
+- `api_token`: optional bearer token for the internal API. Set it to a strong
+  random value for defense in depth, or leave it unset for compatibility with
+  existing internal-network installations. It may contain `A-Z`, `a-z`, `0-9`,
+  `-`, `.`, `_`, `~`, `+`, and `/`, followed by optional `=` padding, and may be
+  at most 512 characters total. Random hex or URL-safe Base64 is recommended;
+  spaces, `:`, and other characters make startup fail validation.
+
+Token-enabled installations require Supervisor discovery; manual or fallback
+URL detection cannot provide the token. Restart the add-on and reload the
+integration after adding, changing, or removing `api_token`.
 
 Each client gets its own persisted session and must be referenced by `clientId` in service calls.
 
 The add-on page includes an Open Web UI action through Home Assistant Ingress. The web UI shows each configured session, its connection state, and the current QR code when a session is waiting for pairing.
 
-## Compatibility behavior
+## Integration compatibility
 
-If `/config/custom_components/whatsapp/manifest.json` already exists, the add-on leaves it in place so HACS can manage the integration. If no custom component exists, the add-on installs its bundled compatibility component.
+The add-on and integration are separate installations. Version 1.4.31 retired
+the bundled component installer and all read-write `/config` access. Updating or
+uninstalling the add-on does not change an existing
+`/config/custom_components/whatsapp` directory.
 
-The add-on also registers a Supervisor discovery message on startup so Home Assistant can create or update the WhatsApp integration automatically.
+Install or update the WhatsApp integration from the default HACS catalog, then
+restart Home Assistant. Keep both parts at version 1.4.31 or newer to use the
+number-registration check and optional API authentication. A mismatched older
+add-on can produce an endpoint/version error for `whatsapp.check_number`.
+
+The add-on registers a Supervisor discovery message on startup so Home
+Assistant can create or update the integration connection. When `api_token` is
+set, the token is conveyed through that internal discovery record rather than
+entered in the setup flow. A stale token appears as an authorization error on
+the first protected action because the health-check `/health` route remains
+public.
+
+API tokens, pairing QR codes, session data, phone JIDs, and LIDs are sensitive.
+Redact them from logs, issue reports, screenshots, and automation traces.
 
 ## Documentation
 

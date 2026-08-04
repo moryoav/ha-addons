@@ -1,117 +1,140 @@
 ---
-name: CI
+name: Add-on CI
 
 # yamllint disable-line rule:truthy
 on:
-  workflow_call:
-    inputs:
-      slug:
-        description: Overrides the detected slug
-        required: false
-        type: string
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ADDON_PATH: whatsapp_addon
 
 jobs:
-  information:
-    name: Gather add-on information
-    runs-on: ubuntu-latest
-    outputs:
-      architectures: ${{ steps.information.outputs.architectures }}
-      base_image_signer: ${{ steps.information.outputs.codenotary_base_image }}
-      build: ${{ steps.information.outputs.build }}
-      description: ${{ steps.information.outputs.description }}
-      name: ${{ steps.information.outputs.name }}
-      slug: ${{ steps.override.outputs.slug }}
-      target: ${{ steps.information.outputs.target }}
-    steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run add-on information action
-        id: information
-        uses: frenck/action-addon-information@v1.4.2
-      - name: 🚀 Process possible slug override
-        id: override
-        run: |
-          slug="${{ steps.information.outputs.slug }}"
-          if [[ ! -z "${{ inputs.slug }}" ]]; then
-            slug="${{ inputs.slug }}"
-          fi
-          echo "::set-output name=slug::$slug"
-
   lint-addon:
-    name: Lint Add-on
-    needs:
-      - information
+    name: Add-on metadata
     runs-on: ubuntu-latest
     steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run Add-on Lint
-        uses: frenck/action-addon-linter@v2.15.1
-        with:
-          community: true
-          path: "./${{ needs.information.outputs.target }}"
+      - name: Check out repository
+        uses: actions/checkout@v6
 
-  lint-hadolint:
-    name: Hadolint
-    needs:
-      - information
+      - name: Run add-on linter
+        uses: frenck/action-addon-linter@v2.21.0
+        with:
+          path: "./${{ env.ADDON_PATH }}"
+
+  lint-dockerfile:
+    name: Dockerfile
     runs-on: ubuntu-latest
     steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run Hadolint
-        uses: brpaz/hadolint-action@v1.5.0
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.4.0
         with:
-          dockerfile: "./${{ needs.information.outputs.target }}/Dockerfile"
+          dockerfile: "./${{ env.ADDON_PATH }}/Dockerfile"
+          ignore: DL3018
 
   lint-json:
-    name: JSON Lint
+    name: JSON
     runs-on: ubuntu-latest
     steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run JQ
-        run: |
-          shopt -s globstar
-          cat **/*.json | jq '.'
-  lint-markdown:
-    name: MarkdownLint
-    runs-on: ubuntu-latest
-    steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run mdl
-        uses: actionshub/markdownlint@v3.1.4
+      - name: Check out repository
+        uses: actions/checkout@v6
 
-  lint-shellcheck:
-    name: Shellcheck
+      - name: Validate JSON files
+        shell: bash
+        run: |
+          while IFS= read -r -d '' file; do
+            jq empty "${file}"
+          done < <(find . -type f -name '*.json' -not -path './.git/*' -print0)
+
+  lint-markdown:
+    name: Markdown
     runs-on: ubuntu-latest
     steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run Shellcheck
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Run Markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v24
+        with:
+          globs: "**/*.md"
+
+  lint-shell:
+    name: Shell
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@2.0.0
         env:
           SHELLCHECK_OPTS: -s bash
 
-  lint-yamllint:
-    name: YAMLLint
+  lint-yaml:
+    name: YAML
     runs-on: ubuntu-latest
     steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run YAMLLint
-        uses: frenck/action-yamllint@v1.5
+      - name: Check out repository
+        uses: actions/checkout@v6
 
-  lint-prettier:
-    name: Prettier
+      - name: Run YAMLLint
+        uses: frenck/action-yamllint@v1.5.0
+
+  build-addon:
+    name: Build add-on (${{ matrix.arch }})
+    needs:
+      - lint-addon
+      - lint-dockerfile
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
     steps:
-      - name: ⤵️ Check out code from GitHub
-        uses: actions/checkout@v4
-      - name: 🚀 Run Prettier
-        uses: creyD/prettier_action@v4.3
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
         with:
-          prettier_options: --write **/*.{json,js,md,yaml}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build add-on image
+        run: >-
+          docker buildx build
+          --platform=${{ matrix.platform }}
+          --build-arg BUILD_ARCH=${{ matrix.arch }}
+          --build-arg BUILD_VERSION=ci
+          --tag whatsapp-addon:ci-${{ matrix.arch }}
+          --load
+          "${ADDON_PATH}"
+
+      - name: Verify packaged Baileys version
+        run: >-
+          docker run --rm
+          --platform=${{ matrix.platform }}
+          --entrypoint node
+          whatsapp-addon:ci-${{ matrix.arch }}
+          -e "(async()=>{const app=require('/package.json');
+          const installed=require(
+          '/node_modules/@whiskeysockets/baileys/package.json');
+          if(installed.version!==app.dependencies['@whiskeysockets/baileys'])
+          throw new Error('Unexpected Baileys version');
+          const baileys=await import('@whiskeysockets/baileys');
+          if(typeof baileys.default!=='function')
+          throw new Error('Baileys socket export is unavailable')})()
+          .catch(error=>{console.error(error);process.exitCode=1})"

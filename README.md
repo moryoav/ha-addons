@@ -8,15 +8,12 @@ Send WhatsApp messages from Home Assistant automations and receive WhatsApp mess
 
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
-![Supports armhf Architecture][armhf-shield]
-![Supports armv7 Architecture][armv7-shield]
-![Supports i386 Architecture][i386-shield]
 
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
-[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
-[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
-[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
+
+The add-on supports `aarch64` and `amd64`. Release 1.4.31 removes `armhf`,
+`armv7`, and `i386`, which Home Assistant has not supported since 2025.12.
 
 This repository contains two pieces:
 
@@ -34,19 +31,28 @@ This project uses WhatsApp Web through an unofficial client library. WhatsApp do
 The packaged add-on follows the current Home Assistant app presentation guidance where it is relevant to this project:
 
 - No HTTP port is published to the LAN.
-- The local bridge API is used from the Home Assistant add-on network.
-- A custom AppArmor profile is included and AppArmor is enabled.
+- The local bridge API is used from the Home Assistant add-on network and can
+  optionally require a bearer token.
+- The bridge API does not enable cross-origin browser access.
+- A custom AppArmor profile is included and AppArmor is enabled; packaged code
+  and dependencies are read-only, while persistent writes are limited to the
+  add-on data and required runtime paths.
 - No Docker API access.
 - No host network, host PID, or host UTS access.
 - No `full_access` mode.
 - No privileged capabilities.
 - No elevated Supervisor role.
-- A Supervisor watchdog uses the local `/health` endpoint.
+- A native container health check uses the local `/health` endpoint.
 - Home Assistant Ingress is enabled for the add-on web UI.
 - The web UI listener only accepts the Supervisor ingress proxy address, and no HTTP port is published to the LAN.
 - QR pairing is shown in the add-on web UI and through Home Assistant persistent notifications.
+- The add-on has no `/config` mount and cannot install, overwrite, or remove
+  Home Assistant custom-component files.
 
-The `/config` mount is read-write so the add-on can preserve compatibility with legacy manual installs. When HACS or a manual install already manages `/config/custom_components/whatsapp`, the add-on leaves those files in place.
+The API token, pairing QR codes, session data, and WhatsApp identifiers are
+sensitive. Do not include them in logs, issue reports, screenshots, or shared
+automation traces. Home Assistant traces may retain action inputs and response
+data even though the integration and add-on avoid logging recipient identifiers.
 
 ## Stable and canary builds
 
@@ -92,6 +98,10 @@ As a manual fallback, copy `custom_components/whatsapp` into:
 
 Then restart Home Assistant.
 
+Add-on releases before 1.4.31 could install a bundled legacy component. The
+current add-on neither updates nor deletes that copy. If you previously relied
+on it, follow [Legacy integration migration](#legacy-integration-migration).
+
 ### 3. Configure the integration
 
 In Home Assistant, go to:
@@ -112,7 +122,21 @@ If the integration cannot detect the add-on yet, confirm the `WhatsappV2` add-on
 
 The add-on accepts these options:
 
-- `clients`: one or more WhatsApp session names. The default is `default`.
+- `clients`: one or more unique WhatsApp session names. The default is
+  `default`. Names must start with a letter or digit, may contain letters,
+  digits, `_`, and `-`, and may be at most 64 characters long.
+- `api_token`: optional bearer token for the internal add-on API. Use a strong
+  random value when you want defense in depth. Leave it unset to preserve
+  compatibility with older internal-network installations. A token may contain
+  `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`, `+`, and `/`, followed by optional
+  `=` padding, with a maximum total length of 512 characters. Random hex or
+  URL-safe Base64 is recommended; spaces, `:`, and other characters make the
+  add-on reject its configuration at startup.
+
+Token-enabled installations require Supervisor discovery; manual or fallback
+URL detection cannot supply the token. After adding, changing, or removing
+`api_token`, restart the add-on and reload the integration so the discovery
+record authoritatively refreshes the stored credential.
 
 Each client gets its own QR-code pairing flow and persisted add-on session data.
 
@@ -120,7 +144,8 @@ The add-on page includes an Open Web UI action through Home Assistant Ingress. T
 
 ### Integration
 
-The integration has no user-entered setup parameters. It detects the running add-on through Home Assistant Supervisor discovery.
+The integration has no user-entered setup parameters. It detects the running
+add-on URL and optional API token through Home Assistant Supervisor discovery.
 
 You can use the integration entry menu to reconfigure later; reconfiguration rediscovers the add-on URL automatically.
 
@@ -134,8 +159,14 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
 - `whatsapp.send_presence_update`: send a one-shot presence update.
 - `whatsapp.send_infinity_presence_update`: send a long-running presence update.
 - `whatsapp.read_messages`: mark received messages as read.
+- `whatsapp.check_number`: check whether a phone number is registered with
+  WhatsApp and return its normalized phone JID and LID when available.
 
-`whatsapp.send_message` can return response data when called with `response_variable`; it also fires the compatibility event `whatsapp_send_message_result`.
+`whatsapp.send_message` can return response data when called with
+`response_variable`; it also fires the compatibility event
+`whatsapp_send_message_result`. A successful response means the linked client
+accepted the send operation. It does not guarantee delivery, receipt, or that
+the recipient read the message.
 
 ## Events
 
@@ -153,9 +184,9 @@ The add-on fires these Home Assistant events:
 
 Message targets can use:
 
-- Phone-number user JID, such as `391234567890@s.whatsapp.net`.
-- WhatsApp LID user JID, such as `90855889203418@lid`.
-- Group JID, such as `1234567890-123456789@g.us`.
+- Phone-number user JID, such as the fictional `12025550123@s.whatsapp.net`.
+- WhatsApp LID user JID, such as the synthetic `999000111222333@lid`.
+- Group JID, such as the synthetic `120363000000000000@g.us`.
 - Broadcast JID, such as `status@broadcast`.
 
 When replying to an incoming event, the safest target is usually:
@@ -169,10 +200,10 @@ When replying to an incoming event, the safest target is usually:
 ### Send a text message
 
 ```yaml
-service: whatsapp.send_message
+action: whatsapp.send_message
 data:
   clientId: default
-  to: 391234567890@s.whatsapp.net
+  to: 12025550123@s.whatsapp.net
   body:
     text: Hi from Home Assistant
 ```
@@ -180,11 +211,11 @@ data:
 ### Capture the sent message id
 
 ```yaml
-- service: whatsapp.send_message
+- action: whatsapp.send_message
   response_variable: whatsapp_result
   data:
     clientId: default
-    to: 391234567890@s.whatsapp.net
+    to: 12025550123@s.whatsapp.net
     body:
       text: This call stores the sent WhatsApp message id.
 ```
@@ -200,7 +231,7 @@ data:
     - condition: template
       value_template: "{{ trigger.event.data.message.conversation == '!ping' }}"
   action:
-    - service: whatsapp.send_message
+    - action: whatsapp.send_message
       data:
         clientId: "{{ trigger.event.data.clientId }}"
         to: "{{ trigger.event.data.key.remoteJid }}"
@@ -217,7 +248,7 @@ data:
     - platform: event
       event_type: new_whatsapp_message
   action:
-    - service: whatsapp.read_messages
+    - action: whatsapp.read_messages
       data:
         clientId: "{{ trigger.event.data.clientId }}"
         body:
@@ -228,21 +259,88 @@ data:
   mode: queued
 ```
 
+### Check whether a phone number is registered
+
+```yaml
+- action: whatsapp.check_number
+  data:
+    clientId: default
+    to: "+12025550123"
+  response_variable: number_check
+```
+
+`whatsapp.check_number` requires `response_variable`. It accepts an
+international phone number as bare digits with an optional leading `+`, or a
+phone-number `@s.whatsapp.net` JID. It does not accept groups, LIDs, broadcasts,
+or device-qualified JIDs.
+
+The response has this shape:
+
+```yaml
+jid: 12025550123@s.whatsapp.net
+exists: true
+lid: 999000111222333@lid
+```
+
+`exists: false` is a successful lookup and normally has `lid: null`. The lookup
+checks WhatsApp registration at that moment; it does not guarantee that a
+subsequent message will be delivered. Avoid bulk or repeated enumeration, and
+treat the returned JID and LID as private account identifiers.
+
+Invalid input, an unknown or disconnected client, rate limiting, authentication
+failure, and an upstream WhatsApp failure are reported as action errors. They
+are never collapsed into `exists: false`.
+
+`whatsapp.send_message` sends direct phone JIDs without a registration lookup;
+bare phone numbers retain the existing lookup before sending. Call
+`whatsapp.check_number` when an automation needs an explicit preflight and a
+structured registration response.
+
 ## Data updates
 
 The integration does not poll WhatsApp. The add-on pushes message and presence events into Home Assistant as they arrive, advertises its local API through Supervisor discovery, and actions call the local add-on API on demand.
 
 ## Diagnostics
 
-The integration supports Home Assistant diagnostics. Diagnostics include whether the add-on was detected, whether the add-on health endpoint is reachable, and the number of configured add-on clients. The detected URL and message contents are not included.
+The integration supports Home Assistant diagnostics. The public health
+contract is limited to a non-sensitive status, the service identifier
+`ha-whatsapp-addon`, API version, capabilities, and configured-client count.
+Diagnostics do not include the detected URL, API token, recipient identifiers,
+or message contents.
 
 ## Troubleshooting
 
 - If setup cannot connect, confirm the add-on is installed and running, then restart the add-on so it can publish Supervisor discovery.
 - If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
+- If an action reports `unauthorized`, make sure the add-on and integration are
+  both current, then restart the add-on and reload the integration so Supervisor
+  discovery refreshes the configured API token. Because `/health` is public for
+  container monitoring, a stale token is detected on the first protected action rather
+  than during setup.
+- `whatsapp.check_number` requires add-on and integration version 1.4.31 or
+  newer. An endpoint/version error usually means only one half was updated.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
 - Recoverable libsignal `Bad MAC` and session lifecycle messages are summarized by the add-on instead of logging full stack traces or session data.
+
+## Legacy integration migration
+
+Add-on 1.4.31 retired the bundled compatibility component and removed the
+add-on's read-write `/config` access. Updating or uninstalling the add-on leaves
+any existing `/config/custom_components/whatsapp` directory untouched.
+
+If an older add-on installed the integration for you:
+
+1. Create a Home Assistant backup.
+2. Install or update **WhatsApp** from the default HACS integration catalog.
+3. Restart Home Assistant and confirm the WhatsApp integration loads under
+   **Settings > Devices & services**.
+4. Remove any legacy `whatsapp:` block from `configuration.yaml`, then restart
+   Home Assistant again.
+
+Do not manually delete `/config/custom_components/whatsapp` after HACS takes
+ownership of it. For a manual installation, replace the whole directory with
+the current repository copy before restarting Home Assistant.
 
 ## Removal
 

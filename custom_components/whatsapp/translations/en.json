@@ -20,15 +20,127 @@
       "reconfigure_successful": "WhatsApp was reconfigured successfully."
     }
   },
+  "services": {
+    "send_message": {
+      "name": "Send message",
+      "description": "Sends a WhatsApp message through the configured add-on.",
+      "fields": {
+        "to": {
+          "name": "Target",
+          "description": "The WhatsApp phone, LID, group, or broadcast JID to receive the message."
+        },
+        "body": {
+          "name": "Body",
+          "description": "The message payload accepted by the WhatsApp add-on."
+        },
+        "options": {
+          "name": "Options",
+          "description": "Optional Baileys send options, such as quoted message data."
+        }
+      }
+    },
+    "check_number": {
+      "name": "Check number",
+      "description": "Checks whether one phone number is registered with WhatsApp.",
+      "fields": {
+        "to": {
+          "name": "Phone number",
+          "description": "An international phone number, optionally prefixed with +, or its @s.whatsapp.net JID."
+        }
+      }
+    },
+    "set_status": {
+      "name": "Set status",
+      "description": "Sets the WhatsApp account status message.",
+      "fields": {
+        "status": {
+          "name": "Status",
+          "description": "The new WhatsApp status message."
+        }
+      }
+    },
+    "presence_subscribe": {
+      "name": "Subscribe to presence",
+      "description": "Subscribes to WhatsApp presence updates for a contact."
+    },
+    "send_presence_update": {
+      "name": "Send presence update",
+      "description": "Sends a one-shot WhatsApp presence update.",
+      "fields": {
+        "type": {
+          "name": "Presence type",
+          "description": "The presence state to send."
+        },
+        "to": {
+          "name": "Target",
+          "description": "An optional WhatsApp phone or LID JID."
+        }
+      }
+    },
+    "send_infinity_presence_update": {
+      "name": "Send long-running presence update",
+      "description": "Sends a long-running WhatsApp presence update.",
+      "fields": {
+        "type": {
+          "name": "Presence type",
+          "description": "The presence state to send."
+        },
+        "to": {
+          "name": "Target",
+          "description": "An optional WhatsApp phone or LID JID."
+        }
+      }
+    },
+    "read_messages": {
+      "name": "Mark messages as read",
+      "description": "Marks one or more received WhatsApp messages as read.",
+      "fields": {
+        "body": {
+          "name": "Body",
+          "description": "An object containing the Baileys message key under keys."
+        }
+      }
+    }
+  },
   "exceptions": {
+    "addon_too_old": {
+      "message": "The installed WhatsApp add-on does not support number checks. Update the add-on and try again."
+    },
     "api_request_failed": {
-      "message": "Could not complete {action}: {error}"
+      "message": "The WhatsApp add-on could not complete {action} (error: {error_code})."
     },
     "cannot_connect": {
       "message": "Could not connect to the WhatsApp add-on while running {action}."
     },
+    "client_disconnected": {
+      "message": "The selected WhatsApp client is disconnected. Connect it before running {action}."
+    },
+    "client_not_found": {
+      "message": "The selected WhatsApp client ID does not exist."
+    },
+    "invalid_phone_target": {
+      "message": "Enter an international phone number using 5 to 15 digits, optionally prefixed with +, or its @s.whatsapp.net JID. Groups, broadcasts, LIDs, and device JIDs are not supported."
+    },
+    "invalid_api_token_config": {
+      "message": "The API token received from WhatsApp add-on discovery is invalid. Check the add-on option and reload its Supervisor discovery."
+    },
+    "invalid_request": {
+      "message": "The WhatsApp add-on rejected the action input."
+    },
     "not_configured": {
       "message": "Set up the WhatsApp integration before calling this action."
+    },
+    "number_not_found": {
+      "message": "The recipient phone number is not registered with WhatsApp."
+    },
+    "rate_limited": {
+      "message": "Too many WhatsApp number checks were requested. Wait before trying again."
+    },
+    "unauthorized": {
+      "message": "WhatsApp add-on API authorization failed while running {action}. Reload add-on discovery after checking its API token configuration."
+    },
+    "upstream_error": {
+      "message": "WhatsApp could not complete {action}. Try again later."
     }
   }
 }

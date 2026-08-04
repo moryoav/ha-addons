@@ -1,6 +1,13 @@
 const assert = require("assert");
 const { MessageDedupe } = require("../message-dedupe");
 
+const FICTIONAL_PHONE_JID = "12025550123@s.whatsapp.net";
+const FICTIONAL_PHONE_JID_ALT = "12025550124@s.whatsapp.net";
+const FICTIONAL_PARTICIPANT_JID = "12025550125@s.whatsapp.net";
+const SYNTHETIC_LID = "999000111222333@lid";
+const SYNTHETIC_LID_ALT = "999000111222334@lid";
+const SYNTHETIC_PARTICIPANT_LID = "999000111222335@lid";
+
 let now = 0;
 
 const createDedupe = (ttlMs = 1000) =>
@@ -12,7 +19,7 @@ const createDedupe = (ttlMs = 1000) =>
 
 const createMessage = ({
   id,
-  remoteJid = "972522241857@s.whatsapp.net",
+  remoteJid = FICTIONAL_PHONE_JID,
   fromMe = false,
   type = "conversation",
   payload = "hello",
@@ -37,7 +44,7 @@ const createImagePayload = ({
   includeThumbnail = false,
   url = "https://mmg.whatsapp.net/a",
   directPath = "/v/t62/a",
-  mediaKeyTimestamp = 1780239123,
+  mediaKeyTimestamp = 1700000000,
   scanLengths = [1, 2, 3],
   scansSidecar = Buffer.from("scan-sidecar"),
 } = {}) => {
@@ -65,13 +72,13 @@ const createImagePayload = ({
 };
 
 const createQuotedReplyPayload = ({
-  participant = "83614691811332@lid",
-  mentionedJid = ["83614691811332@lid"],
+  participant = SYNTHETIC_PARTICIPANT_LID,
+  mentionedJid = [SYNTHETIC_PARTICIPANT_LID],
 } = {}) => ({
   text: "Mark as done",
   previewType: "NONE",
   contextInfo: {
-    stanzaId: "3EB01A0F21F375F568B95A",
+    stanzaId: "FICTIONAL_QUOTED_MESSAGE_ID",
     participant,
     mentionedJid,
     quotedMessage: {
@@ -86,7 +93,7 @@ const createQuotedReplyPayload = ({
 
   assert.strictEqual(
     dedupe.check(
-      createMessage({ id: "msg-1", remoteJid: "972522241857@s.whatsapp.net" }),
+      createMessage({ id: "msg-1", remoteJid: FICTIONAL_PHONE_JID }),
       "conversation"
     ).duplicate,
     false
@@ -94,13 +101,13 @@ const createQuotedReplyPayload = ({
 
   now += 10;
   const result = dedupe.check(
-    createMessage({ id: "msg-1", remoteJid: "90855889203418@lid" }),
+    createMessage({ id: "msg-1", remoteJid: SYNTHETIC_LID }),
     "conversation"
   );
 
   assert.strictEqual(result.duplicate, true);
-  assert.strictEqual(result.firstRemoteJid, "972522241857@s.whatsapp.net");
-  assert.strictEqual(result.duplicateRemoteJid, "90855889203418@lid");
+  assert.strictEqual(result.firstRemoteJid, FICTIONAL_PHONE_JID);
+  assert.strictEqual(result.duplicateRemoteJid, SYNTHETIC_LID);
 }
 
 {
@@ -110,11 +117,11 @@ const createQuotedReplyPayload = ({
     dedupe.check(
       createMessage({
         id: "observed-image-duplicate",
-        remoteJid: "237434533077127@lid",
+        remoteJid: SYNTHETIC_LID_ALT,
         type: "imageMessage",
         payload: createImagePayload({
           includeThumbnail: true,
-          mediaKeyTimestamp: 1780239128,
+          mediaKeyTimestamp: 1700000005,
           url: "https://mmg.whatsapp.net/lid-copy",
           directPath: "/v/t62/lid-copy",
         }),
@@ -128,11 +135,11 @@ const createQuotedReplyPayload = ({
   const result = dedupe.check(
     createMessage({
       id: "observed-image-duplicate",
-      remoteJid: "972525662800@s.whatsapp.net",
+      remoteJid: FICTIONAL_PHONE_JID_ALT,
       type: "imageMessage",
       payload: createImagePayload({
         includeThumbnail: false,
-        mediaKeyTimestamp: { low: 1780239123, high: 0, unsigned: true },
+        mediaKeyTimestamp: { low: 1700000000, high: 0, unsigned: true },
         url: "https://mmg.whatsapp.net/phone-copy",
         directPath: "/v/t62/phone-copy",
         scanLengths: [4, 5, 6],
@@ -144,8 +151,8 @@ const createQuotedReplyPayload = ({
 
   assert.strictEqual(result.duplicate, true);
   assert.strictEqual(result.collision, false);
-  assert.strictEqual(result.firstRemoteJid, "237434533077127@lid");
-  assert.strictEqual(result.duplicateRemoteJid, "972525662800@s.whatsapp.net");
+  assert.strictEqual(result.firstRemoteJid, SYNTHETIC_LID_ALT);
+  assert.strictEqual(result.duplicateRemoteJid, FICTIONAL_PHONE_JID_ALT);
 }
 
 {
@@ -155,13 +162,13 @@ const createQuotedReplyPayload = ({
     dedupe.check(
       createMessage({
         id: "observed-quoted-reply-duplicate",
-        remoteJid: "90855889203418@lid",
+        remoteJid: SYNTHETIC_LID,
         type: "extendedTextMessage",
         payload: createQuotedReplyPayload({
-          participant: "83614691811332@lid",
-          mentionedJid: ["83614691811332@lid"],
+          participant: SYNTHETIC_PARTICIPANT_LID,
+          mentionedJid: [SYNTHETIC_PARTICIPANT_LID],
         }),
-        messageTimestamp: 1780478259,
+        messageTimestamp: 1700000105,
       }),
       "extendedTextMessage"
     ).duplicate,
@@ -172,21 +179,21 @@ const createQuotedReplyPayload = ({
   const result = dedupe.check(
     createMessage({
       id: "observed-quoted-reply-duplicate",
-      remoteJid: "972522241857@s.whatsapp.net",
+      remoteJid: FICTIONAL_PHONE_JID,
       type: "extendedTextMessage",
       payload: createQuotedReplyPayload({
-        participant: "16823500132@s.whatsapp.net",
-        mentionedJid: ["16823500132@s.whatsapp.net"],
+        participant: FICTIONAL_PARTICIPANT_JID,
+        mentionedJid: [FICTIONAL_PARTICIPANT_JID],
       }),
-      messageTimestamp: { low: 1780478254, high: 0, unsigned: true },
+      messageTimestamp: { low: 1700000100, high: 0, unsigned: true },
     }),
     "extendedTextMessage"
   );
 
   assert.strictEqual(result.duplicate, true);
   assert.strictEqual(result.collision, false);
-  assert.strictEqual(result.firstRemoteJid, "90855889203418@lid");
-  assert.strictEqual(result.duplicateRemoteJid, "972522241857@s.whatsapp.net");
+  assert.strictEqual(result.firstRemoteJid, SYNTHETIC_LID);
+  assert.strictEqual(result.duplicateRemoteJid, FICTIONAL_PHONE_JID);
 }
 
 {

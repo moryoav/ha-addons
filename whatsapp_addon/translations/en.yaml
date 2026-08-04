@@ -3,3 +3,6 @@ configuration:
   clients:
     name: WhatsApp sessions
     description: Session names that can be used as clientId values in Home Assistant actions.
+  api_token:
+    name: API token
+    description: Optional bearer-safe token (A-Z, a-z, 0-9, -._~+/, then optional = padding; maximum 512 characters). Use random hex or URL-safe Base64. Restart the add-on and reload the integration after changing it. Leave unset for internal-network compatibility.

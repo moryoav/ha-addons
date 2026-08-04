@@ -8,7 +8,7 @@ import pytest
 
 from custom_components.whatsapp import WhatsappRuntimeData
 from custom_components.whatsapp.client import WhatsappCannotConnect
-from custom_components.whatsapp.const import CONF_URL
+from custom_components.whatsapp.const import CONF_API_TOKEN, CONF_URL
 from custom_components.whatsapp.diagnostics import async_get_config_entry_diagnostics
 
 pytestmark = pytest.mark.enable_socket
@@ -20,7 +20,10 @@ async def test_diagnostics_redacts_url_and_reports_health(hass) -> None:
     client.async_health = AsyncMock(return_value={"status": "ok", "client_count": 2})
     entry = Mock(
         title="WhatsApp Add-on",
-        data={CONF_URL: "http://private-addon:3000"},
+        data={
+            CONF_URL: "http://private-addon:3000",
+            CONF_API_TOKEN: "secret-token",
+        },
         runtime_data=WhatsappRuntimeData(client=client),
     )
 
@@ -30,6 +33,7 @@ async def test_diagnostics_redacts_url_and_reports_health(hass) -> None:
         "entry": {
             "title": "WhatsApp Add-on",
             "url_configured": True,
+            "api_token_configured": True,
         },
         "addon": {
             "available": True,
@@ -37,6 +41,7 @@ async def test_diagnostics_redacts_url_and_reports_health(hass) -> None:
             "client_count": 2,
         },
     }
+    assert "secret-token" not in str(result)
 
 
 async def test_diagnostics_without_runtime_data(hass) -> None:
@@ -49,6 +54,7 @@ async def test_diagnostics_without_runtime_data(hass) -> None:
     result = await async_get_config_entry_diagnostics(hass, entry)
 
     assert result["entry"]["url_configured"] is True
+    assert result["entry"]["api_token_configured"] is False
     assert result["addon"] == {"available": False}
 
 

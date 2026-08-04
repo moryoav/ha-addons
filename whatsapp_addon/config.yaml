@@ -1,35 +1,24 @@
 name: WhatsappV2
-version: "1.4.29"
+version: "1.4.31"
 slug: whatsapp_addon
 description: WhatsApp Web bridge for Home Assistant actions and events
 url: "https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon"
 homeassistant_api: true
 hassio_api: true
-apparmor: true
-stage: stable
-watchdog: "http://[HOST]:[PORT:3000]/health"
-webui: "http://[HOST]:[PORT:8099]"
 ingress: true
-ingress_port: 8099
 ingress_entry: /
 panel_icon: mdi:whatsapp
 panel_title: WhatsApp
 discovery:
   - whatsapp
 arch:
-  - armhf
-  - armv7
   - aarch64
   - amd64
-  - i386
 init: false
-map:
-  - type: homeassistant_config
-    read_only: false
-    path: /config
 options:
   clients:
     - default
 schema:
   clients:
     - str
+  api_token: password?

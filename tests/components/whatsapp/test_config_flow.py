@@ -8,11 +8,14 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.whatsapp.client import WhatsappCannotConnect
 from custom_components.whatsapp.config_flow import (
+    InvalidUrl,
     _addon_info_urls,
+    _api_token_from_discovery_config,
     _async_detect_addon_url,
     _async_validate_url,
     _candidate_urls,
@@ -20,7 +23,7 @@ from custom_components.whatsapp.config_flow import (
     _normalize_url,
     _url_from_discovery_config,
 )
-from custom_components.whatsapp.const import CONF_URL, DOMAIN
+from custom_components.whatsapp.const import CONF_API_TOKEN, CONF_URL, DOMAIN
 
 pytestmark = pytest.mark.enable_socket
 
@@ -113,7 +116,11 @@ async def test_hassio_flow_success(hass, enable_custom_integrations) -> None:
         "DiscoveryInfo",
         (),
         {
-            "config": {CONF_HOST: "supervisor-addon", CONF_PORT: 3000},
+            "config": {
+                CONF_HOST: "supervisor-addon",
+                CONF_PORT: 3000,
+                CONF_API_TOKEN: "secret-token",
+            },
             "name": "WhatsappV2",
         },
     )()
@@ -130,7 +137,10 @@ async def test_hassio_flow_success(hass, enable_custom_integrations) -> None:
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "WhatsappV2"
-    assert result["data"] == {CONF_URL: "http://supervisor-addon:3000"}
+    assert result["data"] == {
+        CONF_URL: "http://supervisor-addon:3000",
+        CONF_API_TOKEN: "secret-token",
+    }
     detect.assert_awaited_once_with(hass, ["http://supervisor-addon:3000"])
 
 
@@ -138,8 +148,11 @@ async def test_hassio_flow_updates_existing_entry(
     hass,
     enable_custom_integrations,
 ) -> None:
-    """Test Supervisor discovery refreshes an existing entry URL."""
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_URL: "http://old:3000"})
+    """Test Supervisor discovery refreshes URL and clears a removed token."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_URL: "http://old:3000", CONF_API_TOKEN: "existing-token"},
+    )
     entry.add_to_hass(hass)
     discovery_info = type(
         "DiscoveryInfo",
@@ -162,6 +175,46 @@ async def test_hassio_flow_updates_existing_entry(
     assert entry.data == {CONF_URL: "http://new:3000"}
 
 
+async def test_hassio_flow_refreshes_existing_api_token(
+    hass,
+    enable_custom_integrations,
+) -> None:
+    """Test Supervisor discovery replaces a stale transport token."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_URL: "http://old:3000", CONF_API_TOKEN: "old-token"},
+    )
+    entry.add_to_hass(hass)
+    discovery_info = type(
+        "DiscoveryInfo",
+        (),
+        {
+            "config": {
+                CONF_URL: "http://new:3000",
+                CONF_API_TOKEN: "new-token",
+            },
+            "name": "WhatsappV2",
+        },
+    )()
+
+    with patch(
+        "custom_components.whatsapp.config_flow._async_detect_addon_url",
+        AsyncMock(return_value="http://new:3000"),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_HASSIO},
+            data=discovery_info,
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data == {
+        CONF_URL: "http://new:3000",
+        CONF_API_TOKEN: "new-token",
+    }
+
+
 async def test_hassio_flow_cannot_connect(hass, enable_custom_integrations) -> None:
     """Test Supervisor discovery aborts if validation fails."""
     discovery_info = type(
@@ -182,6 +235,41 @@ async def test_hassio_flow_cannot_connect(hass, enable_custom_integrations) -> N
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "cannot_connect"
+
+
+async def test_hassio_flow_ignores_malformed_discovery_url(
+    hass,
+    enable_custom_integrations,
+) -> None:
+    """Test malformed Supervisor URLs fall back without losing the API token."""
+    discovery_info = type(
+        "DiscoveryInfo",
+        (),
+        {
+            "config": {
+                CONF_URL: "not a URL",
+                CONF_API_TOKEN: "secret-token",
+            },
+            "name": "WhatsappV2",
+        },
+    )()
+
+    with patch(
+        "custom_components.whatsapp.config_flow._async_detect_addon_url",
+        AsyncMock(return_value="http://fallback-addon:3000"),
+    ) as detect:
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_HASSIO},
+            data=discovery_info,
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_URL: "http://fallback-addon:3000",
+        CONF_API_TOKEN: "secret-token",
+    }
+    detect.assert_awaited_once_with(hass, [])
 
 
 async def test_reconfigure_flow(hass, enable_custom_integrations) -> None:
@@ -210,7 +298,9 @@ async def test_reconfigure_flow(hass, enable_custom_integrations) -> None:
     assert result["data_updates"] == {CONF_URL: "http://new-addon:3000"}
 
 
-async def test_reconfigure_flow_cannot_connect(hass, enable_custom_integrations) -> None:
+async def test_reconfigure_flow_cannot_connect(
+    hass, enable_custom_integrations
+) -> None:
     """Test failed reconfigure keeps the form open."""
     flow = await hass.config_entries.flow.async_create_flow(
         DOMAIN,
@@ -244,12 +334,15 @@ async def test_detect_addon_url_uses_first_working_candidate(
         if url == "http://bad:3000":
             raise WhatsappCannotConnect
 
-    with patch(
-        "custom_components.whatsapp.config_flow._candidate_urls",
-        return_value=["http://bad:3000", "http://good:3000"],
-    ), patch(
-        "custom_components.whatsapp.config_flow._async_validate_url",
-        side_effect=validate,
+    with (
+        patch(
+            "custom_components.whatsapp.config_flow._candidate_urls",
+            return_value=["http://bad:3000", "http://good:3000"],
+        ),
+        patch(
+            "custom_components.whatsapp.config_flow._async_validate_url",
+            side_effect=validate,
+        ),
     ):
         assert await _async_detect_addon_url(hass) == "http://good:3000"
 
@@ -261,12 +354,15 @@ async def test_detect_addon_url_raises_after_all_fail(
     enable_custom_integrations,
 ) -> None:
     """Test add-on URL detection failure."""
-    with patch(
-        "custom_components.whatsapp.config_flow._candidate_urls",
-        return_value=["http://bad:3000"],
-    ), patch(
-        "custom_components.whatsapp.config_flow._async_validate_url",
-        AsyncMock(side_effect=WhatsappCannotConnect),
+    with (
+        patch(
+            "custom_components.whatsapp.config_flow._candidate_urls",
+            return_value=["http://bad:3000"],
+        ),
+        patch(
+            "custom_components.whatsapp.config_flow._async_validate_url",
+            AsyncMock(side_effect=WhatsappCannotConnect),
+        ),
     ):
         with pytest.raises(WhatsappCannotConnect):
             await _async_detect_addon_url(hass)
@@ -285,7 +381,7 @@ async def test_validate_url_uses_client(hass, enable_custom_integrations) -> Non
 
 def test_candidate_urls_from_hassio_metadata(hass) -> None:
     """Test candidate URL generation from Supervisor metadata."""
-    hass.data["hassio_addons_info"] = {
+    addons_info = {
         "ea396823_whatsapp_addon": {
             "name": "WhatsappV2",
             "hostname": "ea396823-whatsapp-addon",
@@ -293,7 +389,11 @@ def test_candidate_urls_from_hassio_metadata(hass) -> None:
         }
     }
 
-    urls = _candidate_urls(hass, ["http://preferred:3000"])
+    with patch(
+        "custom_components.whatsapp.config_flow.get_addons_info",
+        return_value=addons_info,
+    ):
+        urls = _candidate_urls(hass, ["http://preferred:3000"])
 
     assert urls[:3] == [
         "http://preferred:3000",
@@ -308,6 +408,17 @@ def test_candidate_urls_fallback(hass) -> None:
 
     assert "http://ea396823-whatsapp-addon:3000" in urls
     assert "http://whatsapp-addon:3000" in urls
+
+
+def test_candidate_urls_fallback_when_hassio_not_ready(hass) -> None:
+    """Test Supervisor startup timing does not prevent hostname fallback."""
+    with patch(
+        "custom_components.whatsapp.config_flow.get_addons_info",
+        side_effect=HomeAssistantError,
+    ):
+        urls = _candidate_urls(hass, [])
+
+    assert "http://ea396823-whatsapp-addon:3000" in urls
 
 
 @pytest.mark.parametrize(
@@ -351,6 +462,46 @@ def test_url_from_discovery_config() -> None:
     assert _url_from_discovery_config({}) is None
 
 
+@pytest.mark.parametrize("url", [None, "", 123, "not a URL"])
+def test_url_from_discovery_config_rejects_malformed_url(url) -> None:
+    """Test an explicitly supplied malformed discovery URL is rejected."""
+    with pytest.raises(InvalidUrl):
+        _url_from_discovery_config({CONF_URL: url})
+
+
+def test_api_token_from_discovery_config() -> None:
+    """Test only a valid bearer-token discovery value is accepted."""
+    assert _api_token_from_discovery_config({CONF_API_TOKEN: "secret"}) == "secret"
+    assert _api_token_from_discovery_config({CONF_API_TOKEN: ""}) is None
+    assert _api_token_from_discovery_config({CONF_API_TOKEN: 123}) is None
+    assert _api_token_from_discovery_config({CONF_API_TOKEN: "bad token"}) is None
+    assert _api_token_from_discovery_config({CONF_API_TOKEN: "a" * 513}) is None
+    assert _api_token_from_discovery_config({}) is None
+
+
 def test_normalize_url() -> None:
     """Test URL normalization."""
     assert _normalize_url(" http://addon:3000/ ") == "http://addon:3000"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        None,
+        123,
+        "",
+        "   ",
+        "not a URL",
+        "ftp://addon:3000",
+        "http://user:password@addon:3000",
+        "http://addon:3000/api",
+        "http://addon:3000?token=secret",
+        "http://addon:3000#fragment",
+        "http://addon:invalid",
+        "http://bad host:3000",
+    ],
+)
+def test_normalize_url_rejects_invalid_origins(url) -> None:
+    """Test add-on URLs are HTTP origins without secrets or extra components."""
+    with pytest.raises(InvalidUrl):
+        _normalize_url(url)

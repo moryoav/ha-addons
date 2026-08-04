@@ -1,24 +1,37 @@
-ARG BUILD_FROM
-FROM node:20-alpine AS build-baileys
+FROM ghcr.io/hassio-addons/base:21.0.1 AS dependencies
 
-RUN apk add --no-cache git
-WORKDIR /Baileys
+RUN apk add --no-cache git nodejs npm
 
-RUN npm pack @whiskeysockets/baileys@6.7.23 \
- && tar -xzf whiskeysockets-baileys-*.tgz --strip-components=1 \
- && sed -i '/"devDependencies": {/,/}/d' package.json \
- && npm install --production --ignore-scripts \
- && rm whiskeysockets-baileys-*.tgz
+COPY package.json package-lock.json /
 
-FROM ${BUILD_FROM}
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+    && npm cache clean --force
 
-RUN apk add --no-cache git npm
+FROM ghcr.io/hassio-addons/base:21.0.1
 
-COPY . /
-COPY --from=build-baileys /Baileys /Baileys
+ARG BUILD_ARCH
+ARG BUILD_VERSION
 
-RUN chmod a+x /run.sh /finish.sh \
- && npm install -f
+LABEL \
+    io.hass.arch="${BUILD_ARCH}" \
+    io.hass.type="app" \
+    io.hass.version="${BUILD_VERSION}"
+
+ENV NODE_ENV=production
+
+RUN apk add --no-cache nodejs
+
+COPY --from=dependencies /node_modules /node_modules
+COPY package.json package-lock.json /
+COPY api.js index.js libsignal-log-filter.js message-dedupe.js runtime.js \
+    validation.js webui.js whatsapp.js /
+COPY logo.png /
+COPY run.sh /
+
+RUN chmod a+x /run.sh
 
 EXPOSE 3000 8099
-CMD [ "/run.sh" ]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["curl", "--fail", "--silent", "--output", "/dev/null", \
+    "http://127.0.0.1:3000/health"]
+CMD ["/run.sh"]

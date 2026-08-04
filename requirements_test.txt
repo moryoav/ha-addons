@@ -1,3 +1,5 @@
-pytest-homeassistant-custom-component
-pytest-cov
-tzdata
+# Current-stable local test environment (Home Assistant 2026.7.4).
+# CI overrides the first pin for the declared 2024.12.0 minimum test job.
+pytest-homeassistant-custom-component==0.13.348
+pytest-cov==7.1.0
+tzdata==2026.3

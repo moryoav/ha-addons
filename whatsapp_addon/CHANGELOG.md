@@ -1,3 +1,33 @@
+## 1.4.31
+
+- Added the `/onWhatsApp` registration lookup used by
+  `whatsapp.check_number`, with normalized phone JIDs, nullable LIDs,
+  structured errors, and no group or arbitrary-LID claims.
+- Added optional bearer-token authentication for the bridge API and secure
+  token handoff through Supervisor discovery, and removed permissive CORS from
+  the non-browser API.
+- Added lookup rate limiting, strict client-name and phone-target validation,
+  safe one-child session paths, and logs that omit lookup identifiers and
+  message content.
+- Reduced `/health` to a versioned service/capability contract and configured
+  client count without exposing connection details.
+- Retired the bundled legacy custom component, removed the read-write
+  `/config` mount and AppArmor access, and stopped deleting integration files
+  during shutdown or uninstall. Existing legacy files remain untouched.
+- Replaced the broad AppArmor file rule with explicit read-only packaged-code
+  access and writable add-on data/runtime paths.
+- Made production dependency installation reproducible and ensured the runtime
+  uses only the packaged Baileys 6.7.23 source instead of overlaying the older
+  vendored tree.
+- Switched to the pinned add-on base image directly, removed legacy
+  `build.yaml`/`BUILD_FROM` packaging, and dropped the `armhf`, `armv7`, and
+  `i386` platforms unsupported by Home Assistant since 2025.12.
+- Replaced obsolete Supervisor watchdog and duplicate web-UI metadata with a
+  native container health check and Ingress-native UI configuration.
+- Added required Node tests and add-on lint/build checks to CI.
+- Documented HACS migration, version skew, API authentication, lookup privacy,
+  and the distinction between send acceptance and delivery.
+
 ## 1.4.29
 
 - Fixed inbound dedupe for quoted/reply messages delivered twice during LID migration when the quoted `contextInfo.participant` or other direct-user JID context fields differ between `@lid` and `@s.whatsapp.net`.

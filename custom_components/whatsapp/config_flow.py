@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import voluptuous as vol
 
 from homeassistant import config_entries
+
 try:
     from homeassistant.components.hassio import HassioServiceInfo, get_addons_info
 except ImportError:  # pragma: no cover - Home Assistant installations provide hassio.
@@ -17,12 +18,14 @@ except ImportError:  # pragma: no cover - Home Assistant installations provide h
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .client import WhatsappCannotConnect, WhatsappClient
+from .client import WhatsappCannotConnect, WhatsappClient, normalize_api_token
 from .const import (
     ADDON_FALLBACK_HOSTS,
     ADDON_PORT,
+    CONF_API_TOKEN,
     CONF_URL,
     DOMAIN,
 )
@@ -68,8 +71,12 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_hassio(self, discovery_info: HassioServiceInfo) -> FlowResult:
         """Handle Supervisor add-on discovery."""
         urls = []
-        if url := _url_from_discovery_config(discovery_info.config):
-            urls.append(url)
+        try:
+            if url := _url_from_discovery_config(discovery_info.config):
+                urls.append(url)
+        except InvalidUrl:
+            pass
+        api_token = _api_token_from_discovery_config(discovery_info.config)
 
         try:
             url = await _async_detect_addon_url(self.hass, urls)
@@ -79,6 +86,8 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self._async_create_or_update_entry(
             url,
             title=getattr(discovery_info, "name", "WhatsApp Add-on"),
+            api_token=api_token,
+            replace_api_token=True,
         )
 
     async def async_step_reconfigure(
@@ -102,18 +111,28 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         url: str,
         *,
         title: str = "WhatsApp Add-on",
+        api_token: str | None = None,
+        replace_api_token: bool = False,
     ) -> FlowResult:
         """Create the single config entry or update the existing one."""
         await self.async_set_unique_id(DOMAIN)
 
         for entry in self._async_current_entries():
+            data = {**entry.data, CONF_URL: url}
+            if api_token is not None:
+                data[CONF_API_TOKEN] = api_token
+            elif replace_api_token:
+                data.pop(CONF_API_TOKEN, None)
             self.hass.config_entries.async_update_entry(
                 entry,
-                data={**entry.data, CONF_URL: url},
+                data=data,
             )
             return self.async_abort(reason="already_configured")
 
-        return self.async_create_entry(title=title, data={CONF_URL: url})
+        data = {CONF_URL: url}
+        if api_token is not None:
+            data[CONF_API_TOKEN] = api_token
+        return self.async_create_entry(title=title, data=data)
 
     def _update_entry_and_abort(self, entry: config_entries.ConfigEntry, url: str):
         """Update an entry and abort, supporting older Home Assistant test cores."""
@@ -132,8 +151,8 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 def _url_from_discovery_config(config: dict[str, Any]) -> str | None:
     """Build an add-on URL from Supervisor discovery config."""
-    if url := config.get(CONF_URL):
-        return _normalize_url(url)
+    if CONF_URL in config:
+        return _normalize_url(config[CONF_URL])
 
     host = config.get(CONF_HOST)
     port = config.get(CONF_PORT, ADDON_PORT)
@@ -143,12 +162,40 @@ def _url_from_discovery_config(config: dict[str, Any]) -> str | None:
     return None
 
 
-def _normalize_url(url: str) -> str:
+def _api_token_from_discovery_config(config: dict[str, Any]) -> str | None:
+    """Return a valid optional API token from Supervisor discovery data."""
+    try:
+        return normalize_api_token(config.get(CONF_API_TOKEN))
+    except ValueError:
+        return None
+
+
+def _normalize_url(url: Any) -> str:
     """Normalize and validate an add-on URL."""
-    parsed = urlparse(url.strip())
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if not isinstance(url, str) or not (normalized := url.strip()):
         raise InvalidUrl
-    return url.strip().rstrip("/")
+
+    try:
+        parsed = urlparse(normalized)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as err:
+        raise InvalidUrl from err
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or hostname is None
+        or any(char.isspace() for char in hostname)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise InvalidUrl
+    return normalized.rstrip("/")
 
 
 async def _async_detect_addon_url(
@@ -171,9 +218,14 @@ def _candidate_urls(hass: HomeAssistant, preferred_urls: Iterable[str]) -> list[
     candidates: list[str] = []
     candidates.extend(preferred_urls)
 
-    if get_addons_info is not None and (addons_info := get_addons_info(hass)):
+    try:
+        addons_info = get_addons_info(hass) if get_addons_info is not None else {}
+    except HomeAssistantError:
+        addons_info = {}
+
+    if addons_info:
         for slug, addon in addons_info.items():
-            if _is_whatsapp_addon(slug, addon):
+            if addon is not None and _is_whatsapp_addon(slug, addon):
                 candidates.extend(_addon_info_urls(slug, addon))
 
     candidates.extend(f"http://{host}:{ADDON_PORT}" for host in ADDON_FALLBACK_HOSTS)

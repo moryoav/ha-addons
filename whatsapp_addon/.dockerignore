@@ -1,0 +1,14 @@
+**
+!Dockerfile
+!api.js
+!index.js
+!libsignal-log-filter.js
+!logo.png
+!message-dedupe.js
+!package.json
+!package-lock.json
+!run.sh
+!runtime.js
+!validation.js
+!webui.js
+!whatsapp.js

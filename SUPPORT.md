@@ -18,7 +18,7 @@ Please include:
 
 - Your WhatsApp for Home Assistant version.
 - Your Home Assistant version.
-- Whether you installed the integration through HACS, manually, or from the bundled add-on compatibility component.
+- Whether you installed the integration through HACS or manually.
 - Your architecture, such as `amd64` or `aarch64`.
 - Your add-on `clients` configuration with private identifiers removed.
 - Clear reproduction steps.

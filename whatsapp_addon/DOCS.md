@@ -4,15 +4,26 @@
 
 ## Configuration
 
-The add-on option is:
+The add-on options are:
 
-- `clients`: one or more WhatsApp session names. The default is `default`.
+- `clients`: one or more unique WhatsApp session names. The default is
+  `default`. A name must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
+- `api_token`: an optional bearer token for the internal add-on API. Use a
+  strong random value for defense in depth. Leave it unset to preserve
+  compatibility with existing internal-network installations. The value may
+  contain `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`, `+`, and `/`, followed by
+  optional `=` padding, and may be at most 512 characters total. Random hex or
+  URL-safe Base64 is recommended. Spaces, `:`, and other characters cause a
+  startup validation error.
 
 Each session name becomes the `clientId` used by Home Assistant actions. Every client has its own persisted WhatsApp pairing state under the add-on data folder.
 
 ### **How to add other WhatsApp sessions**
 
-Open the add-on configuration page and add another value under `clients`. Use that value as the `clientId` in Home Assistant actions.
+Open the add-on configuration page and add another value under `clients`. Use
+that value as the `clientId` in Home Assistant actions. Empty lists, duplicates,
+invalid characters, and names longer than 64 characters are rejected before
+any session directory is created.
 
 ## Stable and canary builds
 
@@ -26,11 +37,39 @@ This repository does not currently publish a separate canary or `next` branch. I
 
 ## Security and network access
 
-The add-on exposes no Home Assistant LAN port. Home Assistant Ingress is enabled for the add-on web UI, and the web UI listener only accepts the Supervisor ingress proxy address. QR pairing is shown in the add-on web UI and through Home Assistant persistent notifications.
+The add-on exposes no Home Assistant LAN port. Home Assistant Ingress is enabled
+for the add-on web UI, and the web UI listener only accepts the Supervisor
+ingress proxy address. QR pairing is shown in the add-on web UI and through Home
+Assistant persistent notifications.
 
-The add-on includes a custom AppArmor profile, runs without host networking, Docker API access, privileged capabilities, `full_access`, host PID, or host UTS, and uses the default Supervisor API role. A watchdog calls the local `/health` endpoint so Supervisor can monitor the app after startup.
+The add-on includes a custom AppArmor profile, runs without host networking,
+Docker API access, privileged capabilities, `full_access`, host PID, or host
+UTS, and uses the default Supervisor API role. A native container health check
+calls the local `/health` endpoint after startup.
 
-The `/config` mount is read-write only for legacy compatibility component installation. If HACS or a manual install already manages `/config/custom_components/whatsapp`, the add-on leaves those files in place.
+The add-on has no `/config` mount. It cannot install, overwrite, or remove a
+custom integration. Version 1.4.31 retired the bundled legacy component; an
+existing `/config/custom_components/whatsapp` directory is left untouched when
+the add-on is updated or removed. Install the current integration through HACS.
+
+When `api_token` is set, action API requests require
+`Authorization: Bearer <token>`. The token is advertised to the integration
+through the internal Supervisor discovery record. Keep the add-on and
+integration at version 1.4.31 or newer, and never paste the token into logs or
+issue reports.
+
+Token-enabled installations require Supervisor discovery; manual or fallback
+URL detection cannot provide the credential. After adding, changing, or
+removing `api_token`, restart the add-on and reload the integration so discovery
+refreshes or removes the stored token. Because `/health` is public, a stale or
+wrong token is reported as an authorization error on the first protected action
+rather than during setup.
+
+The `/health` route remains unauthenticated so container monitoring can use it.
+Its response is deliberately limited to a non-sensitive status, the service
+identifier `ha-whatsapp-addon`, API version, supported capabilities, and
+configured-client count. It contains no token, add-on URL, recipient id,
+session data, or message content.
 
 ## Web UI
 
@@ -40,9 +79,9 @@ Open the add-on page and select Open Web UI. The Ingress UI shows each configure
 
 A WhatsApp target id can use one of these formats:
 
-- Phone-number user JID: `391234567890@s.whatsapp.net`
-- New WhatsApp LID user JID: `90855889203418@lid`
-- Group JID: `1234567890-123456789@g.us`
+- Phone-number user JID: fictional `12025550123@s.whatsapp.net`
+- New WhatsApp LID user JID: synthetic `999000111222333@lid`
+- Group JID: synthetic `120363000000000000@g.us`
 - Broadcast JID: `status@broadcast`
 
 If you only pass a phone number, the add-on appends `@s.whatsapp.net`. If Home Assistant receives or stores an `@lid` id, pass it back exactly as received. Do not convert it to a phone-number JID.
@@ -53,15 +92,56 @@ When replying to an incoming event, the safest target is usually:
 {{ trigger.event.data.key.remoteJid }}
 ```
 
-The add-on suppresses duplicate inbound phone/LID deliveries when WhatsApp sends the same message twice with different `remoteJid` values during the LID migration.
+The add-on suppresses duplicate inbound phone/LID deliveries when WhatsApp sends
+the same message twice with different `remoteJid` values during the LID
+migration.
+
+### **Check whether a phone number is registered**
+
+```yaml
+- action: whatsapp.check_number
+  data:
+    clientId: default
+    to: "+12025550123"
+  response_variable: number_check
+```
+
+This action requires `response_variable`. `to` may be an international phone
+number containing bare digits with an optional leading `+`, or a phone-number
+`@s.whatsapp.net` JID. Groups, LIDs, broadcasts, and device-qualified JIDs are
+rejected because Baileys does not provide the same authoritative lookup for
+those identifiers.
+
+The response has this shape:
+
+```yaml
+jid: 12025550123@s.whatsapp.net
+exists: true
+lid: 999000111222333@lid
+```
+
+An unregistered number returns `exists: false` and normally `lid: null`; it is
+not an action failure. A lookup confirms registration at that moment only. It
+does not guarantee a later message will be delivered or read. Avoid bulk or
+repeated enumeration and treat `to`, `jid`, and `lid` as private identifiers.
+
+Invalid input, an unknown or disconnected `clientId`, a stale API token, rate
+limiting, and an upstream WhatsApp failure are distinct action errors. They are
+not returned as `exists: false`, so automations can distinguish an unregistered
+number from an operational failure.
+
+`whatsapp.send_message` sends direct phone JIDs without a registration lookup;
+bare phone numbers retain the existing lookup before sending. Use
+`whatsapp.check_number` when a workflow needs an explicit preflight and a
+structured registration response.
 
 ### **Send a simple text message**
 
 ```yaml
-service: whatsapp.send_message
+action: whatsapp.send_message
 data:
   clientId: default
-  to: 391234567890@s.whatsapp.net # User ID
+  to: 12025550123@s.whatsapp.net # Fictional User ID
   body:
     text: Hi it's a simple text message
 ```
@@ -69,24 +149,28 @@ data:
 ### **Send a message and capture the response**
 
 ```yaml
-- service: whatsapp.send_message
+- action: whatsapp.send_message
   response_variable: whatsapp_result
   data:
     clientId: default
-    to: 391234567890@s.whatsapp.net
+    to: 12025550123@s.whatsapp.net
     body:
       text: Hi, this response contains the sent WhatsApp message id
 ```
 
-The response includes `client_id`, `to`, `body`, `sent_message`, and `message_id`. For compatibility with older automations, the integration also fires `whatsapp_send_message_result` after a message is sent.
+The response includes `client_id`, `to`, `body`, `sent_message`, and
+`message_id`. For compatibility with older automations, the integration also
+fires `whatsapp_send_message_result` after a message is sent. Success means the
+linked client accepted the send operation; it does not guarantee delivery,
+receipt, or that the recipient read the message.
 
 ### **How to send an image**
 
 ```yaml
-service: whatsapp.send_message
+action: whatsapp.send_message
 data:
   clientId: default
-  to: 391234567890@s.whatsapp.net
+  to: 12025550123@s.whatsapp.net
   body:
     image:
       url: "https://dummyimage.com/600x400/000/fff.png"
@@ -96,10 +180,10 @@ data:
 ### **How to send audio message**
 
 ```yaml
-service: whatsapp.send_message
+action: whatsapp.send_message
 data:
   clientId: default
-  to: 391234567890@s.whatsapp.net
+  to: 12025550123@s.whatsapp.net
   body:
     audio:
       url: "https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/examples/hello_world.mp3?raw=true"
@@ -109,10 +193,10 @@ data:
 ### **How to send a location**
 
 ```yaml
-service: whatsapp.send_message
+action: whatsapp.send_message
 data:
   clientId: default
-  to: 391234567890@s.whatsapp.net
+  to: 12025550123@s.whatsapp.net
   body:
     location:
       degreesLatitude: 24.121231
@@ -122,16 +206,16 @@ data:
 ### **How to subscribe to presence update**
 
 ```yaml
-service: whatsapp.presence_subscribe
+action: whatsapp.presence_subscribe
 data:
   clientId: default
-  userId: 391234567890@s.whatsapp.net
+  userId: 12025550123@s.whatsapp.net
 ```
 
 ### **How to mark a received message as read**
 
 ```yaml
-service: whatsapp.read_messages
+action: whatsapp.read_messages
 data:
   clientId: "{{ trigger.event.data.clientId }}"
   body:
@@ -173,7 +257,7 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
     - condition: template
       value_template: "{{ trigger.event.data.message.conversation == '!ping' }}"
   action:
-    - service: whatsapp.send_message
+    - action: whatsapp.send_message
       data:
         clientId: default
         to: "{{ trigger.event.data.key.remoteJid }}"
@@ -192,7 +276,7 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
       event_type: new_whatsapp_message
   condition: []
   action:
-    - service: whatsapp.read_messages
+    - action: whatsapp.read_messages
       data:
         clientId: "{{ trigger.event.data.clientId }}"
         body:
@@ -211,15 +295,15 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
   trigger:
     - platform: device
       domain: device_tracker
-      entity_id: device_tracker.iphone_13_pro
+      entity_id: device_tracker.example_phone
       type: enter
       zone: zone.home
   condition: []
   action:
-    - service: whatsapp.send_message
+    - action: whatsapp.send_message
       data:
         clientId: default
-        to: 391234567890@s.whatsapp.net
+        to: 12025550123@s.whatsapp.net
         body:
           text: Hi, I'm at home
   mode: single
@@ -235,7 +319,7 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
       event_type: new_whatsapp_message
   condition: []
   action:
-    - service: whatsapp.send_message
+    - action: whatsapp.send_message
       data:
         clientId: "{{ trigger.event.data.clientId }}" # Which instance of whatsapp should the message come from
         to: "{{ trigger.event.data.key.remoteJid }}"
@@ -256,7 +340,7 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
       event_type: new_whatsapp_message
   condition: []
   action:
-    - service: whatsapp.send_message
+    - action: whatsapp.send_message
       data:
         clientId: "{{ trigger.event.data.clientId }}"
         to: "{{ trigger.event.data.key.remoteJid }}"
@@ -279,14 +363,44 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
   condition:
     - condition: template
       value_template:
-        "{{ trigger.event.data.presences['391234567890@s.whatsapp.net'].lastKnownPresence
+        "{{ trigger.event.data.presences['12025550123@s.whatsapp.net'].lastKnownPresence
         == 'available' }}"
   action:
-    - service: persistent_notification.create
+    - action: persistent_notification.create
       data:
         message: Contact is online!
   mode: single
 ```
+
+## Privacy and compatibility
+
+The add-on supports `aarch64` and `amd64`. Version 1.4.31 removes `armhf`,
+`armv7`, and `i386`, which Home Assistant has not supported since 2025.12.
+
+WhatsApp message events and Home Assistant automation traces can contain phone
+JIDs, LIDs, message keys, quoted-message data, and message bodies. The add-on
+does not log lookup identifiers or message bodies, but Home Assistant may retain
+event and action data. Redact these fields, QR codes, session data, and
+`api_token` before sharing diagnostics, logs, screenshots, or traces.
+
+Use add-on and integration version 1.4.31 or newer together. The registration
+lookup is unavailable on older add-ons; the integration reports a clear update
+error instead of treating a missing endpoint as an unregistered number.
+
+### Migrating from the bundled legacy component
+
+The add-on no longer writes to `/config`. Existing legacy component files are
+not deleted during update or uninstall.
+
+1. Create a Home Assistant backup.
+2. Install or update **WhatsApp** from the default HACS integration catalog.
+3. Restart Home Assistant and verify the integration under
+   **Settings > Devices & services**.
+4. Remove an old `whatsapp:` YAML block, if present, and restart again.
+
+After HACS takes ownership, do not manually delete
+`/config/custom_components/whatsapp`. Manual-install users should replace the
+whole directory with the current repository copy.
 
 ## Support and issues
 

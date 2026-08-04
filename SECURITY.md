@@ -41,6 +41,22 @@ Please use extra care when changing or reviewing:
 - Diagnostics output and logging.
 - AppArmor, container permissions, networking, mounted paths, and add-on configuration.
 
+## Add-on API Protection
+
+The add-on API is intended only for Home Assistant's internal add-on network and
+is not published to the LAN by the supplied configuration. Do not expose port
+`3000` through a reverse proxy or host port mapping.
+
+Set the add-on's optional `api_token` setting to require bearer-token
+authentication for API requests. The add-on advertises that token to the
+integration through Supervisor discovery; do not copy it into automations,
+logs, diagnostics, screenshots, or issue reports.
+
+Registration lookups can reveal whether a phone number is associated with a
+WhatsApp account and can return its linked identifier. Use them only for
+numbers you are authorized to process, and do not use the API for bulk account
+enumeration.
+
 ## Responsible Testing
 
 Test security reports and fixes only in an environment you own or have permission to use. Do not attempt to access, modify, or disclose another person's Home Assistant instance, WhatsApp account, configuration, credentials, logs, messages, contacts, or devices.
