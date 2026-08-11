@@ -193,6 +193,13 @@ Message targets can use:
 - Group JID, such as the synthetic `120363000000000000@g.us`.
 - Broadcast JID, such as `status@broadcast`.
 
+**For direct chats, migrate automations to LID (`@lid`) targets whenever
+available.**
+Phone-number JIDs (`@s.whatsapp.net`) are less reliable with Baileys. Run
+`whatsapp.check_number` with the phone number, then use the returned `lid` as
+the `to` target; fall back to the returned phone-number `jid` only when `lid`
+is unavailable.
+
 When replying to an incoming event, the safest target is usually:
 
 ```jinja2

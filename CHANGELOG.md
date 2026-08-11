@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+- Documented that direct-message automations should prefer LID targets and how
+  to obtain them with `whatsapp.check_number`.
+
 ## 1.4.32
 
 - Fixed add-on startup under AppArmor by giving the trusted Home Assistant
