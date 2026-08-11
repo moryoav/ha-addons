@@ -1,0 +1,7 @@
+# Local agent notes
+AGENTS.md
+agents.md
+
+# Python bytecode
+__pycache__/
+*.py[cod]
