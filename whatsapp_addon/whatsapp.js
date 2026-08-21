@@ -305,6 +305,10 @@ class WhatsappClient extends EventEmitter {
 
     this.#status.attempt += 1;
     clearTimeout(this.#reconnectTimer);
+    this.emit("reconnect_scheduled", {
+      attempt: this.#status.attempt,
+      delayMs: this.#timeout,
+    });
     this.#reconnectTimer = setTimeout(() => {
       void this.connect().catch((error) => this.#handleConnectFailure(error));
     }, this.#timeout);

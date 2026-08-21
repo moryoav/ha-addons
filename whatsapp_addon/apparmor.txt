@@ -31,6 +31,7 @@ profile whatsapp_addon flags=(attach_disconnected,mediate_deleted) {
   /usr/lib/bashio/** ix,
   /tmp/{,**} rwk,
   /data/{,**} rwk,
+  /healthcheck.sh rix,
   /run.sh rix,
 
   # Constrain the long-lived, network-facing application.

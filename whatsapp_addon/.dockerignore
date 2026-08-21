@@ -1,6 +1,8 @@
 **
 !Dockerfile
 !api.js
+!diagnostics.js
+!healthcheck.sh
 !index.js
 !libsignal-log-filter.js
 !logo.png

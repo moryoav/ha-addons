@@ -7,6 +7,7 @@ const {
   createAddonRuntime,
   fingerprint,
   normalizeApiToken,
+  normalizeLogLevel,
   parseOptions,
   removeSessionDirectory,
   startAddon,
@@ -31,10 +32,16 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
     {
       clientIds: ["default", "backup_1"],
       apiToken: "fictional-token_123456",
+      logLevel: "info",
     }
   );
   assert.equal(normalizeApiToken(""), undefined);
   assert.equal(normalizeApiToken(undefined), undefined);
+  assert.equal(normalizeLogLevel(undefined), "info");
+  assert.equal(normalizeLogLevel("debug"), "debug");
+  for (const value of ["trace", "", null]) {
+    assert.throws(() => normalizeLogLevel(value), RequestValidationError);
+  }
 
   for (const token of ["has spaces", "line\nbreak", "bad:token", "a".repeat(513)]) {
     assert.throws(() => normalizeApiToken(token), RequestValidationError);
@@ -47,6 +54,67 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
   ]) {
     assert.throws(() => parseOptions(content), RequestValidationError);
   }
+});
+
+test("debug diagnostics are configured before clients are created", async () => {
+  const calls = [];
+  const logger = {
+    level: "info",
+    debug: (...args) => calls.push(["debug", ...args]),
+    info: (...args) => calls.push(["info", ...args]),
+  };
+  const diagnostics = {
+    runId: "0123456789abcdef",
+    async start() {
+      calls.push(["diagnostics_start", logger.level]);
+    },
+    async stop() {},
+    markApiReady() {},
+    setClientStateProvider() {},
+  };
+  const servers = [];
+
+  const runtime = await startAddon({
+    logger,
+    optionsLoader: async () => ({
+      clientIds: ["default"],
+      apiToken: undefined,
+      logLevel: "debug",
+    }),
+    diagnosticsFactory: () => diagnostics,
+    replayHealthDiagnosticsFn: async () => {},
+    clientFactory: () => {
+      calls.push(["client_created", logger.level]);
+      return new FakeClient();
+    },
+    httpClient: { post: async () => {} },
+    dataRoot: path.resolve("runtime-test-data"),
+    listenFn: async () => {
+      const server = {};
+      servers.push(server);
+      return server;
+    },
+    closeServerFn: async () => {},
+  });
+
+  assert.equal(logger.level, "debug");
+  assert.deepEqual(
+    calls.filter(([event]) =>
+      ["diagnostics_start", "client_created"].includes(event)
+    ),
+    [
+      ["diagnostics_start", "debug"],
+      ["client_created", "debug"],
+    ]
+  );
+  const startup = calls.find(
+    ([level, message]) =>
+      level === "info" && message === "WhatsApp add-on runtime starting."
+  );
+  assert.equal(startup[2].runId, diagnostics.runId);
+  assert.equal(startup[2].logLevel, "debug");
+  assert.equal(servers.length, 2);
+  await runtime.close();
 });
 
 test("session deletion awaits one validated child path", async () => {
@@ -159,6 +227,48 @@ test("runtime logs contain neither raw identifiers nor raw errors", () => {
   assert.ok(!serialized.includes("raw failure"));
   assert.ok(!serialized.includes("arbitrary-private-code"));
   assert.ok(serialized.includes("hmac:"));
+});
+
+test("debug message detail is capped and privacy-sanitized", () => {
+  const entries = [];
+  const counters = [];
+  const logger = { debug: (...args) => entries.push(args) };
+  const client = new FakeClient();
+  createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    clientFactory: () => client,
+    fingerprintKey: Buffer.alloc(32, 4),
+    logLevel: "debug",
+    runId: "0123456789abcdef",
+    diagnostics: {
+      recordMessageBatch: (...args) => counters.push(args),
+    },
+    logger,
+  });
+
+  const messages = Array.from({ length: 12 }, (_, index) => ({
+    hasMessage: true,
+    fromMe: false,
+    type: index === 0 ? `private-${FICTIONAL_NUMBER}` : "conversation",
+    messageId: `message-${FICTIONAL_NUMBER}-${index}`,
+    remoteJid: FICTIONAL_JID,
+    participant: FICTIONAL_JID,
+  }));
+  client.emit("msg_upsert", {
+    count: 12,
+    type: `private-${FICTIONAL_NUMBER}`,
+    requestId: `request-${FICTIONAL_NUMBER}`,
+    messages,
+  });
+
+  assert.deepEqual(counters, [[12]]);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0][1].messages.length, 10);
+  assert.equal(entries[0][1].omitted, 2);
+  assert.equal(entries[0][1].type, "other");
+  assert.equal(entries[0][1].messages[0].type, "other");
+  assert.equal(JSON.stringify(entries).includes(FICTIONAL_NUMBER), false);
 });
 
 test("discovery advertises the optional token without logging it", async () => {

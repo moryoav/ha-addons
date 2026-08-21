@@ -134,6 +134,8 @@ The add-on advertises its local API through Supervisor discovery, so the integra
 - `clients`: one or more unique WhatsApp session names. The default is
   `default`. Names must start with a letter or digit, may contain letters,
   digits, `_`, and `-`, and may be at most 64 characters long.
+- `log_level`: `info` (the default) for normal operation, or `debug` for
+  additional privacy-safe runtime diagnostics while investigating a problem.
 - `api_token`: optional bearer token for the internal API. Set it to a strong
   random value for defense in depth, or leave it unset for compatibility with
   existing internal-network installations. It may contain `A-Z`, `a-z`, `0-9`,
@@ -144,6 +146,18 @@ The add-on advertises its local API through Supervisor discovery, so the integra
 Token-enabled installations require Supervisor discovery; manual or fallback
 URL detection cannot provide the token. Restart the add-on and reload the
 integration after adding, changing, or removing `api_token`.
+
+Debug logging periodically summarizes event-loop responsiveness, process and
+container resource use, API activity, health state, reconnects, and aggregate
+message handling. It does not enable raw Baileys logs or include message content,
+raw account identifiers, QR codes, session data, or API tokens. Message-related
+entries use run-scoped one-way references for correlation. Return the option to
+`info` after collecting the relevant logs.
+
+Failed native health checks are recorded in a small persistent history at both
+log levels. If Supervisor replaces an unhealthy container, the new add-on run
+replays the retained failure details into its log so the original probe result
+and surrounding runtime state are not lost.
 
 Each client gets its own persisted session and must be referenced by `clientId` in service calls.
 

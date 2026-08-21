@@ -214,6 +214,7 @@ const createApiApp = ({
   logger = {},
   sharedSecret,
   lookupRateLimit,
+  diagnostics,
 } = {}) => {
   if (!clients || typeof clients !== "object") {
     throw new TypeError("clients is required");
@@ -227,7 +228,27 @@ const createApiApp = ({
   // Keep health public for the container HEALTHCHECK and local monitoring. It
   // deliberately exposes no session identifiers or connection details.
   app.get("/health", (req, res) => {
+    if (req.get("x-ha-healthcheck") === "docker") {
+      diagnostics?.recordNativeHealthProbe?.();
+    }
     res.json(createHealthSnapshot(clients));
+  });
+
+  // Track only aggregate request timing. Routes, request data, addresses, and
+  // authentication values never enter the diagnostic record.
+  app.use((req, res, next) => {
+    const complete = diagnostics?.startApiRequest?.();
+    if (typeof complete === "function") {
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        complete();
+      };
+      res.once("finish", finish);
+      res.once("close", finish);
+    }
+    next();
   });
 
   app.use(createApiAuth(sharedSecret));

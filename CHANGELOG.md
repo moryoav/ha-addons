@@ -2,8 +2,16 @@
 
 All notable changes to this repository are documented here.
 
-## Unreleased
+## 1.4.33
 
+- Added an add-on `log_level` option with privacy-safe periodic diagnostics in
+  debug mode for runtime responsiveness, resource use, API activity, health,
+  reconnects, and aggregate message handling.
+- Moved high-volume message receipt and ignore details from info logs to
+  bounded debug logs while retaining aggregate counters.
+- Added persistent health-check failure records that are replayed into the
+  add-on log after a restart, retaining the evidence needed to investigate an
+  unhealthy container after Supervisor replaces it.
 - Documented that direct-message automations should prefer LID targets and how
   to obtain them with `whatsapp.check_number`.
 

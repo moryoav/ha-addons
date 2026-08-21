@@ -1,3 +1,14 @@
+## 1.4.33
+
+- Added an `info` or `debug` log-level option. Debug mode reports
+  privacy-safe runtime, API, health, reconnect, and aggregate message metrics
+  without logging message content or raw account identifiers.
+- Moved high-volume message receipt and ignore details from info logs to
+  bounded debug logs while retaining aggregate counters.
+- Preserved failed health-check diagnostics in the add-on data directory and
+  replayed them after a restart so container health failures can be diagnosed
+  after Supervisor replaces the unhealthy container.
+
 ## 1.4.32
 
 - Fixed add-on startup under AppArmor by giving the trusted base-image

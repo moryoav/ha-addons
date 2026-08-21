@@ -6,3 +6,6 @@ configuration:
   api_token:
     name: API token
     description: Optional bearer-safe token (A-Z, a-z, 0-9, -._~+/, then optional = padding; maximum 512 characters). Use random hex or URL-safe Base64. Restart the add-on and reload the integration after changing it. Leave unset for internal-network compatibility.
+  log_level:
+    name: Log level
+    description: Use info for normal operation or debug for additional privacy-safe runtime diagnostics while investigating a problem.

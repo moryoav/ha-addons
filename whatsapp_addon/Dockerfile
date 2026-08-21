@@ -23,15 +23,14 @@ RUN apk add --no-cache nodejs
 
 COPY --from=dependencies /node_modules /node_modules
 COPY package.json package-lock.json /
-COPY api.js index.js libsignal-log-filter.js message-dedupe.js runtime.js \
-    validation.js webui.js whatsapp.js /
+COPY api.js diagnostics.js index.js libsignal-log-filter.js message-dedupe.js \
+    runtime.js validation.js webui.js whatsapp.js /
 COPY logo.png /
-COPY run.sh /
+COPY healthcheck.sh run.sh /
 
-RUN chmod a+x /run.sh
+RUN chmod a+x /healthcheck.sh /run.sh
 
 EXPOSE 3000 8099
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["curl", "--fail", "--silent", "--output", "/dev/null", \
-    "http://127.0.0.1:3000/health"]
+HEALTHCHECK --interval=30s --timeout=7s --start-period=20s --retries=3 \
+    CMD ["/healthcheck.sh"]
 CMD ["/run.sh"]

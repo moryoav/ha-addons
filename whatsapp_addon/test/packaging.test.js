@@ -61,6 +61,29 @@ test("AppArmor confines Node after the trusted base-image bootstrap", () => {
   assert.doesNotMatch(childProfile, /^\s*file,\s*$/m);
   assert.doesNotMatch(childProfile, /^\s*\/\S+\s+\S*x\S*,\s*$/m);
 
+  assert.match(profile, /^\s*\/healthcheck\.sh\s+rix,\s*$/m);
   const runScript = fs.readFileSync(path.join(ADDON_ROOT, "run.sh"), "utf8");
   assert.match(runScript, /^exec \/usr\/bin\/node \/index\.js\r?$/m);
+});
+
+test("Docker packages the diagnostic health probe with a longer wrapper timeout", () => {
+  const dockerfile = fs.readFileSync(
+    path.join(ADDON_ROOT, "Dockerfile"),
+    "utf8"
+  );
+  const dockerignore = fs.readFileSync(
+    path.join(ADDON_ROOT, ".dockerignore"),
+    "utf8"
+  );
+
+  assert.match(dockerfile, /COPY healthcheck\.sh run\.sh \//);
+  assert.match(dockerfile, /chmod a\+x \/healthcheck\.sh \/run\.sh/);
+  assert.match(
+    dockerfile,
+    /HEALTHCHECK --interval=30s --timeout=7s --start-period=20s --retries=3/
+  );
+  assert.match(dockerfile, /CMD \["\/healthcheck\.sh"\]/);
+  assert.doesNotMatch(dockerfile, /HEALTHCHECK[^\n]*--timeout=5s/);
+  assert.match(dockerignore, /^!healthcheck\.sh\r?$/m);
+  assert.match(dockerignore, /^!diagnostics\.js\r?$/m);
 });

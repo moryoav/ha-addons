@@ -70,8 +70,16 @@ const createClient = (overrides = {}) => ({
 });
 
 test("health identifies the API without exposing client IDs or CORS", async () => {
+  let nativeHealthRequests = 0;
   await withApp(
-    { clients: { default: createClient(), backup: createClient() } },
+    {
+      clients: { default: createClient(), backup: createClient() },
+      diagnostics: {
+        recordNativeHealthProbe() {
+          nativeHealthRequests += 1;
+        },
+      },
+    },
     async (baseUrl) => {
       const response = await request(baseUrl, "/health");
 
@@ -86,6 +94,49 @@ test("health identifies the API without exposing client IDs or CORS", async () =
       assert.equal(response.headers.get("access-control-allow-origin"), null);
       assert.equal(response.headers.get("x-powered-by"), null);
       assert.ok(!JSON.stringify(response.payload).includes("default"));
+
+      const wrongMarker = await request(baseUrl, "/health", {
+        headers: { "x-ha-healthcheck": "not-docker" },
+      });
+      const nativeProbe = await request(baseUrl, "/health", {
+        headers: { "x-ha-healthcheck": "docker" },
+      });
+      assert.deepEqual(wrongMarker.payload, response.payload);
+      assert.deepEqual(nativeProbe.payload, response.payload);
+      assert.equal(nativeHealthRequests, 1);
+    }
+  );
+});
+
+test("API timing diagnostics stay aggregate and exclude health probes", async () => {
+  let active = 0;
+  let completed = 0;
+  await withApp(
+    {
+      clients: { default: createClient() },
+      diagnostics: {
+        startApiRequest() {
+          active += 1;
+          return () => {
+            active -= 1;
+            completed += 1;
+          };
+        },
+      },
+    },
+    async (baseUrl) => {
+      assert.equal((await request(baseUrl, "/health")).status, 200);
+      assert.equal(completed, 0);
+      assert.equal(
+        (
+          await request(baseUrl, "/setStatus", {
+            body: { clientId: "default", status: "Available" },
+          })
+        ).status,
+        200
+      );
+      assert.equal(active, 0);
+      assert.equal(completed, 1);
     }
   );
 });

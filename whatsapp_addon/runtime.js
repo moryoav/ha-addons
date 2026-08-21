@@ -5,6 +5,13 @@ const axios = require("axios");
 const qrimage = require("qr-image");
 
 const { createApiApp } = require("./api");
+const {
+  DEFAULT_HEALTH_FAILURE_PATH,
+  DEFAULT_HEARTBEAT_PATH,
+  createRunId,
+  createRuntimeDiagnostics,
+  replayHealthcheckDiagnostics,
+} = require("./diagnostics");
 const { createWebUiApp, INGRESS_PORT } = require("./webui");
 const { WhatsappClient } = require("./whatsapp");
 const {
@@ -18,6 +25,37 @@ const API_PORT = 3000;
 const DATA_ROOT = "/data";
 const OPTIONS_PATH = "/data/options.json";
 const PROCESS_LOG_KEY = crypto.randomBytes(32);
+const DEBUG_MESSAGE_LIMIT = 10;
+
+const SAFE_MESSAGE_TYPES = new Set([
+  "audioMessage",
+  "buttonsMessage",
+  "contactMessage",
+  "contactsArrayMessage",
+  "conversation",
+  "documentMessage",
+  "extendedTextMessage",
+  "imageMessage",
+  "interactiveMessage",
+  "listMessage",
+  "listResponseMessage",
+  "liveLocationMessage",
+  "locationMessage",
+  "pollCreationMessage",
+  "pollUpdateMessage",
+  "protocolMessage",
+  "reactionMessage",
+  "stickerMessage",
+  "templateButtonReplyMessage",
+  "videoMessage",
+]);
+
+const SAFE_UPSERT_TYPES = new Set(["append", "notify"]);
+const SAFE_IGNORED_REASONS = new Set([
+  "from_me",
+  "missing_message",
+  "missing_message_type",
+]);
 
 const currentIsoTime = () => new Date().toISOString();
 
@@ -37,7 +75,8 @@ const safeHttpStatus = (error) => {
 
 const safeUpstreamCode = (error) => {
   const code = error?.upstreamCode;
-  return Number.isInteger(code) || code === "malformed_response"
+  return (Number.isInteger(code) && code >= 0 && code <= 9_999) ||
+    code === "malformed_response"
     ? code
     : undefined;
 };
@@ -57,6 +96,14 @@ const normalizeApiToken = (value) => {
   return value;
 };
 
+const normalizeLogLevel = (value) => {
+  if (value === undefined) return "info";
+  if (value !== "info" && value !== "debug") {
+    throw new RequestValidationError("log_level must be info or debug.");
+  }
+  return value;
+};
+
 const parseOptions = (content) => {
   let options;
   try {
@@ -69,6 +116,7 @@ const parseOptions = (content) => {
   return {
     clientIds: normalizeConfiguredClientIds(options.clients),
     apiToken: normalizeApiToken(options.api_token),
+    logLevel: normalizeLogLevel(options.log_level),
   };
 };
 
@@ -82,15 +130,47 @@ const createQrDataUrl = (qr) =>
     .imageSync(qr, { type: "png" })
     .toString("base64")}`;
 
+const safeMessageType = (value) =>
+  SAFE_MESSAGE_TYPES.has(value) ? value : value ? "other" : undefined;
+
+const safeUpsertType = (value) =>
+  SAFE_UPSERT_TYPES.has(value) ? value : value ? "other" : undefined;
+
+const safeIgnoredReason = (value) =>
+  SAFE_IGNORED_REASONS.has(value) ? value : "other";
+
+const safeDiagnosticTimestamp = (value) => {
+  if (
+    Number.isSafeInteger(value) &&
+    ((value >= 946_684_800 && value <= 4_102_444_800) ||
+      (value >= 946_684_800_000 && value <= 4_102_444_800_000))
+  ) {
+    return value;
+  }
+  if (
+    typeof value === "string" &&
+    value.length <= 32 &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)
+  ) {
+    return value;
+  }
+  return undefined;
+};
+
 const summarizeMessageDebug = (message, fingerprintValue = fingerprint) => ({
-  hasMessage: message?.hasMessage,
-  fromMe: message?.fromMe,
-  type: message?.type,
+  hasMessage: !!message?.hasMessage,
+  fromMe: !!message?.fromMe,
+  type: safeMessageType(message?.type),
   messageRef: fingerprintValue(message?.messageId),
   chatRef: fingerprintValue(message?.remoteJid),
   participantRef: fingerprintValue(message?.participant),
-  messageStubType: message?.messageStubType,
-  messageTimestamp: message?.messageTimestamp,
+  messageStubType:
+    Number.isInteger(message?.messageStubType) &&
+    message.messageStubType >= 0 &&
+    message.messageStubType <= 10_000
+    ? message.messageStubType
+    : undefined,
+  messageTimestamp: safeDiagnosticTimestamp(message?.messageTimestamp),
 });
 
 const listen = (app, port) =>
@@ -125,12 +205,16 @@ const createAddonRuntime = ({
   hostname = process.env.HOSTNAME,
   apiPort = API_PORT,
   fingerprintKey = PROCESS_LOG_KEY,
+  logLevel = "info",
+  runId = createRunId(),
+  diagnostics,
 } = {}) => {
   const validatedClientIds = normalizeConfiguredClientIds(clientIds);
   const clients = Object.create(null);
   const clientStates = Object.create(null);
   const logoutTasks = new Map();
   const logRef = (value) => fingerprint(value, fingerprintKey);
+  const debugEnabled = normalizeLogLevel(logLevel) === "debug";
 
   const supervisorHeaders = {
     Authorization: `Bearer ${supervisorToken || ""}`,
@@ -152,6 +236,7 @@ const createAddonRuntime = ({
       return true;
     } catch (error) {
       logger.warn?.(`Supervisor ${operation} failed.`, {
+        runId,
         status: safeHttpStatus(error),
       });
       return false;
@@ -167,8 +252,10 @@ const createAddonRuntime = ({
       qrDataUrl: null,
     });
     logger.info?.("WhatsApp client connected.", {
+      runId,
       clientRef: logRef(clientId),
     });
+    diagnostics?.recordConnection?.("connected");
     void postSupervisor(
       "/core/api/services/persistent_notification/dismiss",
       { notification_id: `whatsapp_addon_qrcode_${clientId}` },
@@ -178,6 +265,7 @@ const createAddonRuntime = ({
 
   const onQr = (qr, clientId) => {
     logger.info?.("WhatsApp client requires QR pairing.", {
+      runId,
       clientRef: logRef(clientId),
     });
 
@@ -200,6 +288,7 @@ const createAddonRuntime = ({
       );
     } catch {
       logger.error?.("WhatsApp QR image generation failed.", {
+        runId,
         clientRef: logRef(clientId),
       });
     }
@@ -212,10 +301,21 @@ const createAddonRuntime = ({
       lastErrorCode: Number.isInteger(statusCode) ? statusCode : null,
       qrDataUrl: null,
     });
+    diagnostics?.recordConnection?.("disconnected");
+    logger.warn?.("WhatsApp client disconnected; reconnect scheduled.", {
+      runId,
+      clientRef: logRef(clientId),
+      upstreamCode:
+        Number.isInteger(statusCode) && statusCode >= 0 && statusCode <= 9_999
+          ? statusCode
+          : undefined,
+    });
   };
 
   const onClientError = (error, clientId) => {
+    diagnostics?.recordConnection?.("error");
     logger.warn?.("WhatsApp client operation failed.", {
+      runId,
       clientRef: logRef(clientId),
       upstreamCode: safeUpstreamCode(error),
     });
@@ -227,10 +327,12 @@ const createAddonRuntime = ({
       { clientId, ...message },
       "message event delivery"
     ).then((delivered) => {
-      if (!delivered) return;
-      logger.info?.("WhatsApp message event delivered.", {
+      diagnostics?.recordMessageDelivered?.(delivered);
+      if (!delivered || !debugEnabled) return;
+      logger.debug?.("WhatsApp message event delivered.", {
+        runId,
         clientRef: logRef(clientId),
-        type: message.type,
+        type: safeMessageType(message.type),
         messageRef: logRef(message?.key?.id),
         chatRef: logRef(message?.key?.remoteJid),
       });
@@ -238,48 +340,76 @@ const createAddonRuntime = ({
   };
 
   const onMsgUpsert = (upsert, clientId) => {
-    logger.info?.("WhatsApp messages received.", {
+    diagnostics?.recordMessageBatch?.(upsert.count);
+    if (!debugEnabled) return;
+    const messages = Array.isArray(upsert.messages) ? upsert.messages : [];
+    logger.debug?.("WhatsApp messages received.", {
+      runId,
       clientRef: logRef(clientId),
-      count: upsert.count,
-      type: upsert.type,
+      count:
+        Number.isInteger(upsert.count) &&
+        upsert.count >= 0 &&
+        upsert.count <= 100_000
+          ? upsert.count
+          : messages.length,
+      type: safeUpsertType(upsert.type),
       requestRef: logRef(upsert.requestId),
-      messages: (upsert.messages || []).map((message) =>
+      messages: messages.slice(0, DEBUG_MESSAGE_LIMIT).map((message) =>
         summarizeMessageDebug(message, logRef)
       ),
+      omitted: Math.max(0, messages.length - DEBUG_MESSAGE_LIMIT),
     });
   };
 
   const onIgnoredMsg = (ignored, clientId) => {
-    logger.info?.("WhatsApp message ignored before event delivery.", {
+    diagnostics?.recordMessageIgnored?.(ignored.reason);
+    if (!debugEnabled) return;
+    logger.debug?.("WhatsApp message ignored before event delivery.", {
+      runId,
       clientRef: logRef(clientId),
-      reason: ignored.reason,
+      reason: safeIgnoredReason(ignored.reason),
       message: summarizeMessageDebug(ignored.message, logRef),
     });
   };
 
   const onDuplicateMsg = (duplicate, clientId) => {
-    logger.info?.("Duplicate WhatsApp message dropped.", {
+    diagnostics?.recordMessageDuplicate?.();
+    if (!debugEnabled) return;
+    logger.debug?.("Duplicate WhatsApp message dropped.", {
+      runId,
       clientRef: logRef(clientId),
       messageRef: logRef(duplicate.keyId),
-      type: duplicate.type,
+      type: safeMessageType(duplicate.type),
       firstChatRef: logRef(duplicate.firstRemoteJid),
       duplicateChatRef: logRef(duplicate.duplicateRemoteJid),
-      firstSeenAt: duplicate.firstSeenAt,
-      duplicateSeenAt: duplicate.duplicateSeenAt,
-      ageMs: duplicate.ageMs,
+      firstSeenAt: safeDiagnosticTimestamp(duplicate.firstSeenAt),
+      duplicateSeenAt: safeDiagnosticTimestamp(duplicate.duplicateSeenAt),
+      ageMs:
+        Number.isSafeInteger(duplicate.ageMs) &&
+        duplicate.ageMs >= 0 &&
+        duplicate.ageMs <= 86_400_000
+          ? duplicate.ageMs
+          : undefined,
     });
   };
 
   const onDedupeCollision = (collision, clientId) => {
+    diagnostics?.recordMessageCollision?.();
     logger.warn?.("WhatsApp message dedupe collision; message allowed.", {
+      runId,
       clientRef: logRef(clientId),
       messageRef: logRef(collision.keyId),
-      type: collision.type,
+      type: safeMessageType(collision.type),
       firstChatRef: logRef(collision.firstRemoteJid),
       chatRef: logRef(collision.remoteJid),
-      firstSeenAt: collision.firstSeenAt,
-      collisionAt: collision.collisionAt,
-      ageMs: collision.ageMs,
+      firstSeenAt: safeDiagnosticTimestamp(collision.firstSeenAt),
+      collisionAt: safeDiagnosticTimestamp(collision.collisionAt),
+      ageMs:
+        Number.isSafeInteger(collision.ageMs) &&
+        collision.ageMs >= 0 &&
+        collision.ageMs <= 86_400_000
+          ? collision.ageMs
+          : undefined,
     });
   };
 
@@ -300,8 +430,30 @@ const createAddonRuntime = ({
 
     client.on("restart", () => {
       setClientState(clientId, { state: "restarting" });
-      logger.debug?.("WhatsApp client restarting.", {
+      diagnostics?.recordConnection?.("restarted");
+      logger.info?.("WhatsApp client restarting.", {
+        runId,
         clientRef: logRef(clientId),
+      });
+    });
+    client.on("reconnect_scheduled", (details = {}) => {
+      diagnostics?.recordConnection?.("reconnect_scheduled");
+      if (!debugEnabled) return;
+      logger.debug?.("WhatsApp client reconnect scheduled.", {
+        runId,
+        clientRef: logRef(clientId),
+        attempt:
+          Number.isInteger(details.attempt) &&
+          details.attempt >= 1 &&
+          details.attempt <= 1_000_000
+            ? details.attempt
+            : undefined,
+        delayMs:
+          Number.isInteger(details.delayMs) &&
+          details.delayMs >= 0 &&
+          details.delayMs <= 86_400_000
+            ? details.delayMs
+            : undefined,
       });
     });
     client.on("qr", (qr) => onQr(qr, clientId));
@@ -332,8 +484,10 @@ const createAddonRuntime = ({
           qrDataUrl: null,
         });
         logger.info?.("WhatsApp client logged out; resetting session.", {
+          runId,
           clientRef: logRef(clientId),
         });
+        diagnostics?.recordConnection?.("logged_out");
 
         const oldClient = clients[clientId];
         oldClient?.removeAllListeners?.();
@@ -344,6 +498,7 @@ const createAddonRuntime = ({
         .catch(() => {
           setClientState(clientId, { state: "disconnected" });
           logger.error?.("WhatsApp session reset failed.", {
+            runId,
             clientRef: logRef(clientId),
           });
         })
@@ -371,7 +526,9 @@ const createAddonRuntime = ({
       { service: "whatsapp", config },
       "discovery registration"
     );
-    if (registered) logger.info?.("WhatsApp add-on discovery registered.");
+    if (registered) {
+      logger.info?.("WhatsApp add-on discovery registered.", { runId });
+    }
   };
 
   return {
@@ -381,6 +538,7 @@ const createAddonRuntime = ({
     initClient,
     logoutTasks,
     registerDiscovery,
+    runId,
   };
 };
 
@@ -393,51 +551,93 @@ const startAddon = async ({
   optionsLoader = loadOptions,
   listenFn = listen,
   closeServerFn = closeServer,
+  diagnosticsFactory = createRuntimeDiagnostics,
+  replayHealthDiagnosticsFn = replayHealthcheckDiagnostics,
+  healthFailurePath =
+    process.env.HA_HEALTH_FAILURE_PATH || DEFAULT_HEALTH_FAILURE_PATH,
+  heartbeatPath =
+    process.env.HA_RUNTIME_HEARTBEAT_PATH || DEFAULT_HEARTBEAT_PATH,
+  runId = createRunId(),
   ...runtimeOptions
 } = {}) => {
-  const { clientIds, apiToken } = await optionsLoader(optionsPath);
-  const runtime = createAddonRuntime({
-    clientIds,
-    apiToken,
-    dataRoot,
-    apiPort,
-    logger,
-    ...runtimeOptions,
-  });
+  const options = await optionsLoader(optionsPath);
+  const { clientIds, apiToken } = options;
+  const logLevel = normalizeLogLevel(options.logLevel);
+  if (logger && typeof logger === "object") logger.level = logLevel;
 
-  const apiApp = createApiApp({
-    clients: runtime.clients,
+  const diagnostics = diagnosticsFactory({
     logger,
-    sharedSecret: apiToken,
+    logLevel,
+    runId,
+    heartbeatPath,
   });
-  const webUiApp = createWebUiApp({
-    clients: runtime.clients,
-    clientStates: runtime.clientStates,
+  const safeRunId = diagnostics.runId || runId;
+  await replayHealthDiagnosticsFn({
+    logger,
+    runId: safeRunId,
+    failurePath: healthFailurePath,
   });
+  logger.info?.("WhatsApp add-on runtime starting.", {
+    runId: safeRunId,
+    logLevel,
+    clientCount: Array.isArray(clientIds) ? clientIds.length : 0,
+  });
+  await diagnostics.start?.();
 
+  let runtime;
+  let apiApp;
+  let webUiApp;
   let apiServer;
   let webUiServer;
   try {
+    runtime = createAddonRuntime({
+      clientIds,
+      apiToken,
+      dataRoot,
+      apiPort,
+      logger,
+      logLevel,
+      runId: safeRunId,
+      diagnostics,
+      ...runtimeOptions,
+    });
+    diagnostics.setClientStateProvider?.(() => runtime.clientStates);
+
+    apiApp = createApiApp({
+      clients: runtime.clients,
+      logger,
+      sharedSecret: apiToken,
+      diagnostics,
+    });
+    webUiApp = createWebUiApp({
+      clients: runtime.clients,
+      clientStates: runtime.clientStates,
+    });
+
     apiServer = await listenFn(apiApp, apiPort);
     webUiServer = await listenFn(webUiApp, ingressPort);
+    diagnostics.markApiReady?.();
   } catch (error) {
-    await Promise.allSettled(
-      Object.values(runtime.clients).map((client) => client.disconnect?.())
-    );
+    if (runtime) {
+      await Promise.allSettled(
+        Object.values(runtime.clients).map((client) => client.disconnect?.())
+      );
+    }
     if (apiServer) await closeServerFn(apiServer);
+    await diagnostics.stop?.();
     throw error;
   }
-  logger.info?.("WhatsApp add-on API started.");
-  logger.info?.("WhatsApp add-on ingress UI started.");
+  logger.info?.("WhatsApp add-on API started.", { runId: safeRunId });
+  logger.info?.("WhatsApp add-on ingress UI started.", { runId: safeRunId });
   await runtime.registerDiscovery();
 
-  return {
-    ...runtime,
-    apiApp,
-    apiServer,
-    webUiApp,
-    webUiServer,
-    close: async () => {
+  let closeTask;
+  const close = () => {
+    if (closeTask) return closeTask;
+    closeTask = (async () => {
+      logger.info?.("WhatsApp add-on runtime shutting down.", {
+        runId: safeRunId,
+      });
       await Promise.allSettled(
         Object.values(runtime.clients).map((client) => client.disconnect?.())
       );
@@ -445,7 +645,20 @@ const startAddon = async ({
         closeServerFn(apiServer),
         closeServerFn(webUiServer),
       ]);
-    },
+      await diagnostics.stop?.();
+      logger.info?.("WhatsApp add-on runtime stopped.", { runId: safeRunId });
+    })();
+    return closeTask;
+  };
+
+  return {
+    ...runtime,
+    apiApp,
+    apiServer,
+    webUiApp,
+    webUiServer,
+    diagnostics,
+    close,
   };
 };
 
@@ -457,6 +670,7 @@ module.exports = {
   fingerprint,
   loadOptions,
   normalizeApiToken,
+  normalizeLogLevel,
   parseOptions,
   removeSessionDirectory,
   startAddon,

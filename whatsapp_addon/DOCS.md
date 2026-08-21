@@ -8,6 +8,8 @@ The add-on options are:
 
 - `clients`: one or more unique WhatsApp session names. The default is
   `default`. A name must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
+- `log_level`: `info` (the default) for normal operation, or `debug` for
+  additional privacy-safe runtime diagnostics while investigating a problem.
 - `api_token`: an optional bearer token for the internal add-on API. Use a
   strong random value for defense in depth. Leave it unset to preserve
   compatibility with existing internal-network installations. The value may
@@ -74,6 +76,22 @@ Its response is deliberately limited to a non-sensitive status, the service
 identifier `ha-whatsapp-addon`, API version, supported capabilities, and
 configured-client count. It contains no token, add-on URL, recipient id,
 session data, or message content.
+
+### Debug and health diagnostics
+
+Set `log_level` to `debug` and restart the add-on when investigating an
+intermittent failure. Debug mode periodically summarizes event-loop
+responsiveness, process and container resource use, API activity, health state,
+reconnects, and aggregate message handling. It does not enable raw Baileys logs
+or include message content, raw account identifiers, QR codes, session data, or
+API tokens. Message-related entries use run-scoped one-way references for
+correlation. Return the option to `info` after collecting the relevant logs.
+
+Failed native health checks are recorded in a small persistent history even at
+the default `info` level. If Supervisor replaces an unhealthy container, the
+next run replays the retained probe result and surrounding runtime state into
+the add-on log. Include those replayed lines, with any surrounding private Home
+Assistant data redacted, when reporting an unhealthy-container problem.
 
 ## Web UI
 

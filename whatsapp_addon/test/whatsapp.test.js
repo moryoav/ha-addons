@@ -216,6 +216,20 @@ test("long-running presence setup awaits its initial update", async () => {
   await client.disconnect();
 });
 
+test("disconnects expose only bounded reconnect scheduling metadata", async () => {
+  const { client, ev } = await createHarness();
+  const scheduled = [];
+  client.on("reconnect_scheduled", (details) => scheduled.push(details));
+
+  ev.emit("connection.update", {
+    connection: "close",
+    lastDisconnect: { error: { statusCode: 503 } },
+  });
+
+  assert.deepEqual(scheduled, [{ attempt: 1, delayMs: 1000 }]);
+  await client.disconnect();
+});
+
 test("general recipient normalization retains supported direct JIDs", () => {
   assert.equal(normalizeRecipientJid(FICTIONAL_JID), FICTIONAL_JID);
   assert.equal(

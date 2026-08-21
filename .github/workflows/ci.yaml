@@ -139,7 +139,7 @@ jobs:
           throw new Error('Baileys socket export is unavailable')})()
           .catch(error=>{console.error(error);process.exitCode=1})"
 
-      - name: Smoke-test AppArmor startup permissions
+      - name: Smoke-test AppArmor startup and health probe
         if: matrix.arch == 'amd64'
         run: |
           test "$(docker image inspect \
@@ -233,3 +233,23 @@ jobs:
             if(typeof baileys.default!=='function')
             throw new Error('Baileys unavailable')})()
             .catch(error=>{console.error(error);process.exitCode=1})"
+          timeout --signal=TERM --kill-after=5s 30s docker run --rm \
+            --security-opt apparmor=whatsapp_addon \
+            --entrypoint /bin/sh \
+            "whatsapp-addon:ci-${{ matrix.arch }}" \
+            -c 'set -eu
+            /usr/bin/node -e "const http=require(\"node:http\");
+            http.createServer((request,response)=>{
+            if(request.url!==\"/health\"||
+            request.headers[\"x-ha-healthcheck\"]!==\"docker\")
+            response.statusCode=400;
+            response.end()}).listen(3000,\"127.0.0.1\")" &
+            server_pid=$!
+            trap '\''kill "${server_pid}" 2>/dev/null || true'\'' EXIT
+            attempt=0
+            while [ "${attempt}" -lt 20 ]; do
+              if /healthcheck.sh; then exit 0; fi
+              attempt=$((attempt + 1))
+              sleep 0.1
+            done
+            exit 1'
