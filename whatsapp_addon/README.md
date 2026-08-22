@@ -157,7 +157,12 @@ entries use run-scoped one-way references for correlation. Return the option to
 Failed native health checks are recorded in a small persistent history at both
 log levels. If Supervisor replaces an unhealthy container, the new add-on run
 replays the retained failure details into its log so the original probe result
-and surrounding runtime state are not lost.
+and surrounding runtime state are not lost. If the saved history ends with
+three consecutive failed probes, that run also fires a silent,
+privacy-safe `whatsapp_addon_health_failure` Home Assistant event. In `debug`
+mode only, it creates a deduplicated persistent notification containing the
+same diagnostic summary. Normal `info` operation never creates this health
+notification.
 
 Each client gets its own persisted session and must be referenced by `clientId` in service calls.
 

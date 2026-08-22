@@ -2,6 +2,15 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.34
+
+- Added a privacy-safe `whatsapp_addon_health_failure` event after a previous
+  add-on run ends with three consecutive failed native health checks, allowing
+  explicit automations or webhooks to capture the retained diagnostic summary.
+- Added a deduplicated Home Assistant persistent notification for the same
+  failure summary when the add-on `log_level` is set to `debug`. Normal `info`
+  operation does not create this notification.
+
 ## 1.4.33
 
 - Added an add-on `log_level` option with privacy-safe periodic diagnostics in

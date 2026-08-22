@@ -11,7 +11,24 @@ const DEFAULT_LAG_WARNING_MS = 2_000;
 const DEFAULT_WARNING_COOLDOWN_MS = 5 * 60_000;
 const MAX_HEALTH_RECORDS = 50;
 const MAX_HEALTH_FILE_BYTES = 128 * 1024;
+const DOCKER_UNHEALTHY_STREAK = 3;
 const ONE_MIB = 1024 * 1024;
+
+const HEALTH_METRIC_BOUNDS = Object.freeze({
+  heartbeat_age_ms: [0, 86_400_000],
+  event_loop_lag_ms: [0, 86_400_000],
+  event_loop_lag_max_ms: [0, 86_400_000],
+  rss_mb: [0, 1024 * 1024],
+  heap_used_mb: [0, 1024 * 1024],
+  cpu_pct: [0, 100_000],
+  event_loop_utilization_pct: [0, 100],
+  container_cpu_pct: [0, 100_000],
+  container_memory_mb: [0, 1024 * 1024],
+  container_memory_limit_mb: [0, 1024 * 1024],
+  container_memory_pct: [0, 100_000],
+  cpu_throttled_ms: [0, 86_400_000],
+  oom_events: [0, 1_000_000_000],
+});
 
 const HEALTH_FAILURE_CLASSIFICATIONS = new Set([
   "connect_timeout",
@@ -147,23 +164,10 @@ const normalizeRunId = (value) =>
 
 const sanitizeOptionalHealthMetrics = (record) => {
   const result = {};
-  const bounds = {
-    heartbeat_age_ms: [0, 86_400_000],
-    event_loop_lag_ms: [0, 86_400_000],
-    event_loop_lag_max_ms: [0, 86_400_000],
-    rss_mb: [0, 1024 * 1024],
-    heap_used_mb: [0, 1024 * 1024],
-    cpu_pct: [0, 100_000],
-    event_loop_utilization_pct: [0, 100],
-    container_cpu_pct: [0, 100_000],
-    container_memory_mb: [0, 1024 * 1024],
-    container_memory_limit_mb: [0, 1024 * 1024],
-    container_memory_pct: [0, 100_000],
-    cpu_throttled_ms: [0, 86_400_000],
-    oom_events: [0, 1_000_000_000],
-  };
 
-  for (const [key, [minimum, maximum]] of Object.entries(bounds)) {
+  for (const [key, [minimum, maximum]] of Object.entries(
+    HEALTH_METRIC_BOUNDS
+  )) {
     if (record[key] === undefined) continue;
     const value = boundedNumber(record[key], minimum, maximum);
     if (value === undefined) return undefined;
@@ -253,12 +257,12 @@ const replayHealthcheckDiagnostics = async ({
     await fsPromises.rename(failurePath, archivePath);
   } catch (error) {
     if (error?.code === "ENOENT") {
-      return { archivePath, invalid: 0, replayed: 0 };
+      return { archivePath, invalid: 0, records: [], replayed: 0 };
     }
     logger.warn?.("Previous health diagnostics could not be archived.", {
       runId,
     });
-    return { archivePath, invalid: 0, replayed: 0 };
+    return { archivePath, invalid: 0, records: [], replayed: 0 };
   }
 
   let content;
@@ -266,14 +270,14 @@ const replayHealthcheckDiagnostics = async ({
     content = await fsPromises.readFile(archivePath);
   } catch {
     logger.warn?.("Archived health diagnostics could not be read.", { runId });
-    return { archivePath, invalid: 0, replayed: 0 };
+    return { archivePath, invalid: 0, records: [], replayed: 0 };
   }
 
   if (content.length > MAX_HEALTH_FILE_BYTES) {
     logger.warn?.("Archived health diagnostics exceeded the safe size limit.", {
       runId,
     });
-    return { archivePath, invalid: 1, replayed: 0 };
+    return { archivePath, invalid: 1, records: [], replayed: 0 };
   }
 
   const lines = content
@@ -282,6 +286,7 @@ const replayHealthcheckDiagnostics = async ({
     .filter(Boolean);
   const retainedLines = lines.slice(-MAX_HEALTH_RECORDS);
   let invalid = lines.length - retainedLines.length;
+  const records = [];
   let replayed = 0;
 
   for (const line of retainedLines) {
@@ -303,6 +308,7 @@ const replayHealthcheckDiagnostics = async ({
         ? "Previous container health check failure recorded."
         : "Previous container health check recovery recorded.";
     logger.warn?.(message, { runId, ...record });
+    records.push(record);
     replayed += 1;
   }
 
@@ -313,7 +319,124 @@ const replayHealthcheckDiagnostics = async ({
     });
   }
 
-  return { archivePath, invalid, replayed };
+  return { archivePath, invalid, records, replayed };
+};
+
+const createHealthFailureReport = (records, { runId } = {}) => {
+  if (!Array.isArray(records) || records.length === 0) return undefined;
+
+  const retained = records.slice(-MAX_HEALTH_RECORDS);
+  const terminalRecord = retained.at(-1);
+  if (
+    terminalRecord?.type !== "failure" ||
+    !Number.isInteger(terminalRecord.streak) ||
+    terminalRecord.streak < DOCKER_UNHEALTHY_STREAK
+  ) {
+    return undefined;
+  }
+
+  let incidentStart = 0;
+  for (let index = retained.length - 1; index >= 0; index -= 1) {
+    if (retained[index]?.type === "recovery") {
+      incidentStart = index + 1;
+      break;
+    }
+  }
+
+  const failures = retained
+    .slice(incidentStart)
+    .filter((record) => record?.type === "failure");
+  if (failures.length === 0) return undefined;
+
+  const firstFailure = failures[0];
+  const lastFailure = failures.at(-1);
+  const metrics = {};
+  for (const key of Object.keys(HEALTH_METRIC_BOUNDS)) {
+    if (lastFailure[key] !== undefined) metrics[key] = lastFailure[key];
+  }
+
+  return {
+    schema: 1,
+    service: "ha-whatsapp-addon",
+    run_id: normalizeRunId(runId),
+    failure_count: failures.length,
+    first_failure_at: firstFailure.observedAt,
+    last_failure_at: lastFailure.observedAt,
+    classification: lastFailure.classification,
+    curl_exit: lastFailure.curlExit,
+    http_code: lastFailure.httpCode,
+    connect_ms: lastFailure.connectMs,
+    first_byte_ms: lastFailure.firstByteMs,
+    total_ms: lastFailure.totalMs,
+    streak: lastFailure.streak,
+    ...metrics,
+  };
+};
+
+const formatHealthFailureNotification = (report) => {
+  if (!report) return "";
+
+  const lines = [
+    "The previous WhatsApp add-on run ended while its native health check was failing.",
+    "",
+    `- Incident window: ${report.first_failure_at} to ${report.last_failure_at}`,
+    `- Result: ${report.classification} (curl exit ${report.curl_exit}, ${
+      report.http_code === 0 ? "no HTTP response" : `HTTP ${report.http_code}`
+    })`,
+    `- Failed probes retained: ${report.failure_count}; final streak: ${report.streak}`,
+    `- Probe timing: connect ${report.connect_ms} ms, first byte ${report.first_byte_ms} ms, total ${report.total_ms} ms`,
+  ];
+
+  if (
+    report.heartbeat_age_ms !== undefined ||
+    report.event_loop_lag_ms !== undefined ||
+    report.event_loop_lag_max_ms !== undefined
+  ) {
+    lines.push(
+      `- Runtime heartbeat: age ${
+        report.heartbeat_age_ms ?? "unknown"
+      } ms, event-loop p99 ${
+        report.event_loop_lag_ms ?? "unknown"
+      } ms, max ${report.event_loop_lag_max_ms ?? "unknown"} ms`
+    );
+  }
+
+  if (
+    report.cpu_pct !== undefined ||
+    report.rss_mb !== undefined ||
+    report.heap_used_mb !== undefined
+  ) {
+    lines.push(
+      `- Node process: CPU ${report.cpu_pct ?? "unknown"}%, RSS ${
+        report.rss_mb ?? "unknown"
+      } MiB, heap ${report.heap_used_mb ?? "unknown"} MiB`
+    );
+  }
+
+  if (
+    report.container_cpu_pct !== undefined ||
+    report.container_memory_mb !== undefined ||
+    report.container_memory_pct !== undefined ||
+    report.cpu_throttled_ms !== undefined ||
+    report.oom_events !== undefined
+  ) {
+    lines.push(
+      `- Container: CPU ${
+        report.container_cpu_pct ?? "unknown"
+      }%, memory ${report.container_memory_mb ?? "unknown"}/${
+        report.container_memory_limit_mb ?? "unknown"
+      } MiB (${report.container_memory_pct ?? "unknown"}%), throttled ${
+        report.cpu_throttled_ms ?? "unknown"
+      } ms, OOM events ${report.oom_events ?? "unknown"}`
+    );
+  }
+
+  lines.push(
+    "",
+    "The sanitized records were replayed into the add-on log.",
+    "Automation event: whatsapp_addon_health_failure"
+  );
+  return lines.join("\n");
 };
 
 const createSystemMetricsSampler = ({
@@ -799,9 +922,11 @@ module.exports = {
   DEFAULT_HEALTH_FAILURE_PATH,
   DEFAULT_HEARTBEAT_PATH,
   HEALTH_FAILURE_CLASSIFICATIONS,
+  createHealthFailureReport,
   createRunId,
   createRuntimeDiagnostics,
   createSystemMetricsSampler,
+  formatHealthFailureNotification,
   readCgroupSnapshot,
   replayHealthcheckDiagnostics,
   sanitizeHealthRecord,

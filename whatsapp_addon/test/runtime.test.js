@@ -117,6 +117,115 @@ test("debug diagnostics are configured before clients are created", async () => 
   await runtime.close();
 });
 
+test("terminal health replay emits an event and a debug-only notification", async () => {
+  const requests = [];
+  const diagnostics = {
+    runId: "0123456789abcdef",
+    async start() {},
+    async stop() {},
+    markApiReady() {},
+    setClientStateProvider() {},
+  };
+  const runtime = await startAddon({
+    logger: {},
+    optionsLoader: async () => ({
+      clientIds: ["default"],
+      apiToken: undefined,
+      logLevel: "debug",
+    }),
+    diagnosticsFactory: () => diagnostics,
+    replayHealthDiagnosticsFn: async () => ({
+      records: [
+        {
+          type: "failure",
+          observedAt: "2026-08-21T12:00:00Z",
+          classification: "response_timeout",
+          curlExit: 28,
+          httpCode: 0,
+          connectMs: 2,
+          firstByteMs: 0,
+          totalMs: 5001,
+          streak: 3,
+          heartbeat_age_ms: 6300,
+          event_loop_lag_max_ms: 6100,
+          container_memory_pct: 25,
+          oom_events: 0,
+        },
+      ],
+    }),
+    clientFactory: () => new FakeClient(),
+    httpClient: {
+      async post(...args) {
+        requests.push(args);
+      },
+    },
+    dataRoot: path.resolve("runtime-test-data"),
+    listenFn: async () => ({}),
+    closeServerFn: async () => {},
+  });
+
+  const eventRequest = requests.find(([url]) =>
+    url.endsWith("/core/api/events/whatsapp_addon_health_failure")
+  );
+  const notificationRequest = requests.find(([url]) =>
+    url.endsWith("/core/api/services/persistent_notification/create")
+  );
+  assert.ok(eventRequest);
+  assert.equal(eventRequest[1].run_id, diagnostics.runId);
+  assert.equal(eventRequest[1].streak, 3);
+  assert.ok(notificationRequest);
+  assert.equal(
+    notificationRequest[1].notification_id,
+    "whatsapp_addon_health_failure"
+  );
+  assert.match(notificationRequest[1].message, /response_timeout/);
+  assert.deepEqual(runtime.healthFailureReport, eventRequest[1]);
+  await runtime.close();
+});
+
+test("info mode emits the health event without a visible notification", async () => {
+  const requests = [];
+  const runtime = createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    clientFactory: () => new FakeClient(),
+    logLevel: "info",
+    httpClient: {
+      async post(...args) {
+        requests.push(args);
+      },
+    },
+    logger: {},
+  });
+  const report = {
+    schema: 1,
+    service: "ha-whatsapp-addon",
+    run_id: "0123456789abcdef",
+    failure_count: 3,
+    first_failure_at: "2026-08-21T12:00:00Z",
+    last_failure_at: "2026-08-21T12:01:00Z",
+    classification: "response_timeout",
+    curl_exit: 28,
+    http_code: 0,
+    connect_ms: 2,
+    first_byte_ms: 0,
+    total_ms: 5001,
+    streak: 3,
+  };
+
+  const delivered = await runtime.reportHealthFailure(report);
+  assert.deepEqual(delivered, {
+    eventDelivered: true,
+    notificationDelivered: false,
+  });
+  assert.equal(requests.length, 1);
+  assert.ok(
+    requests[0][0].endsWith(
+      "/core/api/events/whatsapp_addon_health_failure"
+    )
+  );
+});
+
 test("session deletion awaits one validated child path", async () => {
   const calls = [];
   const dataRoot = path.resolve("runtime-test-data");

@@ -1,3 +1,11 @@
+## 1.4.34
+
+- Fired a privacy-safe `whatsapp_addon_health_failure` Home Assistant event
+  after a previous run ends at the native health check's unhealthy threshold.
+- Added a deduplicated persistent notification with the retained diagnostic
+  summary in `debug` mode only. Normal `info` operation does not create this
+  health notification.
+
 ## 1.4.33
 
 - Added an `info` or `debug` log-level option. Debug mode reports

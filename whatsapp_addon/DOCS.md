@@ -93,6 +93,14 @@ next run replays the retained probe result and surrounding runtime state into
 the add-on log. Include those replayed lines, with any surrounding private Home
 Assistant data redacted, when reporting an unhealthy-container problem.
 
+When that history ends with three consecutive failed probes, the next
+successful run fires a silent `whatsapp_addon_health_failure` Home Assistant
+event at either log level. In `debug` mode only, it also creates a persistent
+notification with the same sanitized summary. The notification uses a fixed id
+so later incidents update it instead of creating a stack of alerts. Normal
+`info` operation never creates this health notification. Recovered and
+shorter-lived probe failures do not trigger either report.
+
 ## Web UI
 
 Open the add-on page and select Open Web UI. The Ingress UI shows each configured WhatsApp session, its connection state, and the current pairing QR code when a session is waiting for pairing.
@@ -253,13 +261,20 @@ data:
 
 ## Events
 
-| Event type                   | Description                                  |
-| ---------------------------- | -------------------------------------------- |
-| new_whatsapp_message         | The message that was received                |
-| whatsapp_presence_update     | Presence of contact in a chat updated        |
-| whatsapp_send_message_result | Result event fired after sending a message   |
+| Event type                      | Description                                             |
+| ------------------------------- | ------------------------------------------------------- |
+| new_whatsapp_message            | The message that was received                           |
+| whatsapp_presence_update        | Presence of contact in a chat updated                   |
+| whatsapp_send_message_result    | Result event fired after sending a message              |
+| whatsapp_addon_health_failure   | Sanitized details after the prior run ended unhealthy   |
 
 `new_whatsapp_message` event data includes the configured `clientId`, the detected message `type`, the Baileys `key`, and the message payload. The dedupe layer runs before this event is fired, so automations should only see one event for the same WhatsApp message id/content pair. Media dedupe ignores wrapper-only fields such as thumbnails, CDN paths, scan sidecars, and media key timestamp representation because WhatsApp can vary those between phone-number and LID deliveries of the same message.
+
+`whatsapp_addon_health_failure` includes its schema and service, a run id,
+first and last failure timestamps, failure count and streak, the bounded failure
+classification, HTTP and curl result, probe timings, and any available bounded
+process or container metrics. It contains no message contents, account
+identifiers, URLs, headers, tokens, or raw response bodies.
 
 Known recoverable libsignal `Bad MAC` and session lifecycle console logs are filtered by the add-on. They are summarized as counts in the add-on log and do not change authentication, session state, or message handling.
 

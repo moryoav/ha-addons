@@ -5,7 +5,9 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  createHealthFailureReport,
   createRuntimeDiagnostics,
+  formatHealthFailureNotification,
   readCgroupSnapshot,
   replayHealthcheckDiagnostics,
   sanitizeHealthRecord,
@@ -96,9 +98,11 @@ test("pending health failures are safely replayed and archived once", async (t) 
 
   assert.equal(result.replayed, 2);
   assert.equal(result.invalid, 1);
+  assert.equal(result.records.length, 2);
   assert.equal(fs.existsSync(pendingPath), false);
   assert.equal(fs.existsSync(`${pendingPath}.reported`), true);
   assert.equal(JSON.stringify(logs).includes(privateText), false);
+  assert.equal(JSON.stringify(result.records).includes(privateText), false);
   assert.equal(JSON.stringify(logs).includes("response_timeout"), true);
 
   const second = await replayHealthcheckDiagnostics({
@@ -107,6 +111,85 @@ test("pending health failures are safely replayed and archived once", async (t) 
     failurePath: pendingPath,
   });
   assert.equal(second.replayed, 0);
+  assert.deepEqual(second.records, []);
+});
+
+test("terminal unhealthy streak creates one bounded Home Assistant report", () => {
+  const recovery = sanitizeHealthRecord({
+    schema: 1,
+    type: "recovery",
+    timestamp: "2026-08-21T11:59:00Z",
+    prior_streak: 1,
+    time_total_ms: 4,
+  });
+  const records = [
+    sanitizeHealthRecord(
+      failureRecord({ timestamp: "2026-08-21T11:58:30Z", streak: 1 })
+    ),
+    recovery,
+    sanitizeHealthRecord(
+      failureRecord({ timestamp: "2026-08-21T12:00:00Z", streak: 1 })
+    ),
+    sanitizeHealthRecord(
+      failureRecord({ timestamp: "2026-08-21T12:00:30Z", streak: 2 })
+    ),
+    sanitizeHealthRecord(
+      failureRecord({ timestamp: "2026-08-21T12:01:00Z", streak: 3 })
+    ),
+  ];
+
+  const report = createHealthFailureReport(records, { runId: RUN_ID });
+  assert.deepEqual(report, {
+    schema: 1,
+    service: "ha-whatsapp-addon",
+    run_id: RUN_ID,
+    failure_count: 3,
+    first_failure_at: "2026-08-21T12:00:00Z",
+    last_failure_at: "2026-08-21T12:01:00Z",
+    classification: "response_timeout",
+    curl_exit: 28,
+    http_code: 0,
+    connect_ms: 2,
+    first_byte_ms: 0,
+    total_ms: 5001,
+    streak: 3,
+    heartbeat_age_ms: 6300,
+    event_loop_lag_max_ms: 6100,
+    container_memory_pct: 25,
+    cpu_throttled_ms: 3,
+    oom_events: 0,
+  });
+
+  const message = formatHealthFailureNotification(report);
+  assert.match(
+    message,
+    /2026-08-21T12:00:00Z to 2026-08-21T12:01:00Z/
+  );
+  assert.match(message, /response_timeout/);
+  assert.match(message, /final streak: 3/);
+  assert.match(message, /whatsapp_addon_health_failure/);
+  assert.equal(message.includes("undefined"), false);
+});
+
+test("transient or recovered health failures do not create a report", () => {
+  const oneFailure = sanitizeHealthRecord(failureRecord({ streak: 1 }));
+  const unhealthyFailure = sanitizeHealthRecord(failureRecord({ streak: 3 }));
+  const recovery = sanitizeHealthRecord({
+    schema: 1,
+    type: "recovery",
+    timestamp: "2026-08-21T12:01:00Z",
+    prior_streak: 3,
+    time_total_ms: 4,
+  });
+
+  assert.equal(
+    createHealthFailureReport([oneFailure], { runId: RUN_ID }),
+    undefined
+  );
+  assert.equal(
+    createHealthFailureReport([unhealthyFailure, recovery], { runId: RUN_ID }),
+    undefined
+  );
 });
 
 test("runtime diagnostics emit bounded summaries and rate-limited warnings", async () => {

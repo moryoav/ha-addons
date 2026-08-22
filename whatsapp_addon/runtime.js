@@ -8,8 +8,10 @@ const { createApiApp } = require("./api");
 const {
   DEFAULT_HEALTH_FAILURE_PATH,
   DEFAULT_HEARTBEAT_PATH,
+  createHealthFailureReport,
   createRunId,
   createRuntimeDiagnostics,
+  formatHealthFailureNotification,
   replayHealthcheckDiagnostics,
 } = require("./diagnostics");
 const { createWebUiApp, INGRESS_PORT } = require("./webui");
@@ -26,6 +28,8 @@ const DATA_ROOT = "/data";
 const OPTIONS_PATH = "/data/options.json";
 const PROCESS_LOG_KEY = crypto.randomBytes(32);
 const DEBUG_MESSAGE_LIMIT = 10;
+const HEALTH_FAILURE_EVENT = "whatsapp_addon_health_failure";
+const HEALTH_FAILURE_NOTIFICATION_ID = "whatsapp_addon_health_failure";
 
 const SAFE_MESSAGE_TYPES = new Set([
   "audioMessage",
@@ -531,6 +535,37 @@ const createAddonRuntime = ({
     }
   };
 
+  const reportHealthFailure = async (report) => {
+    const eventDelivered = await postSupervisor(
+      `/core/api/events/${HEALTH_FAILURE_EVENT}`,
+      report,
+      "health failure event delivery"
+    );
+    let notificationDelivered = false;
+
+    if (debugEnabled) {
+      notificationDelivered = await postSupervisor(
+        "/core/api/services/persistent_notification/create",
+        {
+          title: "WhatsApp add-on health failure",
+          message: formatHealthFailureNotification(report),
+          notification_id: HEALTH_FAILURE_NOTIFICATION_ID,
+        },
+        "health failure notification"
+      );
+    }
+
+    if (eventDelivered || notificationDelivered) {
+      logger.info?.("Previous health failure reported to Home Assistant.", {
+        runId,
+        eventDelivered,
+        notificationDelivered,
+      });
+    }
+
+    return { eventDelivered, notificationDelivered };
+  };
+
   return {
     apiToken,
     clientStates,
@@ -538,6 +573,7 @@ const createAddonRuntime = ({
     initClient,
     logoutTasks,
     registerDiscovery,
+    reportHealthFailure,
     runId,
   };
 };
@@ -572,11 +608,15 @@ const startAddon = async ({
     heartbeatPath,
   });
   const safeRunId = diagnostics.runId || runId;
-  await replayHealthDiagnosticsFn({
+  const healthReplay = await replayHealthDiagnosticsFn({
     logger,
     runId: safeRunId,
     failurePath: healthFailurePath,
   });
+  const healthFailureReport = createHealthFailureReport(
+    healthReplay?.records,
+    { runId: safeRunId }
+  );
   logger.info?.("WhatsApp add-on runtime starting.", {
     runId: safeRunId,
     logLevel,
@@ -630,6 +670,9 @@ const startAddon = async ({
   logger.info?.("WhatsApp add-on API started.", { runId: safeRunId });
   logger.info?.("WhatsApp add-on ingress UI started.", { runId: safeRunId });
   await runtime.registerDiscovery();
+  if (healthFailureReport) {
+    await runtime.reportHealthFailure(healthFailureReport);
+  }
 
   let closeTask;
   const close = () => {
@@ -658,6 +701,7 @@ const startAddon = async ({
     webUiApp,
     webUiServer,
     diagnostics,
+    healthFailureReport,
     close,
   };
 };

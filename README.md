@@ -183,8 +183,16 @@ The add-on fires these Home Assistant events:
 | `new_whatsapp_message` | A received WhatsApp message. |
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_send_message_result` | Compatibility result event after sending a message. |
+| `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
 `new_whatsapp_message` includes the configured `clientId`, the detected message `type`, the Baileys message `key`, and the message payload.
+
+`whatsapp_addon_health_failure` fires on the next successful startup when the
+saved history ends with three consecutive failed native health checks. Its
+bounded data includes timestamps, failure classification, HTTP and curl result,
+probe timings and streak, plus available process and container metrics. It never
+includes message contents, account identifiers, URLs, headers, tokens, or raw
+response bodies.
 
 ## Supported identifiers
 
@@ -333,7 +341,11 @@ relevant logs.
 Failed native health checks are retained at both log levels. If Supervisor
 replaces an unhealthy container, the next add-on run replays the saved probe
 result and surrounding runtime state into its log so the evidence survives the
-restart.
+restart. That run also fires the silent `whatsapp_addon_health_failure` event
+for explicit automations or webhooks. When `log_level` is `debug`, it creates a
+Home Assistant persistent notification containing the same sanitized summary;
+`info` mode never creates this health notification. A fixed notification id
+updates the existing alert instead of accumulating duplicates.
 
 ## Troubleshooting
 
