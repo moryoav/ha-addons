@@ -195,9 +195,11 @@ Baileys. Its `status` is one of `offer`, `ringing`, `accept`, `reject`,
 `clientId`, `callId`, `status`, `from`, `chatId`, `isVideo`, `isGroup`,
 `groupJid`, `date`, and `offline`. Fields that are absent from an upstream
 update are `null`. The `from` and `chatId` values can be WhatsApp LIDs rather
-than phone-number JIDs, and lifecycle updates can be missing or arrive after a
-reconnect, so automations should filter the status they need without assuming
-that every call produces every status.
+than phone-number JIDs. The add-on preserves the observed update order and
+retries transient delivery failures across a 33-second backoff window when Home
+Assistant Core is unavailable. Baileys lifecycle updates can still be missing
+or arrive after a reconnect, so automations should filter the status they need
+without assuming that every call produces every status.
 
 `whatsapp_addon_health_failure` fires on the next successful startup when the
 saved history ends with three consecutive failed native health checks. Its
@@ -393,7 +395,9 @@ updates the existing alert instead of accumulating duplicates.
   newer. An endpoint/version error usually means only one half was updated.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If call updates are not received, confirm the automation listens for
-  `whatsapp_call_update` and filters on a supported `status` value.
+  `whatsapp_call_update` and filters on a supported `status` value. The add-on
+  log reports the call status, HTTP status, attempt number, and retry delay when
+  Home Assistant Core is temporarily unavailable.
 - If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
 - Recoverable libsignal `Bad MAC` and session lifecycle messages are summarized by the add-on instead of logging full stack traces or session data.
 

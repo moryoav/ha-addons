@@ -185,6 +185,207 @@ test("call lifecycle updates fire filterable privacy-safe events", async () => {
   assert.ok(!serializedLogs.includes("private-status"));
 });
 
+test("call updates retry transient Core outages and preserve event order", async () => {
+  const requests = [];
+  const retryDelays = [];
+  const logs = [];
+  const deliveryResults = [];
+  let offerAttempts = 0;
+  const client = new FakeClient();
+
+  createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    clientFactory: () => client,
+    fingerprintKey: Buffer.alloc(32, 6),
+    runId: "0123456789abcdef",
+    httpClient: {
+      async post(url, payload, config) {
+        requests.push({ url, payload, config });
+        if (payload.status === "offer" && offerAttempts < 2) {
+          offerAttempts += 1;
+          const error = new Error("synthetic transient failure");
+          error.response = { status: 502 };
+          throw error;
+        }
+      },
+    },
+    diagnostics: {
+      recordCallDelivered: (delivered) => deliveryResults.push(delivered),
+    },
+    logger: {
+      info: (...args) => logs.push(args),
+      warn: (...args) => logs.push(args),
+    },
+    setTimeoutFn: (callback, delayMs) => {
+      retryDelays.push(delayMs);
+      const timer = { delayMs };
+      queueMicrotask(callback);
+      return timer;
+    },
+    clearTimeoutFn: () => {},
+  });
+
+  client.emit("call_update", {
+    id: `fictional-call-${FICTIONAL_NUMBER}`,
+    status: "offer",
+    from: FICTIONAL_LID,
+  });
+  client.emit("call_update", {
+    id: `fictional-call-${FICTIONAL_NUMBER}`,
+    status: "ringing",
+    from: FICTIONAL_LID,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    requests.map(({ payload }) => payload.status),
+    ["offer", "offer", "offer", "ringing"]
+  );
+  assert.deepEqual(retryDelays, [1_000, 2_000]);
+  assert.deepEqual(deliveryResults, [true, true]);
+  assert.ok(
+    requests.every(
+      ({ config }) => config.timeout === 10_000 && config.headers.Authorization
+    )
+  );
+
+  const retryLogs = logs.filter(
+    ([message]) =>
+      message ===
+      "Home Assistant call event delivery temporarily failed; retry scheduled."
+  );
+  assert.equal(retryLogs.length, 2);
+  assert.deepEqual(
+    retryLogs.map(([, details]) => ({
+      callStatus: details.callStatus,
+      httpStatus: details.httpStatus,
+      attempt: details.attempt,
+      retryInMs: details.retryInMs,
+    })),
+    [
+      {
+        callStatus: "offer",
+        httpStatus: 502,
+        attempt: 1,
+        retryInMs: 1_000,
+      },
+      {
+        callStatus: "offer",
+        httpStatus: 502,
+        attempt: 2,
+        retryInMs: 2_000,
+      },
+    ]
+  );
+  assert.ok(
+    logs.some(
+      ([message, details]) =>
+        message === "WhatsApp call update event delivered." &&
+        details.callStatus === "offer" &&
+        details.attempt === 3
+    )
+  );
+
+  const serializedLogs = JSON.stringify(logs);
+  assert.ok(serializedLogs.includes("hmac:"));
+  assert.ok(!serializedLogs.includes(FICTIONAL_NUMBER));
+  assert.ok(!serializedLogs.includes(FICTIONAL_LID));
+});
+
+test("call updates do not retry non-transient delivery failures", async () => {
+  const requests = [];
+  const deliveryResults = [];
+  const logs = [];
+  const client = new FakeClient();
+
+  createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    clientFactory: () => client,
+    fingerprintKey: Buffer.alloc(32, 7),
+    runId: "0123456789abcdef",
+    httpClient: {
+      async post(url, payload) {
+        requests.push({ url, payload });
+        if (payload.status === "reject") {
+          const error = new Error("synthetic permanent failure");
+          error.response = { status: 400 };
+          throw error;
+        }
+      },
+    },
+    diagnostics: {
+      recordCallDelivered: (delivered) => deliveryResults.push(delivered),
+    },
+    logger: {
+      warn: (...args) => logs.push(args),
+    },
+  });
+
+  client.emit("call_update", { status: "reject" });
+  client.emit("call_update", { status: "terminate" });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    requests.map(({ payload }) => payload.status),
+    ["reject", "terminate"]
+  );
+  assert.deepEqual(deliveryResults, [false, true]);
+  assert.ok(
+    logs.some(
+      ([message, details]) =>
+        message === "Home Assistant call event delivery failed." &&
+        details.callStatus === "reject" &&
+        details.httpStatus === 400 &&
+        details.attempt === 1
+    )
+  );
+});
+
+test("stopping the runtime cancels pending call delivery retries", async () => {
+  const deliveryResults = [];
+  const timers = [];
+  const clearedTimers = [];
+  let requests = 0;
+  const client = new FakeClient();
+  const runtime = createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    clientFactory: () => client,
+    runId: "0123456789abcdef",
+    httpClient: {
+      async post() {
+        requests += 1;
+        const error = new Error("synthetic transient failure");
+        error.response = { status: 502 };
+        throw error;
+      },
+    },
+    diagnostics: {
+      recordCallDelivered: (delivered) => deliveryResults.push(delivered),
+    },
+    logger: {},
+    setTimeoutFn: (callback, delayMs) => {
+      const timer = { callback, delayMs };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutFn: (timer) => clearedTimers.push(timer),
+  });
+
+  client.emit("call_update", { status: "offer" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(timers.length, 1);
+
+  await runtime.stopCallDelivery();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(requests, 1);
+  assert.deepEqual(clearedTimers, timers);
+  assert.deepEqual(deliveryResults, [false]);
+});
+
 test("debug diagnostics are configured before clients are created", async () => {
   const calls = [];
   const logger = {

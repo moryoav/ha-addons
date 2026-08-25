@@ -277,9 +277,11 @@ data:
 `terminate`. The stable event data contains `clientId`, `callId`, `status`,
 `from`, `chatId`, `isVideo`, `isGroup`, `groupJid`, `date`, and `offline`;
 fields omitted by Baileys are represented as `null`. Caller and chat identifiers
-may use `@lid` and are not guaranteed to contain a phone number. Updates can be
-missing or arrive after a reconnect, so automations should filter the desired
-status without assuming a complete ordered lifecycle.
+may use `@lid` and are not guaranteed to contain a phone number. The add-on
+preserves the observed update order and retries transient delivery failures for
+a 33-second backoff window when Home Assistant Core is unavailable. Baileys
+updates can still be missing or arrive after a reconnect, so automations should
+filter the desired status without assuming a complete lifecycle.
 
 `whatsapp_addon_health_failure` includes its schema and service, a run id,
 first and last failure timestamps, failure count and streak, the bounded failure

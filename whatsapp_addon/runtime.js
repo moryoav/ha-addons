@@ -29,6 +29,15 @@ const OPTIONS_PATH = "/data/options.json";
 const PROCESS_LOG_KEY = crypto.randomBytes(32);
 const DEBUG_MESSAGE_LIMIT = 10;
 const CALL_UPDATE_EVENT = "whatsapp_call_update";
+const CALL_EVENT_RETRY_DELAYS_MS = Object.freeze([
+  1_000,
+  2_000,
+  5_000,
+  10_000,
+  15_000,
+]);
+const CALL_EVENT_REQUEST_TIMEOUT_MS = 10_000;
+const MAX_PENDING_CALL_UPDATES = 100;
 const HEALTH_FAILURE_EVENT = "whatsapp_addon_health_failure";
 const HEALTH_FAILURE_NOTIFICATION_ID = "whatsapp_addon_health_failure";
 
@@ -86,6 +95,12 @@ const safeHttpStatus = (error) => {
   const status = error?.response?.status;
   return Number.isInteger(status) ? status : undefined;
 };
+
+const isTransientSupervisorStatus = (status) =>
+  status === undefined ||
+  status === 408 ||
+  status === 429 ||
+  (status >= 500 && status <= 599);
 
 const safeUpstreamCode = (error) => {
   const code = error?.upstreamCode;
@@ -259,6 +274,8 @@ const createAddonRuntime = ({
   logLevel = "info",
   runId = createRunId(),
   diagnostics,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
 } = {}) => {
   const validatedClientIds = normalizeConfiguredClientIds(clientIds);
   const clients = Object.create(null);
@@ -266,6 +283,10 @@ const createAddonRuntime = ({
   const logoutTasks = new Map();
   const logRef = (value) => fingerprint(value, fingerprintKey);
   const debugEnabled = normalizeLogLevel(logLevel) === "debug";
+  const callRetryWaiters = new Map();
+  let callDeliveryStopped = false;
+  let callDeliveryTail = Promise.resolve();
+  let pendingCallUpdates = 0;
 
   const supervisorHeaders = {
     Authorization: `Bearer ${supervisorToken || ""}`,
@@ -279,19 +300,94 @@ const createAddonRuntime = ({
     };
   };
 
-  const postSupervisor = async (path, payload, operation) => {
+  const requestSupervisor = async (path, payload, timeout) => {
     try {
       await httpClient.post(`http://supervisor${path}`, payload, {
         headers: supervisorHeaders,
+        ...(Number.isInteger(timeout) ? { timeout } : {}),
       });
-      return true;
+      return { delivered: true, status: undefined };
     } catch (error) {
+      return { delivered: false, status: safeHttpStatus(error) };
+    }
+  };
+
+  const postSupervisor = async (path, payload, operation) => {
+    const result = await requestSupervisor(path, payload);
+    if (!result.delivered) {
       logger.warn?.(`Supervisor ${operation} failed.`, {
         runId,
-        status: safeHttpStatus(error),
+        status: result.status,
       });
-      return false;
     }
+    return result.delivered;
+  };
+
+  const waitForCallRetry = (delayMs) => {
+    if (callDeliveryStopped) return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      const timer = setTimeoutFn(() => {
+        callRetryWaiters.delete(timer);
+        resolve(!callDeliveryStopped);
+      }, delayMs);
+      callRetryWaiters.set(timer, resolve);
+    });
+  };
+
+  const deliverCallUpdate = async (clientId, update) => {
+    for (let attempt = 1; ; attempt += 1) {
+      if (callDeliveryStopped) return { delivered: false, attempt: 0 };
+
+      const result = await requestSupervisor(
+        `/core/api/events/${CALL_UPDATE_EVENT}`,
+        { clientId, ...update },
+        CALL_EVENT_REQUEST_TIMEOUT_MS
+      );
+      if (result.delivered) {
+        return { delivered: true, attempt };
+      }
+
+      const retryInMs = CALL_EVENT_RETRY_DELAYS_MS[attempt - 1];
+      if (
+        retryInMs !== undefined &&
+        !callDeliveryStopped &&
+        isTransientSupervisorStatus(result.status)
+      ) {
+        logger.warn?.(
+          "Home Assistant call event delivery temporarily failed; retry scheduled.",
+          {
+            runId,
+            clientRef: logRef(clientId),
+            callStatus: update.status,
+            httpStatus: result.status,
+            attempt,
+            retryInMs,
+          }
+        );
+        if (await waitForCallRetry(retryInMs)) continue;
+        return { delivered: false, attempt };
+      }
+
+      logger.warn?.("Home Assistant call event delivery failed.", {
+        runId,
+        clientRef: logRef(clientId),
+        callStatus: update.status,
+        httpStatus: result.status,
+        attempt,
+      });
+      return { delivered: false, attempt };
+    }
+  };
+
+  const stopCallDelivery = () => {
+    callDeliveryStopped = true;
+    for (const [timer, resolve] of callRetryWaiters) {
+      clearTimeoutFn(timer);
+      resolve(false);
+    }
+    callRetryWaiters.clear();
+    return callDeliveryTail;
   };
 
   const onReady = (clientId) => {
@@ -478,13 +574,49 @@ const createAddonRuntime = ({
     }
 
     diagnostics?.recordCallUpdate?.(update.status);
-    void postSupervisor(
-      `/core/api/events/${CALL_UPDATE_EVENT}`,
-      { clientId, ...update },
-      "call update event delivery"
-    ).then((delivered) => {
-      diagnostics?.recordCallDelivered?.(delivered);
-      if (!delivered || !debugEnabled) return;
+    if (pendingCallUpdates >= MAX_PENDING_CALL_UPDATES) {
+      diagnostics?.recordCallDelivered?.(false);
+      logger.warn?.(
+        "WhatsApp call update dropped because the delivery queue is full.",
+        {
+          runId,
+          clientRef: logRef(clientId),
+          callStatus: update.status,
+          queueLimit: MAX_PENDING_CALL_UPDATES,
+        }
+      );
+      return;
+    }
+
+    pendingCallUpdates += 1;
+    const deliveryTask = callDeliveryTail.then(async () => {
+      try {
+        return await deliverCallUpdate(clientId, update);
+      } catch {
+        logger.warn?.(
+          "Home Assistant call event delivery failed unexpectedly.",
+          {
+            runId,
+            clientRef: logRef(clientId),
+            callStatus: update.status,
+          }
+        );
+        return { delivered: false, attempt: 0 };
+      }
+    });
+    callDeliveryTail = deliveryTask.then(() => undefined);
+
+    void deliveryTask.then((result) => {
+      pendingCallUpdates -= 1;
+      diagnostics?.recordCallDelivered?.(result.delivered);
+      if (!result.delivered) return;
+      logger.info?.("WhatsApp call update event delivered.", {
+        runId,
+        clientRef: logRef(clientId),
+        callStatus: update.status,
+        attempt: result.attempt,
+      });
+      if (!debugEnabled) return;
       logger.debug?.("WhatsApp call update event delivered.", {
         runId,
         clientRef: logRef(clientId),
@@ -657,6 +789,7 @@ const createAddonRuntime = ({
     registerDiscovery,
     reportHealthFailure,
     runId,
+    stopCallDelivery,
   };
 };
 
@@ -763,9 +896,13 @@ const startAddon = async ({
       logger.info?.("WhatsApp add-on runtime shutting down.", {
         runId: safeRunId,
       });
-      await Promise.allSettled(
-        Object.values(runtime.clients).map((client) => client.disconnect?.())
-      );
+      const callDeliveryTask = runtime.stopCallDelivery?.();
+      await Promise.allSettled([
+        ...Object.values(runtime.clients).map((client) =>
+          client.disconnect?.()
+        ),
+        callDeliveryTask,
+      ]);
       await Promise.all([
         closeServerFn(apiServer),
         closeServerFn(webUiServer),

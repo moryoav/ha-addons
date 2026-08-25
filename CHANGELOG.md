@@ -2,6 +2,14 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.36
+
+- Kept WhatsApp call updates in arrival order and retried transient Home
+  Assistant Core delivery failures, preventing updates observed during a Core
+  startup from being discarded immediately.
+- Added privacy-safe call delivery logs with the lifecycle status, HTTP status,
+  attempt number, and retry delay, without exposing caller or call identifiers.
+
 ## 1.4.35
 
 - Added `whatsapp_call_update` events for incoming call lifecycle statuses:

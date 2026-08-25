@@ -1,3 +1,10 @@
+## 1.4.36
+
+- Queued call updates in arrival order and retried transient Home Assistant
+  Core delivery failures, including the `502` returned while Core is starting.
+- Added privacy-safe call delivery logs with the lifecycle status, HTTP status,
+  attempt number, and retry delay, without exposing caller or call identifiers.
+
 ## 1.4.35
 
 - Added the `whatsapp_call_update` Home Assistant event for every Baileys call
