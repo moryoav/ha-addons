@@ -1,3 +1,11 @@
+## 1.4.35
+
+- Added the `whatsapp_call_update` Home Assistant event for every Baileys call
+  lifecycle status, with stable nullable fields for caller, call type, group,
+  timestamp, and offline state.
+- Added privacy-safe call receipt and delivery counters to debug runtime
+  diagnostics while keeping raw caller and call identifiers out of add-on logs.
+
 ## 1.4.34
 
 - Fired a privacy-safe `whatsapp_addon_health_failure` Home Assistant event

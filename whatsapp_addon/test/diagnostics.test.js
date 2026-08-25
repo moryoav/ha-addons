@@ -247,6 +247,19 @@ test("runtime diagnostics emit bounded summaries and rate-limited warnings", asy
 
   await diagnostics.start();
   diagnostics.markApiReady();
+  for (const status of [
+    "offer",
+    "ringing",
+    "accept",
+    "reject",
+    "timeout",
+    "terminate",
+  ]) {
+    diagnostics.recordCallUpdate(status);
+  }
+  diagnostics.recordCallDelivered(true);
+  diagnostics.recordCallDelivered(false);
+  diagnostics.recordCallIgnored();
   diagnostics.recordMessageBatch(12);
   diagnostics.recordMessageIgnored("from_me");
   diagnostics.recordMessageDuplicate();
@@ -267,6 +280,16 @@ test("runtime diagnostics emit bounded summaries and rate-limited warnings", asy
   assert.equal(typeof intervalCallback, "function");
   assert.equal(logs.debug.length, 1);
   const summary = JSON.parse(logs.debug[0][1]);
+  assert.equal(summary.activity.callUpdatesReceived, 6);
+  assert.equal(summary.activity.callOffers, 1);
+  assert.equal(summary.activity.callRinging, 1);
+  assert.equal(summary.activity.callAccepted, 1);
+  assert.equal(summary.activity.callRejected, 1);
+  assert.equal(summary.activity.callTimedOut, 1);
+  assert.equal(summary.activity.callTerminated, 1);
+  assert.equal(summary.activity.callUpdatesDelivered, 1);
+  assert.equal(summary.activity.callUpdateDeliveryFailed, 1);
+  assert.equal(summary.activity.callUpdatesIgnored, 1);
   assert.equal(summary.activity.messagesReceived, 12);
   assert.equal(summary.activity.messageIgnoredFromMe, 1);
   assert.equal(summary.activity.apiSlow, 1);

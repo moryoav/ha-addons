@@ -404,6 +404,11 @@ class WhatsappClient extends EventEmitter {
       this.emit("presence_update", presence);
     });
 
+    this.#conn.ev.on("call", (calls) => {
+      if (!Array.isArray(calls)) return;
+      for (const call of calls) this.emit("call_update", call);
+    });
+
     this.emit("ready");
   };
 

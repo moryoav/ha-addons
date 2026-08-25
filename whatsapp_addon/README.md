@@ -1,6 +1,7 @@
 # Home Assistant Add-on: WhatsappV2
 
-Write WhatsApp messages from Home Assistant and receive WhatsApp message events.
+Write WhatsApp messages from Home Assistant and receive WhatsApp message, call,
+and presence events.
 
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
 
@@ -149,10 +150,10 @@ integration after adding, changing, or removing `api_token`.
 
 Debug logging periodically summarizes event-loop responsiveness, process and
 container resource use, API activity, health state, reconnects, and aggregate
-message handling. It does not enable raw Baileys logs or include message content,
-raw account identifiers, QR codes, session data, or API tokens. Message-related
-entries use run-scoped one-way references for correlation. Return the option to
-`info` after collecting the relevant logs.
+message and call handling. It does not enable raw Baileys logs or include
+message content, raw account identifiers, QR codes, session data, or API
+tokens. Identifier-related entries use run-scoped one-way references for
+correlation. Return the option to `info` after collecting the relevant logs.
 
 Failed native health checks are recorded in a small persistent history at both
 log levels. If Supervisor replaces an unhealthy container, the new add-on run

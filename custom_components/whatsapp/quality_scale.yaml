@@ -3,7 +3,7 @@ rules:
   action-setup: done
   appropriate-polling:
     status: exempt
-    comment: The integration does not poll; the add-on pushes inbound message and presence events to Home Assistant.
+    comment: The integration does not poll; the add-on pushes inbound message, call, and presence events to Home Assistant.
   brands: done
   common-modules: done
   config-flow-test-coverage: done

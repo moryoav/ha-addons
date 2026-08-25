@@ -77,6 +77,34 @@ test("the installed runtime Baileys dependency is exactly 6.7.23", async () => {
   assert.equal(typeof baileys.fetchLatestBaileysVersion, "function");
 });
 
+test("Baileys call lifecycle arrays are forwarded to the runtime", async () => {
+  const { client, ev } = await createHarness();
+  const updates = [];
+  const statuses = [
+    "offer",
+    "ringing",
+    "accept",
+    "reject",
+    "timeout",
+    "terminate",
+  ];
+  const calls = statuses.map((status) => ({
+    id: `fictional-call-${status}`,
+    from: FICTIONAL_LID,
+    chatId: FICTIONAL_LID,
+    date: new Date("2026-08-25T12:00:00Z"),
+    offline: false,
+    status,
+  }));
+  client.on("call_update", (call) => updates.push(call));
+
+  ev.emit("call", calls);
+  ev.emit("call", { status: "offer" });
+
+  assert.deepEqual(updates, calls);
+  await client.disconnect();
+});
+
 test("checkNumber returns a stable registered-number response", async () => {
   const { calls, client } = await createHarness({
     onWhatsApp: async () => [

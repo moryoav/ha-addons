@@ -82,10 +82,11 @@ session data, or message content.
 Set `log_level` to `debug` and restart the add-on when investigating an
 intermittent failure. Debug mode periodically summarizes event-loop
 responsiveness, process and container resource use, API activity, health state,
-reconnects, and aggregate message handling. It does not enable raw Baileys logs
-or include message content, raw account identifiers, QR codes, session data, or
-API tokens. Message-related entries use run-scoped one-way references for
-correlation. Return the option to `info` after collecting the relevant logs.
+reconnects, and aggregate message and call handling. It does not enable raw
+Baileys logs or include message content, raw account identifiers, QR codes,
+session data, or API tokens. Identifier-related entries use run-scoped one-way
+references for correlation. Return the option to `info` after collecting the
+relevant logs.
 
 Failed native health checks are recorded in a small persistent history even at
 the default `info` level. If Supervisor replaces an unhealthy container, the
@@ -264,11 +265,21 @@ data:
 | Event type                      | Description                                             |
 | ------------------------------- | ------------------------------------------------------- |
 | new_whatsapp_message            | The message that was received                           |
+| whatsapp_call_update            | An incoming call lifecycle update                       |
 | whatsapp_presence_update        | Presence of contact in a chat updated                   |
 | whatsapp_send_message_result    | Result event fired after sending a message              |
 | whatsapp_addon_health_failure   | Sanitized details after the prior run ended unhealthy   |
 
 `new_whatsapp_message` event data includes the configured `clientId`, the detected message `type`, the Baileys `key`, and the message payload. The dedupe layer runs before this event is fired, so automations should only see one event for the same WhatsApp message id/content pair. Media dedupe ignores wrapper-only fields such as thumbnails, CDN paths, scan sidecars, and media key timestamp representation because WhatsApp can vary those between phone-number and LID deliveries of the same message.
+
+`whatsapp_call_update` fires for each lifecycle update reported by Baileys. Its
+`status` is one of `offer`, `ringing`, `accept`, `reject`, `timeout`, or
+`terminate`. The stable event data contains `clientId`, `callId`, `status`,
+`from`, `chatId`, `isVideo`, `isGroup`, `groupJid`, `date`, and `offline`;
+fields omitted by Baileys are represented as `null`. Caller and chat identifiers
+may use `@lid` and are not guaranteed to contain a phone number. Updates can be
+missing or arrive after a reconnect, so automations should filter the desired
+status without assuming a complete ordered lifecycle.
 
 `whatsapp_addon_health_failure` includes its schema and service, a run id,
 first and last failure timestamps, failure count and streak, the bounded failure
@@ -281,6 +292,25 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
 ---
 
 ## **Sample automations**
+
+## Incoming WhatsApp call
+
+```yaml
+- alias: Incoming WhatsApp call
+  trigger:
+    - platform: event
+      event_type: whatsapp_call_update
+      event_data:
+        status: offer
+  action:
+    - action: persistent_notification.create
+      data:
+        title: Incoming WhatsApp call
+        message: >-
+          {{ "Video" if trigger.event.data.isVideo else "Voice" }} call from
+          {{ trigger.event.data.from or "an unknown caller" }}.
+  mode: queued
+```
 
 ## Ping Pong
 
@@ -414,11 +444,12 @@ Known recoverable libsignal `Bad MAC` and session lifecycle console logs are fil
 The add-on supports `aarch64` and `amd64`. Version 1.4.31 removes `armhf`,
 `armv7`, and `i386`, which Home Assistant has not supported since 2025.12.
 
-WhatsApp message events and Home Assistant automation traces can contain phone
-JIDs, LIDs, message keys, quoted-message data, and message bodies. The add-on
-does not log lookup identifiers or message bodies, but Home Assistant may retain
-event and action data. Redact these fields, QR codes, session data, and
-`api_token` before sharing diagnostics, logs, screenshots, or traces.
+WhatsApp message and call events and Home Assistant automation traces can
+contain phone JIDs, LIDs, call and message keys, quoted-message data, and
+message bodies. The add-on does not log raw identifiers or message bodies, but
+Home Assistant may retain event and action data. Redact these fields, QR codes,
+session data, and `api_token` before sharing diagnostics, logs, screenshots, or
+traces.
 
 Use add-on and integration version 1.4.31 or newer together. The registration
 lookup is unavailable on older add-ons; the integration reports a clear update

@@ -7,6 +7,7 @@ const {
   createAddonRuntime,
   fingerprint,
   normalizeApiToken,
+  normalizeCallUpdate,
   normalizeLogLevel,
   parseOptions,
   removeSessionDirectory,
@@ -16,6 +17,7 @@ const { RequestValidationError } = require("../validation");
 
 const FICTIONAL_NUMBER = "12025550123";
 const FICTIONAL_JID = `${FICTIONAL_NUMBER}@s.whatsapp.net`;
+const FICTIONAL_LID = "999999999999999@lid";
 
 class FakeClient extends EventEmitter {
   async disconnect() {}
@@ -54,6 +56,133 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
   ]) {
     assert.throws(() => parseOptions(content), RequestValidationError);
   }
+});
+
+test("call updates normalize to one stable Home Assistant payload", () => {
+  assert.deepEqual(
+    normalizeCallUpdate({
+      id: "fictional-call-id",
+      status: "offer",
+      from: FICTIONAL_LID,
+      chatId: FICTIONAL_LID,
+      isVideo: true,
+      isGroup: false,
+      date: new Date("2026-08-25T12:00:00Z"),
+      offline: false,
+    }),
+    {
+      callId: "fictional-call-id",
+      status: "offer",
+      from: FICTIONAL_LID,
+      chatId: FICTIONAL_LID,
+      isVideo: true,
+      isGroup: false,
+      groupJid: null,
+      date: "2026-08-25T12:00:00.000Z",
+      offline: false,
+    }
+  );
+  assert.deepEqual(normalizeCallUpdate({ status: "terminate" }), {
+    callId: null,
+    status: "terminate",
+    from: null,
+    chatId: null,
+    isVideo: null,
+    isGroup: null,
+    groupJid: null,
+    date: null,
+    offline: null,
+  });
+  assert.equal(normalizeCallUpdate({ status: "unknown" }), undefined);
+  assert.equal(normalizeCallUpdate(null), undefined);
+});
+
+test("call lifecycle updates fire filterable privacy-safe events", async () => {
+  const requests = [];
+  const logs = [];
+  const recordedStatuses = [];
+  const deliveryResults = [];
+  let ignored = 0;
+  const client = new FakeClient();
+  createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    clientFactory: () => client,
+    fingerprintKey: Buffer.alloc(32, 5),
+    logLevel: "debug",
+    runId: "0123456789abcdef",
+    httpClient: {
+      async post(...args) {
+        requests.push(args);
+      },
+    },
+    diagnostics: {
+      recordCallDelivered: (delivered) => deliveryResults.push(delivered),
+      recordCallIgnored: () => {
+        ignored += 1;
+      },
+      recordCallUpdate: (status) => recordedStatuses.push(status),
+    },
+    logger: {
+      debug: (...args) => logs.push(args),
+      warn: (...args) => logs.push(args),
+    },
+  });
+
+  const statuses = [
+    "offer",
+    "ringing",
+    "accept",
+    "reject",
+    "timeout",
+    "terminate",
+  ];
+  for (const status of statuses) {
+    client.emit("call_update", {
+      id: `fictional-call-${FICTIONAL_NUMBER}`,
+      status,
+      from: FICTIONAL_LID,
+      chatId: FICTIONAL_LID,
+      isVideo: false,
+      isGroup: false,
+      date: new Date("2026-08-25T12:00:00Z"),
+      offline: false,
+    });
+  }
+  client.emit("call_update", {
+    id: `private-call-${FICTIONAL_NUMBER}`,
+    status: "private-status",
+    from: FICTIONAL_JID,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(requests.length, statuses.length);
+  assert.deepEqual(recordedStatuses, statuses);
+  assert.deepEqual(deliveryResults, statuses.map(() => true));
+  assert.equal(ignored, 1);
+  for (const [index, request] of requests.entries()) {
+    assert.equal(
+      request[0],
+      "http://supervisor/core/api/events/whatsapp_call_update"
+    );
+    assert.deepEqual(request[1], {
+      clientId: "default",
+      callId: `fictional-call-${FICTIONAL_NUMBER}`,
+      status: statuses[index],
+      from: FICTIONAL_LID,
+      chatId: FICTIONAL_LID,
+      isVideo: false,
+      isGroup: false,
+      groupJid: null,
+      date: "2026-08-25T12:00:00.000Z",
+      offline: false,
+    });
+  }
+  const serializedLogs = JSON.stringify(logs);
+  assert.ok(serializedLogs.includes("hmac:"));
+  assert.ok(!serializedLogs.includes(FICTIONAL_NUMBER));
+  assert.ok(!serializedLogs.includes(FICTIONAL_LID));
+  assert.ok(!serializedLogs.includes("private-status"));
 });
 
 test("debug diagnostics are configured before clients are created", async () => {

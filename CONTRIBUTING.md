@@ -101,7 +101,8 @@ For add-on changes, verify that the add-on can:
 - Return `GET /health`.
 - Pair a client through QR code.
 - Send a message.
-- Fire `new_whatsapp_message` and `whatsapp_presence_update` events when relevant.
+- Fire `new_whatsapp_message`, `whatsapp_call_update`, and
+  `whatsapp_presence_update` events when relevant.
 - Authenticate API calls when `api_token` is configured.
 - Leave Home Assistant's `/config` directory untouched.
 

@@ -523,6 +523,16 @@ const createSystemMetricsSampler = ({
 const emptyCounters = () => ({
   apiRequests: 0,
   apiSlow: 0,
+  callAccepted: 0,
+  callOffers: 0,
+  callRejected: 0,
+  callRinging: 0,
+  callTerminated: 0,
+  callTimedOut: 0,
+  callUpdateDeliveryFailed: 0,
+  callUpdatesDelivered: 0,
+  callUpdatesIgnored: 0,
+  callUpdatesReceived: 0,
   connectionsConnected: 0,
   connectionsDisconnected: 0,
   connectionsErrors: 0,
@@ -890,6 +900,27 @@ const createRuntimeDiagnostics = ({
         restarted: "connectionsRestarted",
       };
       if (keys[event]) increment(counters, keys[event]);
+    },
+    recordCallUpdate(status) {
+      const keys = {
+        accept: "callAccepted",
+        offer: "callOffers",
+        reject: "callRejected",
+        ringing: "callRinging",
+        terminate: "callTerminated",
+        timeout: "callTimedOut",
+      };
+      increment(counters, "callUpdatesReceived");
+      if (keys[status]) increment(counters, keys[status]);
+    },
+    recordCallDelivered(delivered) {
+      increment(
+        counters,
+        delivered ? "callUpdatesDelivered" : "callUpdateDeliveryFailed"
+      );
+    },
+    recordCallIgnored() {
+      increment(counters, "callUpdatesIgnored");
     },
     recordMessageBatch(count) {
       increment(counters, "messageBatches");

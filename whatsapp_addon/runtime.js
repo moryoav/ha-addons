@@ -28,8 +28,18 @@ const DATA_ROOT = "/data";
 const OPTIONS_PATH = "/data/options.json";
 const PROCESS_LOG_KEY = crypto.randomBytes(32);
 const DEBUG_MESSAGE_LIMIT = 10;
+const CALL_UPDATE_EVENT = "whatsapp_call_update";
 const HEALTH_FAILURE_EVENT = "whatsapp_addon_health_failure";
 const HEALTH_FAILURE_NOTIFICATION_ID = "whatsapp_addon_health_failure";
+
+const CALL_STATUSES = new Set([
+  "offer",
+  "ringing",
+  "accept",
+  "reject",
+  "timeout",
+  "terminate",
+]);
 
 const SAFE_MESSAGE_TYPES = new Set([
   "audioMessage",
@@ -159,6 +169,43 @@ const safeDiagnosticTimestamp = (value) => {
     return value;
   }
   return undefined;
+};
+
+const normalizeCallString = (value, maxLength) =>
+  typeof value === "string" && value.length > 0 && value.length <= maxLength
+    ? value
+    : null;
+
+const normalizeCallDate = (value) => {
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return value.toISOString();
+  }
+  return typeof value === "string" && safeDiagnosticTimestamp(value)
+    ? value
+    : null;
+};
+
+const normalizeCallUpdate = (call) => {
+  if (
+    !call ||
+    typeof call !== "object" ||
+    Array.isArray(call) ||
+    !CALL_STATUSES.has(call.status)
+  ) {
+    return undefined;
+  }
+
+  return {
+    callId: normalizeCallString(call.id, 256),
+    status: call.status,
+    from: normalizeCallString(call.from, 128),
+    chatId: normalizeCallString(call.chatId, 128),
+    isVideo: typeof call.isVideo === "boolean" ? call.isVideo : null,
+    isGroup: typeof call.isGroup === "boolean" ? call.isGroup : null,
+    groupJid: normalizeCallString(call.groupJid, 128),
+    date: normalizeCallDate(call.date),
+    offline: typeof call.offline === "boolean" ? call.offline : null,
+  };
 };
 
 const summarizeMessageDebug = (message, fingerprintValue = fingerprint) => ({
@@ -417,6 +464,40 @@ const createAddonRuntime = ({
     });
   };
 
+  const onCallUpdate = (call, clientId) => {
+    const update = normalizeCallUpdate(call);
+    if (!update) {
+      diagnostics?.recordCallIgnored?.();
+      if (debugEnabled) {
+        logger.debug?.("Malformed WhatsApp call update ignored.", {
+          runId,
+          clientRef: logRef(clientId),
+        });
+      }
+      return;
+    }
+
+    diagnostics?.recordCallUpdate?.(update.status);
+    void postSupervisor(
+      `/core/api/events/${CALL_UPDATE_EVENT}`,
+      { clientId, ...update },
+      "call update event delivery"
+    ).then((delivered) => {
+      diagnostics?.recordCallDelivered?.(delivered);
+      if (!delivered || !debugEnabled) return;
+      logger.debug?.("WhatsApp call update event delivered.", {
+        runId,
+        clientRef: logRef(clientId),
+        callRef: logRef(update.callId),
+        callerRef: logRef(update.from),
+        status: update.status,
+        isVideo: update.isVideo,
+        isGroup: update.isGroup,
+        offline: update.offline,
+      });
+    });
+  };
+
   const onPresenceUpdate = (presence, clientId) => {
     void postSupervisor(
       "/core/api/events/whatsapp_presence_update",
@@ -475,6 +556,7 @@ const createAddonRuntime = ({
     client.on("msg_dedupe_collision", (collision) =>
       onDedupeCollision(collision, clientId)
     );
+    client.on("call_update", (call) => onCallUpdate(call, clientId));
     client.on("presence_update", (presence) =>
       onPresenceUpdate(presence, clientId)
     );
@@ -715,6 +797,7 @@ module.exports = {
   loadOptions,
   normalizeApiToken,
   normalizeLogLevel,
+  normalizeCallUpdate,
   parseOptions,
   removeSessionDirectory,
   startAddon,

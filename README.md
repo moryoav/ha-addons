@@ -4,7 +4,8 @@
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y5B124NZ2L)
 
-Send WhatsApp messages from Home Assistant automations and receive WhatsApp message and presence events through the companion add-on.
+Send WhatsApp messages from Home Assistant automations and receive WhatsApp
+message, call, and presence events through the companion add-on.
 
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="320"/>
 
@@ -181,11 +182,22 @@ The add-on fires these Home Assistant events:
 | Event type | Description |
 | --- | --- |
 | `new_whatsapp_message` | A received WhatsApp message. |
+| `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_send_message_result` | Compatibility result event after sending a message. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
 `new_whatsapp_message` includes the configured `clientId`, the detected message `type`, the Baileys message `key`, and the message payload.
+
+`whatsapp_call_update` fires for every call lifecycle update reported by
+Baileys. Its `status` is one of `offer`, `ringing`, `accept`, `reject`,
+`timeout`, or `terminate`. Each event has a stable payload containing
+`clientId`, `callId`, `status`, `from`, `chatId`, `isVideo`, `isGroup`,
+`groupJid`, `date`, and `offline`. Fields that are absent from an upstream
+update are `null`. The `from` and `chatId` values can be WhatsApp LIDs rather
+than phone-number JIDs, and lifecycle updates can be missing or arrive after a
+reconnect, so automations should filter the status they need without assuming
+that every call produces every status.
 
 `whatsapp_addon_health_failure` fires on the next successful startup when the
 saved history ends with three consecutive failed native health checks. Its
@@ -239,6 +251,25 @@ data:
     to: 12025550123@s.whatsapp.net
     body:
       text: This call stores the sent WhatsApp message id.
+```
+
+### Notify when an incoming WhatsApp call is offered
+
+```yaml
+- alias: Incoming WhatsApp call
+  trigger:
+    - platform: event
+      event_type: whatsapp_call_update
+      event_data:
+        status: offer
+  action:
+    - action: persistent_notification.create
+      data:
+        title: Incoming WhatsApp call
+        message: >-
+          {{ "Video" if trigger.event.data.isVideo else "Voice" }} call from
+          {{ trigger.event.data.from or "an unknown caller" }}.
+  mode: queued
 ```
 
 ### Reply to `!ping`
@@ -319,7 +350,9 @@ structured registration response.
 
 ## Data updates
 
-The integration does not poll WhatsApp. The add-on pushes message and presence events into Home Assistant as they arrive, advertises its local API through Supervisor discovery, and actions call the local add-on API on demand.
+The integration does not poll WhatsApp. The add-on pushes message, call, and
+presence events into Home Assistant as they arrive, advertises its local API
+through Supervisor discovery, and actions call the local add-on API on demand.
 
 ## Diagnostics
 
@@ -332,11 +365,11 @@ or message contents.
 When diagnosing an intermittent add-on problem, set its `log_level` option to
 `debug` and restart it. Debug mode adds periodic privacy-safe summaries of
 event-loop responsiveness, process and container resource use, API activity,
-health state, reconnects, and aggregate message handling. It does not enable
-raw Baileys logs or include message content, raw account identifiers, QR codes,
-session data, or API tokens. Message-related entries use run-scoped one-way
-references for correlation. Return the option to `info` after collecting the
-relevant logs.
+health state, reconnects, and aggregate message and call handling. It does not
+enable raw Baileys logs or include message content, raw account identifiers, QR
+codes, session data, or API tokens. Identifier-related entries use run-scoped
+one-way references for correlation. Return the option to `info` after collecting
+the relevant logs.
 
 Failed native health checks are retained at both log levels. If Supervisor
 replaces an unhealthy container, the next add-on run replays the saved probe
@@ -359,6 +392,8 @@ updates the existing alert instead of accumulating duplicates.
 - `whatsapp.check_number` requires add-on and integration version 1.4.31 or
   newer. An endpoint/version error usually means only one half was updated.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
+- If call updates are not received, confirm the automation listens for
+  `whatsapp_call_update` and filters on a supported `status` value.
 - If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
 - Recoverable libsignal `Bad MAC` and session lifecycle messages are summarized by the add-on instead of logging full stack traces or session data.
 

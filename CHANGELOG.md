@@ -2,6 +2,13 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.35
+
+- Added `whatsapp_call_update` events for incoming call lifecycle statuses:
+  `offer`, `ringing`, `accept`, `reject`, `timeout`, and `terminate`.
+- Added a stable, filterable call payload and privacy-safe aggregate call
+  diagnostics without exposing raw caller or call identifiers in add-on logs.
+
 ## 1.4.34
 
 - Added a privacy-safe `whatsapp_addon_health_failure` event after a previous
