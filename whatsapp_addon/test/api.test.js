@@ -108,6 +108,34 @@ test("health identifies the API without exposing client IDs or CORS", async () =
   );
 });
 
+test("paused clients remain healthy but reject API actions", async () => {
+  await withApp(
+    {
+      clients: {},
+      clientStates: {
+        default: { state: "recovery_paused" },
+        backup: { state: "recovery_paused" },
+      },
+    },
+    async (baseUrl) => {
+      const health = await request(baseUrl, "/health");
+      assert.equal(health.status, 200);
+      assert.equal(health.payload.status, "ok");
+      assert.equal(health.payload.client_count, 2);
+
+      const action = await request(baseUrl, "/sendMessage", {
+        body: {
+          clientId: "default",
+          to: FICTIONAL_JID,
+          body: { text: "Hello" },
+        },
+      });
+      assert.equal(action.status, 503);
+      assert.equal(action.payload.error.code, "client_recovery_paused");
+    }
+  );
+});
+
 test("API timing diagnostics stay aggregate and exclude health probes", async () => {
   let active = 0;
   let completed = 0;

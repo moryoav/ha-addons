@@ -9,6 +9,7 @@
 !message-dedupe.js
 !package.json
 !package-lock.json
+!recovery.js
 !run.sh
 !runtime.js
 !validation.js

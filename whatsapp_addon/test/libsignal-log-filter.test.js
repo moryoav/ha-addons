@@ -48,6 +48,7 @@ assert.deepStrictEqual(passed.info, [["Real info"]]);
 assert.deepStrictEqual(filter.getSummary(), {
   badMacSessionErrors: 1,
   failedDecryptMessages: 1,
+  messageCounterSessionErrors: 0,
   sessionLifecycleLogs: 3,
   total: 5,
 });
@@ -58,6 +59,7 @@ assert.strictEqual(summaries[0][0], "Suppressed libsignal console noise.");
 assert.deepStrictEqual(summaries[0][1], {
   badMacSessionErrors: 1,
   failedDecryptMessages: 1,
+  messageCounterSessionErrors: 0,
   sessionLifecycleLogs: 3,
   total: 5,
 });
@@ -73,5 +75,41 @@ assert.strictEqual(filter.flushSummary(), false);
 filter.uninstall();
 consoleObj.info("Restored info");
 assert.deepStrictEqual(passed.info[1], ["Restored info"]);
+
+const stormConsole = { error() {}, warn() {}, info() {} };
+const storms = [];
+const stormFilter = createLibsignalLogFilter({
+  consoleObj: stormConsole,
+  summaryIntervalMs: 0,
+  stormFailedDecryptThreshold: 2,
+  stormSessionErrorThreshold: 2,
+  onDecryptStorm: (summary) => storms.push(summary),
+});
+stormFilter.install();
+stormConsole.error("Failed to decrypt message with any known session...");
+stormConsole.error("Failed to decrypt message with any known session...");
+stormConsole.error("Session error:Error: Bad MAC", "Error: Bad MAC");
+assert.strictEqual(storms.length, 0);
+stormConsole.error(
+  "Session error:MessageCounterError",
+  "Key used already or never filled"
+);
+assert.strictEqual(storms.length, 1);
+assert.deepStrictEqual(storms[0], {
+  badMacSessionErrors: 1,
+  failedDecryptMessages: 2,
+  messageCounterSessionErrors: 1,
+  sessionLifecycleLogs: 0,
+  total: 4,
+});
+stormConsole.error("Failed to decrypt message with any known session...");
+assert.strictEqual(storms.length, 1);
+stormFilter.resetStormDetection();
+stormConsole.error("Failed to decrypt message with any known session...");
+stormConsole.error("Failed to decrypt message with any known session...");
+stormConsole.error("Session error:Error: Bad MAC", "Error: Bad MAC");
+stormConsole.error("Session error:Error: Bad MAC", "Error: Bad MAC");
+assert.strictEqual(storms.length, 2);
+stormFilter.uninstall();
 
 console.log("libsignal-log-filter tests passed");

@@ -106,6 +106,28 @@ shorter-lived probe failures do not trigger either report.
 
 Open the add-on page and select Open Web UI. The Ingress UI shows each configured WhatsApp session, its connection state, and the current pairing QR code when a session is waiting for pairing.
 
+### Encryption recovery
+
+If the add-on detects a sustained burst of repeated libsignal decryption
+failures, it pauses every WhatsApp client to protect the host from a
+resource-consuming loop. The health endpoint and Ingress UI remain available,
+and Home Assistant creates one persistent notification directing you to the
+Web UI. The privacy-safe pause marker survives an add-on or host restart.
+
+The recovery panel offers two choices:
+
+- Retry connection clears the pause and reconnects once with all saved
+  sessions unchanged. If the decryption storm returns, the clients pause again.
+- Reset and re-pair deletes only the selected client's local pairing session.
+  You must type its client ID to confirm. Remove the old add-on entry from
+  WhatsApp Linked Devices, then scan the new QR code shown by the add-on.
+
+Because the upstream error does not identify the responsible configured
+client, detection pauses all clients. Normal action requests for a paused
+client return the `client_recovery_paused` error until Retry or Reset and
+re-pair is started. This recovery mode contains the failure but does not fix
+the underlying upstream encryption problem.
+
 ### **How to get a User ID**
 
 A WhatsApp target id can use one of these formats:
@@ -289,7 +311,10 @@ classification, HTTP and curl result, probe timings, and any available bounded
 process or container metrics. It contains no message contents, account
 identifiers, URLs, headers, tokens, or raw response bodies.
 
-Known recoverable libsignal `Bad MAC` and session lifecycle console logs are filtered by the add-on. They are summarized as counts in the add-on log and do not change authentication, session state, or message handling.
+Isolated libsignal `Bad MAC`, message-counter, and session lifecycle console
+logs are filtered and summarized as counts instead of exposing full stack
+traces or session data. A confirmed high-volume decryption failure burst
+activates the recovery pause described above.
 
 ---
 

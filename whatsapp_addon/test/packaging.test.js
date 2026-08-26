@@ -86,4 +86,6 @@ test("Docker packages the diagnostic health probe with a longer wrapper timeout"
   assert.doesNotMatch(dockerfile, /HEALTHCHECK[^\n]*--timeout=5s/);
   assert.match(dockerignore, /^!healthcheck\.sh\r?$/m);
   assert.match(dockerignore, /^!diagnostics\.js\r?$/m);
+  assert.match(dockerfile, /recovery\.js runtime\.js/);
+  assert.match(dockerignore, /^!recovery\.js\r?$/m);
 });

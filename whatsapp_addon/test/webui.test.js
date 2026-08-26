@@ -3,6 +3,7 @@ const assert = require("assert");
 const {
   createIngressGuard,
   createStatusSnapshot,
+  createWebUiApp,
   isIngressProxyAddress,
   normalizeBaseHref,
   normalizeRequestUrl,
@@ -89,6 +90,31 @@ const testStatusSnapshot = () => {
   assert.strictEqual(snapshot.clients[1].state, "pairing");
   assert.strictEqual(snapshot.clients[1].qrDataUrl, "data:image/png;base64,abc");
   assert.strictEqual(snapshot.clients[2].connectedAt, "2026-06-01T00:01:00.000Z");
+  assert.deepStrictEqual(snapshot.recovery, {
+    active: false,
+    reason: null,
+    detectedAt: null,
+    failedDecryptMessages: 0,
+    sessionErrors: 0,
+    operationPending: false,
+  });
+
+  const paused = createStatusSnapshot({
+    clients: {},
+    clientStates: { default: { state: "recovery_paused" } },
+    recovery: {
+      active: true,
+      reason: "libsignal_decrypt_storm",
+      detectedAt: "2026-08-26T12:00:00.000Z",
+      failedDecryptMessages: 10,
+      badMacSessionErrors: 100,
+      messageCounterSessionErrors: 2,
+      operationPending: true,
+    },
+  });
+  assert.strictEqual(paused.status, "recovery_paused");
+  assert.strictEqual(paused.recovery.sessionErrors, 102);
+  assert.strictEqual(paused.recovery.operationPending, true);
 };
 
 const testPathNormalization = () => {
@@ -108,12 +134,67 @@ const testRenderWebUi = () => {
   assert.ok(html.includes('<base href="/api/hassio_ingress/token/">'));
   assert.ok(html.includes('src="assets/logo.png"'));
   assert.ok(html.includes('fetch("api/status"'));
+  assert.ok(html.includes("Retry connection"));
+  assert.ok(html.includes("and re-pair"));
 };
 
-testIngressAddressGuard();
-testIngressMiddleware();
-testStatusSnapshot();
-testPathNormalization();
-testRenderWebUi();
+const listen = (app) =>
+  new Promise((resolve, reject) => {
+    const server = app.listen(0, "127.0.0.1", () => resolve(server));
+    server.once("error", reject);
+  });
 
-console.log("webui tests passed");
+const close = (server) =>
+  new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve()))
+  );
+
+const testRecoveryRoutes = async () => {
+  const actions = [];
+  const app = createWebUiApp({
+    clients: {},
+    clientStates: { default: { state: "recovery_paused" } },
+    recovery: { active: true, reason: "libsignal_decrypt_storm" },
+    retryRecovery: async () => actions.push(["retry"]),
+    resetRecoveryClient: async (...args) => actions.push(["reset", ...args]),
+    allowedIngressAddress: "127.0.0.1",
+  });
+  const server = await listen(app);
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  try {
+    let response = await fetch(`${baseUrl}/api/recovery/retry`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    assert.strictEqual(response.status, 200);
+    assert.deepStrictEqual(await response.json(), { status: "retry_started" });
+
+    response = await fetch(`${baseUrl}/api/recovery/reset`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientId: "default", confirmation: "default" }),
+    });
+    assert.strictEqual(response.status, 200);
+    assert.deepStrictEqual(await response.json(), { status: "pairing_started" });
+    assert.deepStrictEqual(actions, [
+      ["retry"],
+      ["reset", "default", "default"],
+    ]);
+  } finally {
+    await close(server);
+  }
+};
+
+const main = async () => {
+  testIngressAddressGuard();
+  testIngressMiddleware();
+  testStatusSnapshot();
+  testPathNormalization();
+  testRenderWebUi();
+  await testRecoveryRoutes();
+
+  console.log("webui tests passed");
+};
+
+void main();

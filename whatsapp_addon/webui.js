@@ -1,5 +1,7 @@
 const path = require("path");
 
+const { RecoveryActionError } = require("./recovery");
+
 const INGRESS_PORT = 8099;
 const INGRESS_PROXY_IP = "172.30.32.2";
 
@@ -51,7 +53,7 @@ const createIngressGuard =
     next();
   };
 
-const createStatusSnapshot = ({ clients, clientStates }) => {
+const createStatusSnapshot = ({ clients, clientStates, recovery }) => {
   const ids = [
     ...new Set([
       ...Object.keys(clientStates || {}),
@@ -60,9 +62,22 @@ const createStatusSnapshot = ({ clients, clientStates }) => {
   ].sort();
 
   return {
-    status: "ok",
+    status: recovery?.active ? "recovery_paused" : "ok",
     updatedAt: new Date().toISOString(),
     client_count: ids.length,
+    recovery: {
+      active: !!recovery?.active,
+      reason: recovery?.active ? recovery.reason : null,
+      detectedAt: recovery?.active ? recovery.detectedAt : null,
+      failedDecryptMessages: recovery?.active
+        ? recovery.failedDecryptMessages || 0
+        : 0,
+      sessionErrors: recovery?.active
+        ? (recovery.badMacSessionErrors || 0) +
+          (recovery.messageCounterSessionErrors || 0)
+        : 0,
+      operationPending: !!recovery?.operationPending,
+    },
     clients: ids.map((id) => {
       const state = clientStates[id] || {};
       return {
@@ -149,6 +164,16 @@ const renderWebUi = ({ ingressPath } = {}) => {
       border-color: var(--blue);
     }
 
+    button:disabled {
+      cursor: wait;
+      opacity: 0.6;
+    }
+
+    button.danger {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
     .shell {
       width: min(1080px, 100%);
       margin: 0 auto;
@@ -223,6 +248,35 @@ const renderWebUi = ({ ingressPath } = {}) => {
       overflow-wrap: anywhere;
     }
 
+    .recovery {
+      margin-bottom: 18px;
+      border: 1px solid var(--red);
+      border-radius: 8px;
+      padding: 18px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .recovery[hidden] {
+      display: none;
+    }
+
+    .recovery h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .recovery p {
+      margin: 0 0 12px;
+      line-height: 1.5;
+    }
+
+    .recovery-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
     .sessions {
       display: grid;
       gap: 12px;
@@ -280,7 +334,8 @@ const renderWebUi = ({ ingressPath } = {}) => {
     }
 
     .state.disconnected .dot,
-    .state.logged_out .dot {
+    .state.logged_out .dot,
+    .state.recovery_paused .dot {
       background: var(--red);
     }
 
@@ -399,6 +454,17 @@ const renderWebUi = ({ ingressPath } = {}) => {
       </div>
     </section>
 
+    <section id="recovery" class="recovery" aria-live="polite" hidden>
+      <h2>WhatsApp clients paused</h2>
+      <p>
+        Repeated encryption failures were detected. The add-on stopped its
+        WhatsApp clients to protect the host. Retry with the saved session, or
+        reset one client and scan a new QR code.
+      </p>
+      <p id="recovery-details" class="subtle"></p>
+      <div id="recovery-actions" class="recovery-actions"></div>
+    </section>
+
     <section id="sessions" class="sessions" aria-label="WhatsApp sessions"></section>
   </main>
 
@@ -440,6 +506,9 @@ const renderWebUi = ({ ingressPath } = {}) => {
     const sessionCount = document.getElementById("session-count");
     const updatedAt = document.getElementById("updated-at");
     const refreshButton = document.getElementById("refresh");
+    const recoveryPanel = document.getElementById("recovery");
+    const recoveryDetails = document.getElementById("recovery-details");
+    const recoveryActions = document.getElementById("recovery-actions");
 
     const labels = {
       connected: "Connected",
@@ -448,6 +517,7 @@ const renderWebUi = ({ ingressPath } = {}) => {
       logged_out: "Logged out",
       pairing: "Pairing",
       reconnecting: "Reconnecting",
+      recovery_paused: "Paused for recovery",
       restarting: "Restarting",
     };
 
@@ -458,11 +528,92 @@ const renderWebUi = ({ ingressPath } = {}) => {
       return date.toLocaleString();
     };
 
+    const postRecoveryAction = async (endpoint, body) => {
+      const buttons = recoveryActions.querySelectorAll("button");
+      buttons.forEach((button) => {
+        button.disabled = true;
+      });
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            payload?.error?.message || "Recovery request failed: " + response.status
+          );
+        }
+        await loadStatus();
+      } catch (error) {
+        window.alert(error.message || "The recovery request failed.");
+        await loadStatus();
+      }
+    };
+
+    const renderRecovery = (data) => {
+      const recovery = data.recovery || {};
+      recoveryPanel.hidden = !recovery.active;
+      recoveryActions.replaceChildren();
+      if (!recovery.active) return;
+
+      const details = [];
+      if (recovery.detectedAt) {
+        details.push("Detected " + formatDate(recovery.detectedAt));
+      }
+      if (recovery.failedDecryptMessages) {
+        details.push(
+          String(recovery.failedDecryptMessages) + " failed messages"
+        );
+      }
+      if (recovery.sessionErrors) {
+        details.push(String(recovery.sessionErrors) + " session errors");
+      }
+      recoveryDetails.textContent = details.join(". ");
+
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Retry connection";
+      retry.disabled = !!recovery.operationPending;
+      retry.addEventListener("click", () =>
+        postRecoveryAction("api/recovery/retry", {})
+      );
+      recoveryActions.append(retry);
+
+      for (const client of data.clients || []) {
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.className = "danger";
+        reset.textContent = "Reset " + client.id + " and re-pair";
+        reset.disabled = !!recovery.operationPending;
+        reset.addEventListener("click", () => {
+          const confirmation = window.prompt(
+            "This deletes the add-on's local pairing for " +
+              client.id +
+              ". Remove the old add-on entry from WhatsApp Linked Devices, then type the client ID to continue:",
+            ""
+          );
+          if (confirmation === null) return;
+          if (confirmation !== client.id) {
+            window.alert("The client ID did not match. Nothing was reset.");
+            return;
+          }
+          void postRecoveryAction("api/recovery/reset", {
+            clientId: client.id,
+            confirmation,
+          });
+        });
+        recoveryActions.append(reset);
+      }
+    };
+
     const renderStatus = (data) => {
       bridgeState.textContent = data.status || "unknown";
       sessionCount.textContent = String(data.client_count ?? 0);
       updatedAt.textContent = formatDate(data.updatedAt);
       sessions.replaceChildren();
+      renderRecovery(data);
 
       if (!data.clients || data.clients.length === 0) {
         const empty = document.createElement("div");
@@ -498,7 +649,12 @@ const renderWebUi = ({ ingressPath } = {}) => {
         } else {
           const emptyQr = document.createElement("div");
           emptyQr.className = "qr-empty";
-          emptyQr.textContent = state === "connected" ? "Paired" : "Waiting";
+          emptyQr.textContent =
+            state === "connected"
+              ? "Paired"
+              : state === "recovery_paused"
+                ? "Paused"
+                : "Waiting";
           qr.append(emptyQr);
         }
 
@@ -533,12 +689,19 @@ const renderWebUi = ({ ingressPath } = {}) => {
 </html>`;
 };
 
-const createWebUiApp = ({ clients, clientStates }) => {
+const createWebUiApp = ({
+  clients,
+  clientStates,
+  recovery,
+  retryRecovery,
+  resetRecoveryClient,
+  allowedIngressAddress = INGRESS_PROXY_IP,
+}) => {
   const express = require("express");
   const app = express();
 
   app.disable("x-powered-by");
-  app.use(createIngressGuard());
+  app.use(createIngressGuard(allowedIngressAddress));
   app.use((req, res, next) => {
     req.url = normalizeRequestUrl(req.url);
     next();
@@ -547,9 +710,68 @@ const createWebUiApp = ({ clients, clientStates }) => {
     res.set("Cache-Control", "no-store");
     next();
   });
+  app.use(express.json({ limit: "4kb", strict: true }));
 
   app.get(/\/api\/status$/, (req, res) => {
-    res.json(createStatusSnapshot({ clients, clientStates }));
+    res.json(createStatusSnapshot({ clients, clientStates, recovery }));
+  });
+
+  app.post(/\/api\/recovery\/retry$/, (req, res, next) => {
+    Promise.resolve()
+      .then(async () => {
+        if (typeof retryRecovery !== "function") {
+          throw new RecoveryActionError(
+            503,
+            "recovery_unavailable",
+            "Recovery controls are unavailable."
+          );
+        }
+        await retryRecovery();
+        res.json({ status: "retry_started" });
+      })
+      .catch(next);
+  });
+
+  app.post(/\/api\/recovery\/reset$/, (req, res, next) => {
+    Promise.resolve()
+      .then(async () => {
+        if (typeof resetRecoveryClient !== "function") {
+          throw new RecoveryActionError(
+            503,
+            "recovery_unavailable",
+            "Recovery controls are unavailable."
+          );
+        }
+        if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+          throw new RecoveryActionError(
+            400,
+            "invalid_request",
+            "A JSON request body is required."
+          );
+        }
+        await resetRecoveryClient(req.body.clientId, req.body.confirmation);
+        res.json({ status: "pairing_started" });
+      })
+      .catch(next);
+  });
+
+  app.use((error, req, res, next) => {
+    if (error instanceof RecoveryActionError) {
+      res.status(error.status).json({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error?.type === "entity.parse.failed") {
+      res.status(400).json({
+        error: {
+          code: "invalid_request",
+          message: "The JSON request body is invalid.",
+        },
+      });
+      return;
+    }
+    next(error);
   });
 
   app.get(/\/assets\/logo\.png$/, (req, res) => {

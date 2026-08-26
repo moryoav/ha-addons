@@ -5,10 +5,10 @@ const { startAddon } = require("./runtime");
 
 const logger = log4js.getLogger();
 logger.level = "info";
-installLibsignalLogFilter({ logger });
+const libsignalFilter = installLibsignalLogFilter({ logger });
 
 const main = async () => {
-  const runtime = await startAddon({ logger });
+  const runtime = await startAddon({ logger, libsignalFilter });
   let stopping = false;
 
   const shutdown = (signal) => {

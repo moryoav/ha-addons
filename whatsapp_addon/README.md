@@ -167,7 +167,15 @@ notification.
 
 Each client gets its own persisted session and must be referenced by `clientId` in service calls.
 
-The add-on page includes an Open Web UI action through Home Assistant Ingress. The web UI shows each configured session, its connection state, and the current QR code when a session is waiting for pairing.
+The add-on page includes an Open Web UI action through Home Assistant Ingress.
+The web UI shows each configured session, its connection state, and the current
+QR code when a session is waiting for pairing. If a sustained burst of
+libsignal decryption failures is detected, all WhatsApp clients are paused to
+protect the host while the add-on and Web UI remain available. Use Retry
+connection to keep the saved sessions, or use the confirmation-gated Reset and
+re-pair control for one client to delete its local session and display a new QR
+code. Remove the old add-on entry from WhatsApp Linked Devices before scanning
+the new code.
 
 ## Integration compatibility
 

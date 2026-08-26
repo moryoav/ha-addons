@@ -147,7 +147,13 @@ record authoritatively refreshes the stored credential.
 
 Each client gets its own QR-code pairing flow and persisted add-on session data.
 
-The add-on page includes an Open Web UI action through Home Assistant Ingress. The web UI shows each configured session, its connection state, and the current QR code when a session is waiting for pairing.
+The add-on page includes an Open Web UI action through Home Assistant Ingress.
+The web UI shows each configured session, its connection state, and the current
+QR code when a session is waiting for pairing. If the add-on detects a sustained
+burst of libsignal decryption failures, it pauses all WhatsApp clients while
+keeping the add-on healthy. The web UI then offers Retry connection, which
+keeps the saved sessions, and Reset and re-pair for a selected client, which
+requires confirmation before deleting that client's local session.
 
 ### Integration
 
@@ -394,12 +400,20 @@ updates the existing alert instead of accumulating duplicates.
 - `whatsapp.check_number` requires add-on and integration version 1.4.31 or
   newer. An endpoint/version error usually means only one half was updated.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
+- If the add-on reports that its clients are paused, open its Web UI. Try Retry
+  connection first. If the same failure returns, use Reset and re-pair for the
+  affected client, remove the old entry from WhatsApp Linked Devices, and scan
+  the new QR code. Actions for paused clients return
+  `client_recovery_paused` until recovery is started.
 - If call updates are not received, confirm the automation listens for
   `whatsapp_call_update` and filters on a supported `status` value. The add-on
   log reports the call status, HTTP status, attempt number, and retry delay when
   Home Assistant Core is temporarily unavailable.
 - If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
-- Recoverable libsignal `Bad MAC` and session lifecycle messages are summarized by the add-on instead of logging full stack traces or session data.
+- Isolated libsignal `Bad MAC` and session lifecycle messages are summarized by
+  the add-on instead of logging full stack traces or session data. A confirmed
+  high-volume decryption failure burst activates the recovery pause described
+  above.
 
 ## Legacy integration migration
 

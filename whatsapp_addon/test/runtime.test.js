@@ -447,6 +447,61 @@ test("debug diagnostics are configured before clients are created", async () => 
   await runtime.close();
 });
 
+test("the installed libsignal filter can latch recovery in the running add-on", async () => {
+  let stormHandler;
+  const persisted = [];
+  let disconnects = 0;
+  const runtime = await startAddon({
+    logger: {},
+    optionsLoader: async () => ({
+      clientIds: ["default"],
+      apiToken: undefined,
+      logLevel: "info",
+    }),
+    diagnosticsFactory: () => ({
+      async start() {},
+      async stop() {},
+      markApiReady() {},
+      setClientStateProvider() {},
+    }),
+    replayHealthDiagnosticsFn: async () => {},
+    readRecoveryRecordFn: async () => null,
+    persistRecoveryRecordSyncFn: ({ record }) => persisted.push(record),
+    clientFactory: () => {
+      const client = new FakeClient();
+      client.disconnect = async () => {
+        disconnects += 1;
+      };
+      return client;
+    },
+    httpClient: { post: async () => {} },
+    dataRoot: path.resolve("runtime-test-data"),
+    listenFn: async () => ({}),
+    closeServerFn: async () => {},
+    libsignalFilter: {
+      setDecryptStormHandler(handler) {
+        stormHandler = handler;
+      },
+      resetStormDetection() {},
+    },
+  });
+
+  assert.equal(typeof stormHandler, "function");
+  stormHandler({
+    failedDecryptMessages: 10,
+    badMacSessionErrors: 100,
+    messageCounterSessionErrors: 0,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(runtime.recovery.active, true);
+  assert.equal(runtime.clientStates.default.state, "recovery_paused");
+  assert.equal(disconnects, 1);
+  assert.equal(persisted.length, 1);
+
+  await runtime.close();
+  assert.equal(stormHandler, undefined);
+});
+
 test("terminal health replay emits an event and a debug-only notification", async () => {
   const requests = [];
   const diagnostics = {
@@ -554,6 +609,145 @@ test("info mode emits the health event without a visible notification", async ()
       "/core/api/events/whatsapp_addon_health_failure"
     )
   );
+});
+
+test("saved recovery state keeps configured clients paused after restart", () => {
+  let clientsCreated = 0;
+  const runtime = createAddonRuntime({
+    clientIds: ["default", "backup"],
+    dataRoot: path.resolve("runtime-test-data"),
+    initialRecoveryRecord: {
+      schema: 1,
+      active: true,
+      reason: "libsignal_decrypt_storm",
+      detected_at: "2026-08-26T12:00:00.000Z",
+      failed_decrypt_messages: 77,
+      bad_mac_session_errors: 3003,
+      message_counter_session_errors: 4,
+    },
+    clientFactory: () => {
+      clientsCreated += 1;
+      return new FakeClient();
+    },
+    logger: {},
+  });
+
+  assert.equal(clientsCreated, 0);
+  assert.deepEqual(Object.keys(runtime.clients), []);
+  assert.equal(runtime.recovery.active, true);
+  assert.equal(runtime.recovery.failedDecryptMessages, 77);
+  assert.equal(runtime.clientStates.default.state, "recovery_paused");
+  assert.equal(runtime.clientStates.backup.state, "recovery_paused");
+});
+
+test("a decrypt storm is latched and Retry reconnects without deleting sessions", async () => {
+  const createdClients = [];
+  const persisted = [];
+  const supervisorRequests = [];
+  let recoveryClears = 0;
+  let markerClears = 0;
+  const runtime = createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    runId: "0123456789abcdef",
+    clientFactory: () => {
+      const client = new FakeClient();
+      client.disconnectCalls = [];
+      client.disconnect = async (...args) => client.disconnectCalls.push(args);
+      createdClients.push(client);
+      return client;
+    },
+    persistRecoveryRecordSyncFn: ({ record }) => persisted.push(record),
+    clearRecoveryRecordFn: async () => {
+      markerClears += 1;
+    },
+    onRecoveryCleared: () => {
+      recoveryClears += 1;
+    },
+    httpClient: {
+      async post(...args) {
+        supervisorRequests.push(args);
+      },
+    },
+    logger: {},
+    nowDate: () => new Date("2026-08-26T12:00:00.000Z"),
+  });
+
+  await runtime.enterRecovery({
+    failedDecryptMessages: 10,
+    badMacSessionErrors: 100,
+    messageCounterSessionErrors: 2,
+  });
+
+  assert.equal(runtime.recovery.active, true);
+  assert.equal(runtime.clientStates.default.state, "recovery_paused");
+  assert.deepEqual(Object.keys(runtime.clients), []);
+  assert.deepEqual(createdClients[0].disconnectCalls, [[false]]);
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0].reason, "libsignal_decrypt_storm");
+  assert.ok(
+    supervisorRequests.some(
+      ([url, body]) =>
+        url.endsWith("/persistent_notification/create") &&
+        body.notification_id === "whatsapp_addon_recovery_required"
+    )
+  );
+
+  await runtime.retryRecovery();
+  assert.equal(markerClears, 1);
+  assert.equal(recoveryClears, 1);
+  assert.equal(runtime.recovery.active, false);
+  assert.equal(createdClients.length, 2);
+  assert.equal(runtime.clients.default, createdClients[1]);
+  assert.equal(runtime.clientStates.default.state, "connecting");
+});
+
+test("Reset and re-pair requires confirmation and deletes only one session", async () => {
+  const removals = [];
+  const createdClients = [];
+  const dataRoot = path.resolve("runtime-test-data");
+  const runtime = createAddonRuntime({
+    clientIds: ["default", "backup"],
+    dataRoot,
+    initialRecoveryRecord: {
+      schema: 1,
+      active: true,
+      reason: "libsignal_decrypt_storm",
+      detected_at: "2026-08-26T12:00:00.000Z",
+    },
+    clientFactory: ({ path: sessionPath }) => {
+      createdClients.push(sessionPath);
+      return new FakeClient();
+    },
+    fsPromises: {
+      async rm(...args) {
+        removals.push(args);
+      },
+    },
+    clearRecoveryRecordFn: async () => {},
+    httpClient: { post: async () => {} },
+    logger: {},
+  });
+
+  await assert.rejects(
+    () => runtime.resetRecoveryClient("../escape", "../escape"),
+    (error) => error.code === "invalid_request" && error.status === 400
+  );
+  await assert.rejects(
+    () => runtime.resetRecoveryClient("default", "wrong"),
+    (error) => error.code === "confirmation_required" && error.status === 400
+  );
+  assert.deepEqual(removals, []);
+
+  await runtime.resetRecoveryClient("default", "default");
+  assert.deepEqual(removals, [
+    [path.join(dataRoot, "default"), { recursive: true, force: true }],
+  ]);
+  assert.deepEqual(createdClients, [
+    path.join(dataRoot, "default"),
+    path.join(dataRoot, "backup"),
+  ]);
+  assert.equal(runtime.recovery.active, false);
 });
 
 test("session deletion awaits one validated child path", async () => {

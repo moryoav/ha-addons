@@ -17,7 +17,17 @@ const {
 const { createWebUiApp, INGRESS_PORT } = require("./webui");
 const { WhatsappClient } = require("./whatsapp");
 const {
+  DEFAULT_RECOVERY_PATH,
+  RECOVERY_REASON,
+  RecoveryActionError,
+  clearRecoveryRecord,
+  createRecoveryRecord,
+  persistRecoveryRecordSync,
+  readRecoveryRecord,
+} = require("./recovery");
+const {
   RequestValidationError,
+  normalizeClientId,
   normalizeConfiguredClientIds,
   requirePlainObject,
   resolveSessionPath,
@@ -40,6 +50,7 @@ const CALL_EVENT_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_PENDING_CALL_UPDATES = 100;
 const HEALTH_FAILURE_EVENT = "whatsapp_addon_health_failure";
 const HEALTH_FAILURE_NOTIFICATION_ID = "whatsapp_addon_health_failure";
+const RECOVERY_NOTIFICATION_ID = "whatsapp_addon_recovery_required";
 
 const CALL_STATUSES = new Set([
   "offer",
@@ -265,6 +276,7 @@ const createAddonRuntime = ({
   dataRoot = DATA_ROOT,
   logger = console,
   clientFactory = (options) => new WhatsappClient(options),
+  fsModule = fs,
   fsPromises = fs.promises,
   httpClient = axios,
   supervisorToken = process.env.SUPERVISOR_TOKEN,
@@ -274,6 +286,12 @@ const createAddonRuntime = ({
   logLevel = "info",
   runId = createRunId(),
   diagnostics,
+  initialRecoveryRecord,
+  recoveryPath = DEFAULT_RECOVERY_PATH,
+  persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
+  clearRecoveryRecordFn = clearRecoveryRecord,
+  onRecoveryCleared,
+  nowDate = () => new Date(),
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
 } = {}) => {
@@ -284,9 +302,22 @@ const createAddonRuntime = ({
   const logRef = (value) => fingerprint(value, fingerprintKey);
   const debugEnabled = normalizeLogLevel(logLevel) === "debug";
   const callRetryWaiters = new Map();
+  const recovery = {
+    active: !!initialRecoveryRecord,
+    reason: initialRecoveryRecord?.reason || null,
+    detectedAt: initialRecoveryRecord?.detected_at || null,
+    failedDecryptMessages:
+      initialRecoveryRecord?.failed_decrypt_messages || 0,
+    badMacSessionErrors: initialRecoveryRecord?.bad_mac_session_errors || 0,
+    messageCounterSessionErrors:
+      initialRecoveryRecord?.message_counter_session_errors || 0,
+    operationPending: false,
+  };
   let callDeliveryStopped = false;
   let callDeliveryTail = Promise.resolve();
   let pendingCallUpdates = 0;
+  let recoveryNotificationSent = false;
+  let recoveryTask;
 
   const supervisorHeaders = {
     Authorization: `Bearer ${supervisorToken || ""}`,
@@ -639,6 +670,8 @@ const createAddonRuntime = ({
   };
 
   const initClient = (clientId) => {
+    if (clients[clientId]) return clients[clientId];
+
     const sessionPath = resolveSessionPath(dataRoot, clientId);
     setClientState(clientId, { state: "connecting", qrDataUrl: null });
 
@@ -728,7 +761,211 @@ const createAddonRuntime = ({
     return client;
   };
 
-  for (const clientId of validatedClientIds) initClient(clientId);
+  const stopClient = async (clientId) => {
+    const client = clients[clientId];
+    if (!client) return;
+
+    client.removeAllListeners?.();
+    delete clients[clientId];
+    await client.disconnect?.(false);
+  };
+
+  const stopAllClients = async () => {
+    await Promise.allSettled(
+      validatedClientIds.map((clientId) => stopClient(clientId))
+    );
+  };
+
+  const setRecoveryClientStates = () => {
+    for (const clientId of validatedClientIds) {
+      setClientState(clientId, {
+        state: "recovery_paused",
+        disconnectedAt: currentIsoTime(),
+        lastErrorCode: null,
+        qrDataUrl: null,
+      });
+    }
+  };
+
+  const reportRecoveryRequired = async () => {
+    if (recoveryNotificationSent) return true;
+    const delivered = await postSupervisor(
+      "/core/api/services/persistent_notification/create",
+      {
+        title: "WhatsApp add-on paused",
+        message:
+          "The add-on paused its WhatsApp clients after repeated encryption failures to protect the host. Open the WhatsApp add-on panel to retry or reset and re-pair a client.",
+        notification_id: RECOVERY_NOTIFICATION_ID,
+      },
+      "recovery notification"
+    );
+    if (delivered) {
+      recoveryNotificationSent = true;
+      logger.info?.("WhatsApp recovery notification delivered.", { runId });
+    }
+    return delivered;
+  };
+
+  const dismissRecoveryNotification = () =>
+    postSupervisor(
+      "/core/api/services/persistent_notification/dismiss",
+      { notification_id: RECOVERY_NOTIFICATION_ID },
+      "recovery notification dismissal"
+    );
+
+  const enterRecovery = (summary = {}) => {
+    if (recovery.active) return recoveryTask || Promise.resolve();
+
+    const record = createRecoveryRecord(summary, {
+      runId,
+      now: nowDate,
+    });
+    try {
+      persistRecoveryRecordSyncFn({
+        record,
+        recoveryPath,
+        fsModule,
+      });
+    } catch {
+      logger.error?.("WhatsApp recovery state could not be persisted.", {
+        runId,
+      });
+    }
+
+    Object.assign(recovery, {
+      active: true,
+      reason: RECOVERY_REASON,
+      detectedAt: record?.detected_at || currentIsoTime(),
+      failedDecryptMessages: record?.failed_decrypt_messages || 0,
+      badMacSessionErrors: record?.bad_mac_session_errors || 0,
+      messageCounterSessionErrors:
+        record?.message_counter_session_errors || 0,
+      operationPending: true,
+    });
+    setRecoveryClientStates();
+    logger.error?.(
+      "Repeated WhatsApp encryption failures detected; clients paused to protect the host.",
+      {
+        runId,
+        failedDecryptMessages: recovery.failedDecryptMessages,
+        sessionErrors:
+          recovery.badMacSessionErrors +
+          recovery.messageCounterSessionErrors,
+      }
+    );
+
+    recoveryTask = (async () => {
+      await stopAllClients();
+      await reportRecoveryRequired();
+    })().finally(() => {
+      recovery.operationPending = false;
+      recoveryTask = undefined;
+    });
+    return recoveryTask;
+  };
+
+  const requireRecoveryAvailable = () => {
+    if (!recovery.active) {
+      throw new RecoveryActionError(
+        409,
+        "recovery_not_active",
+        "The add-on is not waiting for recovery."
+      );
+    }
+    if (recovery.operationPending) {
+      throw new RecoveryActionError(
+        409,
+        "recovery_busy",
+        "A recovery operation is already in progress."
+      );
+    }
+  };
+
+  const clearRecoveryAndStart = async () => {
+    await clearRecoveryRecordFn({ recoveryPath, fsPromises });
+    Object.assign(recovery, {
+      active: false,
+      reason: null,
+      detectedAt: null,
+      failedDecryptMessages: 0,
+      badMacSessionErrors: 0,
+      messageCounterSessionErrors: 0,
+    });
+    recoveryNotificationSent = false;
+    try {
+      onRecoveryCleared?.();
+    } catch {
+      // Resetting diagnostic counters is best effort.
+    }
+    await dismissRecoveryNotification();
+    for (const clientId of validatedClientIds) initClient(clientId);
+  };
+
+  const retryRecovery = async () => {
+    requireRecoveryAvailable();
+    recovery.operationPending = true;
+    try {
+      await stopAllClients();
+      await clearRecoveryAndStart();
+      logger.info?.("WhatsApp recovery retry started.", { runId });
+    } finally {
+      recovery.operationPending = false;
+    }
+  };
+
+  const resetRecoveryClient = async (clientId, confirmation) => {
+    requireRecoveryAvailable();
+    let normalizedClientId;
+    try {
+      normalizedClientId = normalizeClientId(clientId);
+    } catch (error) {
+      if (error instanceof RequestValidationError) {
+        throw new RecoveryActionError(
+          400,
+          "invalid_request",
+          "A valid client ID is required."
+        );
+      }
+      throw error;
+    }
+    if (!validatedClientIds.includes(normalizedClientId)) {
+      throw new RecoveryActionError(
+        404,
+        "client_not_found",
+        "The client was not found."
+      );
+    }
+    if (confirmation !== normalizedClientId) {
+      throw new RecoveryActionError(
+        400,
+        "confirmation_required",
+        "Type the client ID exactly to confirm the reset."
+      );
+    }
+
+    recovery.operationPending = true;
+    try {
+      await stopAllClients();
+      await removeSessionDirectory({
+        dataRoot,
+        clientId: normalizedClientId,
+        fsPromises,
+      });
+      await clearRecoveryAndStart();
+      logger.warn?.("WhatsApp client session reset for re-pairing.", {
+        runId,
+        clientRef: logRef(normalizedClientId),
+      });
+    } finally {
+      recovery.operationPending = false;
+    }
+  };
+
+  if (recovery.active) {
+    setRecoveryClientStates();
+  } else {
+    for (const clientId of validatedClientIds) initClient(clientId);
+  }
 
   const registerDiscovery = async () => {
     const addonUrl = `http://${hostname || "whatsapp-addon"}:${apiPort}`;
@@ -784,10 +1021,16 @@ const createAddonRuntime = ({
     apiToken,
     clientStates,
     clients,
+    configuredClientIds: [...validatedClientIds],
+    enterRecovery,
     initClient,
     logoutTasks,
+    recovery,
     registerDiscovery,
+    reportRecoveryRequired,
     reportHealthFailure,
+    resetRecoveryClient,
+    retryRecovery,
     runId,
     stopCallDelivery,
   };
@@ -799,15 +1042,23 @@ const startAddon = async ({
   apiPort = API_PORT,
   ingressPort = INGRESS_PORT,
   logger = console,
+  fsModule = fs,
+  fsPromises = fs.promises,
   optionsLoader = loadOptions,
   listenFn = listen,
   closeServerFn = closeServer,
   diagnosticsFactory = createRuntimeDiagnostics,
   replayHealthDiagnosticsFn = replayHealthcheckDiagnostics,
+  readRecoveryRecordFn = readRecoveryRecord,
+  persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
+  clearRecoveryRecordFn = clearRecoveryRecord,
+  libsignalFilter,
   healthFailurePath =
     process.env.HA_HEALTH_FAILURE_PATH || DEFAULT_HEALTH_FAILURE_PATH,
   heartbeatPath =
     process.env.HA_RUNTIME_HEARTBEAT_PATH || DEFAULT_HEARTBEAT_PATH,
+  recoveryPath =
+    process.env.HA_DECRYPT_RECOVERY_PATH || DEFAULT_RECOVERY_PATH,
   runId = createRunId(),
   ...runtimeOptions
 } = {}) => {
@@ -832,6 +1083,11 @@ const startAddon = async ({
     healthReplay?.records,
     { runId: safeRunId }
   );
+  const initialRecoveryRecord = await readRecoveryRecordFn({
+    recoveryPath,
+    fsPromises,
+    logger,
+  });
   logger.info?.("WhatsApp add-on runtime starting.", {
     runId: safeRunId,
     logLevel,
@@ -840,26 +1096,61 @@ const startAddon = async ({
   await diagnostics.start?.();
 
   let runtime;
+  let pendingDecryptStorm;
   let apiApp;
   let webUiApp;
   let apiServer;
   let webUiServer;
+  const handleDecryptStorm = (summary) => {
+    pendingDecryptStorm = summary;
+    if (runtime) {
+      void runtime.enterRecovery(summary);
+      return;
+    }
+
+    try {
+      persistRecoveryRecordSyncFn({
+        record: createRecoveryRecord(summary, {
+          runId: safeRunId,
+        }),
+        recoveryPath,
+        fsModule,
+      });
+    } catch {
+      logger.error?.("WhatsApp recovery state could not be persisted.", {
+        runId: safeRunId,
+      });
+    }
+  };
+  libsignalFilter?.setDecryptStormHandler?.(handleDecryptStorm);
   try {
     runtime = createAddonRuntime({
       clientIds,
       apiToken,
       dataRoot,
       apiPort,
+      fsModule,
+      fsPromises,
       logger,
       logLevel,
       runId: safeRunId,
       diagnostics,
+      initialRecoveryRecord,
+      recoveryPath,
+      persistRecoveryRecordSyncFn,
+      clearRecoveryRecordFn,
+      onRecoveryCleared: () =>
+        libsignalFilter?.resetStormDetection?.(),
       ...runtimeOptions,
     });
+    if (pendingDecryptStorm) {
+      await runtime.enterRecovery(pendingDecryptStorm);
+    }
     diagnostics.setClientStateProvider?.(() => runtime.clientStates);
 
     apiApp = createApiApp({
       clients: runtime.clients,
+      clientStates: runtime.clientStates,
       logger,
       sharedSecret: apiToken,
       diagnostics,
@@ -867,6 +1158,9 @@ const startAddon = async ({
     webUiApp = createWebUiApp({
       clients: runtime.clients,
       clientStates: runtime.clientStates,
+      recovery: runtime.recovery,
+      resetRecoveryClient: runtime.resetRecoveryClient,
+      retryRecovery: runtime.retryRecovery,
     });
 
     apiServer = await listenFn(apiApp, apiPort);
@@ -880,6 +1174,7 @@ const startAddon = async ({
     }
     if (apiServer) await closeServerFn(apiServer);
     await diagnostics.stop?.();
+    libsignalFilter?.setDecryptStormHandler?.();
     throw error;
   }
   logger.info?.("WhatsApp add-on API started.", { runId: safeRunId });
@@ -887,6 +1182,9 @@ const startAddon = async ({
   await runtime.registerDiscovery();
   if (healthFailureReport) {
     await runtime.reportHealthFailure(healthFailureReport);
+  }
+  if (runtime.recovery.active) {
+    await runtime.reportRecoveryRequired();
   }
 
   let closeTask;
@@ -908,6 +1206,7 @@ const startAddon = async ({
         closeServerFn(webUiServer),
       ]);
       await diagnostics.stop?.();
+      libsignalFilter?.setDecryptStormHandler?.();
       logger.info?.("WhatsApp add-on runtime stopped.", { runId: safeRunId });
     })();
     return closeTask;

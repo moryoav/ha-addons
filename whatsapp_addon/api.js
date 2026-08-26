@@ -45,13 +45,19 @@ class ApiError extends Error {
 const hasOwn = (object, property) =>
   Object.prototype.hasOwnProperty.call(object, property);
 
-const createHealthSnapshot = (clients) => ({
-  status: "ok",
-  service: "ha-whatsapp-addon",
-  api_version: API_VERSION,
-  capabilities: [...API_CAPABILITIES],
-  client_count: Object.keys(clients || {}).length,
-});
+const createHealthSnapshot = (clients, clientStates) => {
+  const clientIds = new Set([
+    ...Object.keys(clients || {}),
+    ...Object.keys(clientStates || {}),
+  ]);
+  return {
+    status: "ok",
+    service: "ha-whatsapp-addon",
+    api_version: API_VERSION,
+    capabilities: [...API_CAPABILITIES],
+    client_count: clientIds.size,
+  };
+};
 
 const safeTokenMatches = (authorization, sharedSecret) => {
   if (typeof authorization !== "string") return false;
@@ -116,10 +122,17 @@ const createFixedWindowRateLimiter = ({
   };
 };
 
-const requireClient = (clients, body) => {
+const requireClient = (clients, body, clientStates) => {
   requirePlainObject(body);
   const clientId = normalizeClientId(body.clientId);
   if (!hasOwn(clients, clientId)) {
+    if (clientStates?.[clientId]?.state === "recovery_paused") {
+      throw new ApiError(
+        503,
+        "client_recovery_paused",
+        "The WhatsApp client is paused for recovery."
+      );
+    }
     throw new ApiError(404, "client_not_found", "The client was not found.");
   }
 
@@ -211,6 +224,7 @@ const safeErrorType = (error) => {
 
 const createApiApp = ({
   clients,
+  clientStates,
   logger = {},
   sharedSecret,
   lookupRateLimit,
@@ -231,7 +245,7 @@ const createApiApp = ({
     if (req.get("x-ha-healthcheck") === "docker") {
       diagnostics?.recordNativeHealthProbe?.();
     }
-    res.json(createHealthSnapshot(clients));
+    res.json(createHealthSnapshot(clients, clientStates));
   });
 
   // Track only aggregate request timing. Routes, request data, addresses, and
@@ -259,7 +273,7 @@ const createApiApp = ({
     "/sendMessage",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
-      const { client } = requireClient(clients, body);
+      const { client } = requireClient(clients, body, clientStates);
       const to = requireString(body.to, "to", { maxLength: 128 });
       const message = requirePlainObject(body.body, "body");
       const options =
@@ -276,7 +290,7 @@ const createApiApp = ({
     "/setStatus",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
-      const { client } = requireClient(clients, body);
+      const { client } = requireClient(clients, body, clientStates);
       const status = requireString(body.status, "status", { maxLength: 1024 });
 
       await client.updateProfileStatus(status);
@@ -288,7 +302,7 @@ const createApiApp = ({
     "/presenceSubscribe",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
-      const { client } = requireClient(clients, body);
+      const { client } = requireClient(clients, body, clientStates);
       const userId = requireString(body.userId, "userId", { maxLength: 128 });
 
       await client.presenceSubscribe(userId);
@@ -300,7 +314,7 @@ const createApiApp = ({
     "/sendPresenceUpdate",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
-      const { client } = requireClient(clients, body);
+      const { client } = requireClient(clients, body, clientStates);
       const type = requirePresenceType(body.type);
       const to = validateOptionalRecipient(body.to);
 
@@ -313,7 +327,7 @@ const createApiApp = ({
     "/readMessages",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
-      const { client } = requireClient(clients, body);
+      const { client } = requireClient(clients, body, clientStates);
       const messageBody = requirePlainObject(body.body, "body");
       const key = requirePlainObject(messageBody.keys, "body.keys");
 
@@ -326,7 +340,7 @@ const createApiApp = ({
     "/sendInfinityPresenceUpdate",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
-      const { client } = requireClient(clients, body);
+      const { client } = requireClient(clients, body, clientStates);
       const type = requirePresenceType(body.type);
       const to = validateOptionalRecipient(body.to);
 
@@ -339,7 +353,7 @@ const createApiApp = ({
     "/onWhatsApp",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
-      const { client, clientId } = requireClient(clients, body);
+      const { client, clientId } = requireClient(clients, body, clientStates);
       const jid = normalizePhoneJid(body.to);
       const limit = checkLookupLimit(clientId);
       if (!limit.allowed) {

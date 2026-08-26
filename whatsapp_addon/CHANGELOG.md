@@ -1,3 +1,14 @@
+## 1.4.37
+
+- Paused all WhatsApp clients after a confirmed burst of repeated libsignal
+  decryption failures, while keeping the add-on healthy and its Ingress UI
+  available so the container cannot enter a resource-consuming restart loop.
+- Added Retry and confirmation-gated Reset and re-pair controls to the add-on
+  Web UI. Retry keeps saved sessions; reset deletes only the selected client's
+  local session and starts a new QR pairing flow.
+- Persisted the privacy-safe recovery latch across restarts and added a Home
+  Assistant notification directing the user to the recovery controls.
+
 ## 1.4.36
 
 - Queued call updates in arrival order and retried transient Home Assistant
