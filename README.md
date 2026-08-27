@@ -2,7 +2,15 @@
 
 [![HACS][hacs-badge]][hacs-url] [![release][release-badge]][release-url] ![downloads][downloads-badge] [![license][license-badge]][license-url]
 
+---
+
+## Support me on Ko-fi
+
+If this project is useful to you, you can support its continued development:
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y5B124NZ2L)
+
+---
 
 Send WhatsApp messages from Home Assistant automations and receive WhatsApp
 message, call, and presence events through the companion add-on.
