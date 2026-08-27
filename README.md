@@ -1,6 +1,6 @@
 # WhatsApp for Home Assistant
 
-[![HACS][hacs-badge]][hacs-url] [![release][release-badge]][release-url] ![downloads][downloads-badge] [![license][license-badge]][license-url]
+[![HACS][hacs-badge]][hacs-url] [![release][release-badge]][release-url] [![license][license-badge]][license-url]
 
 ---
 
@@ -458,6 +458,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development notes, [SECURITY.md](SECU
 [hacs-url]: https://github.com/hacs/integration
 [release-badge]: https://img.shields.io/github/v/release/moryoav/ha-addons?style=flat-square
 [release-url]: https://github.com/moryoav/ha-addons/releases
-[downloads-badge]: https://img.shields.io/github/downloads/moryoav/ha-addons/total?style=flat-square
 [license-badge]: https://img.shields.io/github/license/moryoav/ha-addons?style=flat-square
 [license-url]: https://github.com/moryoav/ha-addons/blob/main/LICENSE
