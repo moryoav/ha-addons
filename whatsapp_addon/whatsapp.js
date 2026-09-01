@@ -1,5 +1,10 @@
 const EventEmitter = require("eventemitter2");
 
+const {
+  createBaileysDiagnosticLogger,
+  createMessageUpsertDiagnostic,
+  createRawMessageDiagnostic,
+} = require("./decryption-diagnostics");
 const { MessageDedupe } = require("./message-dedupe");
 const {
   RequestValidationError,
@@ -107,6 +112,7 @@ class WhatsappClient extends EventEmitter {
   #refreshMs;
   #baileys;
   #socketLogger;
+  #decryptionDiagnostics;
 
   #status = {
     attempt: 0,
@@ -126,6 +132,7 @@ class WhatsappClient extends EventEmitter {
     refreshMs,
     baileys,
     socketLogger,
+    decryptionDiagnostics = false,
     autoConnect = true,
   }) {
     super();
@@ -141,8 +148,15 @@ class WhatsappClient extends EventEmitter {
     this.#refreshMs = refreshMs || this.#toMilliseconds(6, 0, 0);
     this.#messageDedupe = new MessageDedupe();
     this.#baileys = baileys || import("@whiskeysockets/baileys");
+    this.#decryptionDiagnostics = decryptionDiagnostics === true;
     this.#socketLogger =
-      socketLogger || require("pino")({ level: "silent" });
+      socketLogger ||
+      (this.#decryptionDiagnostics
+        ? createBaileysDiagnosticLogger({
+            emit: (diagnostic) =>
+              this.emit("decryption_diagnostic", diagnostic),
+          })
+        : require("pino")({ level: "silent" }));
 
     if (autoConnect) {
       void this.connect().catch((error) => this.#handleConnectFailure(error));
@@ -209,6 +223,14 @@ class WhatsappClient extends EventEmitter {
     });
     if (!this.#conn?.ev || typeof this.#conn.ev.on !== "function") {
       throw new WhatsappProtocolError();
+    }
+    if (
+      this.#decryptionDiagnostics &&
+      typeof this.#conn.ws?.on === "function"
+    ) {
+      this.#conn.ws.on("CB:message", (node) => {
+        this.#emitDecryptionDiagnostic(() => createRawMessageDiagnostic(node));
+      });
     }
 
     this.#conn.ev.on("creds.update", (state) => {
@@ -293,6 +315,15 @@ class WhatsappClient extends EventEmitter {
     messageTimestamp: message?.messageTimestamp,
   });
 
+  #emitDecryptionDiagnostic = (factory) => {
+    if (!this.#decryptionDiagnostics) return;
+    try {
+      this.emit("decryption_diagnostic", factory());
+    } catch {
+      // Optional diagnostics must never interrupt WhatsApp message processing.
+    }
+  };
+
   #scheduleReconnect = () => {
     if (
       this.#status.attempt >= this.#attempts ||
@@ -350,6 +381,13 @@ class WhatsappClient extends EventEmitter {
     }
 
     this.#conn.ev.on("messages.upsert", async ({ messages, type, requestId }) => {
+      if (this.#decryptionDiagnostics) {
+        for (const message of messages || []) {
+          this.#emitDecryptionDiagnostic(() =>
+            createMessageUpsertDiagnostic(message, { type, requestId })
+          );
+        }
+      }
       this.emit("msg_upsert", {
         count: messages?.length || 0,
         type,

@@ -35,6 +35,7 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
       clientIds: ["default", "backup_1"],
       apiToken: "fictional-token_123456",
       logLevel: "info",
+      decryptionDiagnostics: false,
     }
   );
   assert.equal(normalizeApiToken(""), undefined);
@@ -44,6 +45,25 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
   for (const value of ["trace", "", null]) {
     assert.throws(() => normalizeLogLevel(value), RequestValidationError);
   }
+  assert.equal(
+    parseOptions(
+      JSON.stringify({
+        clients: ["default"],
+        decryption_diagnostics: true,
+      })
+    ).decryptionDiagnostics,
+    true
+  );
+  assert.throws(
+    () =>
+      parseOptions(
+        JSON.stringify({
+          clients: ["default"],
+          decryption_diagnostics: "true",
+        })
+      ),
+    RequestValidationError
+  );
 
   for (const token of ["has spaces", "line\nbreak", "bad:token", "a".repeat(513)]) {
     assert.throws(() => normalizeApiToken(token), RequestValidationError);
@@ -902,6 +922,38 @@ test("debug message detail is capped and privacy-sanitized", () => {
   assert.equal(entries[0][1].type, "other");
   assert.equal(entries[0][1].messages[0].type, "other");
   assert.equal(JSON.stringify(entries).includes(FICTIONAL_NUMBER), false);
+});
+
+test("decryption diagnostics pass through complete opt-in message context", () => {
+  const entries = [];
+  const clients = [];
+  const client = new FakeClient();
+  createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    decryptionDiagnostics: true,
+    clientFactory: (options) => {
+      clients.push(options);
+      return client;
+    },
+    runId: "0123456789abcdef",
+    logger: { info: (...args) => entries.push(args) },
+  });
+
+  client.emit("decryption_diagnostic", {
+    source: "messages_upsert",
+    messageId: `message-${FICTIONAL_NUMBER}`,
+    remoteJid: FICTIONAL_JID,
+    pushName: "Fictional Sender",
+  });
+
+  assert.equal(clients[0].decryptionDiagnostics, true);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0][0], "WhatsApp decryption diagnostic.");
+  const payload = JSON.parse(entries[0][1]);
+  assert.equal(payload.clientId, "default");
+  assert.equal(payload.diagnostic.remoteJid, FICTIONAL_JID);
+  assert.equal(payload.diagnostic.pushName, "Fictional Sender");
 });
 
 test("discovery advertises the optional token without logging it", async () => {

@@ -15,8 +15,9 @@ const FICTIONAL_NUMBER = "12025550123";
 const FICTIONAL_JID = `${FICTIONAL_NUMBER}@s.whatsapp.net`;
 const FICTIONAL_LID = "999999999999999@lid";
 
-const createHarness = async ({ onWhatsApp } = {}) => {
+const createHarness = async ({ onWhatsApp, decryptionDiagnostics = false } = {}) => {
   const ev = new EventEmitter();
+  const ws = new EventEmitter();
   const calls = {
     end: 0,
     onWhatsApp: [],
@@ -26,6 +27,7 @@ const createHarness = async ({ onWhatsApp } = {}) => {
   };
   const socket = {
     ev,
+    ws,
     async end() {
       calls.end += 1;
     },
@@ -60,11 +62,12 @@ const createHarness = async ({ onWhatsApp } = {}) => {
     baileys,
     autoConnect: false,
     offline: false,
+    decryptionDiagnostics,
   });
   await client.connect();
   ev.emit("connection.update", { connection: "open" });
 
-  return { baileys, calls, client, ev, socket };
+  return { baileys, calls, client, ev, socket, ws };
 };
 
 test("the installed runtime Baileys dependency is exactly 6.7.23", async () => {
@@ -102,6 +105,59 @@ test("Baileys call lifecycle arrays are forwarded to the runtime", async () => {
   ev.emit("call", { status: "offer" });
 
   assert.deepEqual(updates, calls);
+  await client.disconnect();
+});
+
+test("opt-in decryption diagnostics expose raw stanzas and complete upserts", async () => {
+  const { client, ev, ws } = await createHarness({
+    decryptionDiagnostics: true,
+  });
+  const diagnostics = [];
+  client.on("decryption_diagnostic", (diagnostic) => diagnostics.push(diagnostic));
+
+  ws.emit("CB:message", {
+    tag: "message",
+    attrs: {
+      id: "fictional-message-id",
+      from: FICTIONAL_JID,
+      t: "1788246149",
+      offline: "1",
+    },
+    content: [
+      {
+        tag: "enc",
+        attrs: { type: "msg" },
+        content: Buffer.from("fictional ciphertext"),
+      },
+    ],
+  });
+  ev.emit("messages.upsert", {
+    type: "append",
+    requestId: "fictional-request-id",
+    messages: [
+      {
+        key: {
+          id: "fictional-message-id",
+          remoteJid: FICTIONAL_JID,
+          fromMe: false,
+        },
+        pushName: "Fictional Sender",
+        messageTimestamp: 1788246149,
+        messageStubType: 2,
+        messageStubParameters: ["No matching sessions found for message"],
+      },
+    ],
+  });
+
+  assert.equal(diagnostics.length, 2);
+  assert.equal(diagnostics[0].source, "raw_message_stanza");
+  assert.equal(diagnostics[0].messageId, "fictional-message-id");
+  assert.equal(diagnostics[1].source, "messages_upsert");
+  assert.equal(diagnostics[1].remoteJid, FICTIONAL_JID);
+  assert.equal(diagnostics[1].pushName, "Fictional Sender");
+  assert.deepEqual(diagnostics[1].messageStubParameters, [
+    "No matching sessions found for message",
+  ]);
   await client.disconnect();
 });
 

@@ -1,6 +1,7 @@
 **
 !Dockerfile
 !api.js
+!decryption-diagnostics.js
 !diagnostics.js
 !healthcheck.sh
 !index.js

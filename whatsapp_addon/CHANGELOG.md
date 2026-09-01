@@ -1,3 +1,11 @@
+## 1.4.38
+
+- Added an opt-in Decryption Diagnostics toggle for capturing exact WhatsApp
+  message identifiers, sender and chat JIDs, timestamps, retry activity,
+  decoded message structures, and raw encrypted-stanza fingerprints.
+- Kept decryption diagnostics disabled by default and independent from the
+  existing privacy-safe debug log level.
+
 ## 1.4.37
 
 - Paused all WhatsApp clients after a confirmed burst of repeated libsignal

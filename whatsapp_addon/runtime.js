@@ -144,6 +144,16 @@ const normalizeLogLevel = (value) => {
   return value;
 };
 
+const normalizeDecryptionDiagnostics = (value) => {
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") {
+    throw new RequestValidationError(
+      "decryption_diagnostics must be a boolean."
+    );
+  }
+  return value;
+};
+
 const parseOptions = (content) => {
   let options;
   try {
@@ -157,6 +167,9 @@ const parseOptions = (content) => {
     clientIds: normalizeConfiguredClientIds(options.clients),
     apiToken: normalizeApiToken(options.api_token),
     logLevel: normalizeLogLevel(options.log_level),
+    decryptionDiagnostics: normalizeDecryptionDiagnostics(
+      options.decryption_diagnostics
+    ),
   };
 };
 
@@ -284,6 +297,7 @@ const createAddonRuntime = ({
   apiPort = API_PORT,
   fingerprintKey = PROCESS_LOG_KEY,
   logLevel = "info",
+  decryptionDiagnostics = false,
   runId = createRunId(),
   diagnostics,
   initialRecoveryRecord,
@@ -301,6 +315,9 @@ const createAddonRuntime = ({
   const logoutTasks = new Map();
   const logRef = (value) => fingerprint(value, fingerprintKey);
   const debugEnabled = normalizeLogLevel(logLevel) === "debug";
+  const decryptionDiagnosticsEnabled = normalizeDecryptionDiagnostics(
+    decryptionDiagnostics
+  );
   const callRetryWaiters = new Map();
   const recovery = {
     active: !!initialRecoveryRecord,
@@ -669,13 +686,24 @@ const createAddonRuntime = ({
     );
   };
 
+  const onDecryptionDiagnostic = (diagnostic, clientId) => {
+    if (!decryptionDiagnosticsEnabled) return;
+    logger.info?.(
+      "WhatsApp decryption diagnostic.",
+      JSON.stringify({ runId, clientId, diagnostic })
+    );
+  };
+
   const initClient = (clientId) => {
     if (clients[clientId]) return clients[clientId];
 
     const sessionPath = resolveSessionPath(dataRoot, clientId);
     setClientState(clientId, { state: "connecting", qrDataUrl: null });
 
-    const client = clientFactory({ path: sessionPath });
+    const client = clientFactory({
+      path: sessionPath,
+      decryptionDiagnostics: decryptionDiagnosticsEnabled,
+    });
     clients[clientId] = client;
 
     client.on("restart", () => {
@@ -724,6 +752,9 @@ const createAddonRuntime = ({
     client.on("call_update", (call) => onCallUpdate(call, clientId));
     client.on("presence_update", (presence) =>
       onPresenceUpdate(presence, clientId)
+    );
+    client.on("decryption_diagnostic", (diagnostic) =>
+      onDecryptionDiagnostic(diagnostic, clientId)
     );
     client.on("logout", () => {
       if (logoutTasks.has(clientId)) return;
@@ -1065,6 +1096,9 @@ const startAddon = async ({
   const options = await optionsLoader(optionsPath);
   const { clientIds, apiToken } = options;
   const logLevel = normalizeLogLevel(options.logLevel);
+  const decryptionDiagnostics = normalizeDecryptionDiagnostics(
+    options.decryptionDiagnostics
+  );
   if (logger && typeof logger === "object") logger.level = logLevel;
 
   const diagnostics = diagnosticsFactory({
@@ -1091,6 +1125,7 @@ const startAddon = async ({
   logger.info?.("WhatsApp add-on runtime starting.", {
     runId: safeRunId,
     logLevel,
+    decryptionDiagnostics,
     clientCount: Array.isArray(clientIds) ? clientIds.length : 0,
   });
   await diagnostics.start?.();
@@ -1133,6 +1168,7 @@ const startAddon = async ({
       fsPromises,
       logger,
       logLevel,
+      decryptionDiagnostics,
       runId: safeRunId,
       diagnostics,
       initialRecoveryRecord,
@@ -1232,6 +1268,7 @@ module.exports = {
   fingerprint,
   loadOptions,
   normalizeApiToken,
+  normalizeDecryptionDiagnostics,
   normalizeLogLevel,
   normalizeCallUpdate,
   parseOptions,

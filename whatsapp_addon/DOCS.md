@@ -10,6 +10,10 @@ The add-on options are:
   `default`. A name must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
 - `log_level`: `info` (the default) for normal operation, or `debug` for
   additional privacy-safe runtime diagnostics while investigating a problem.
+- `decryption_diagnostics`: `false` by default. This internal debugging option
+  records complete message metadata and decoded message structures, exact JIDs
+  and message IDs, retry activity, and encrypted payload fingerprints. Keep it
+  disabled during normal operation.
 - `api_token`: an optional bearer token for the internal add-on API. Use a
   strong random value for defense in depth. Leave it unset to preserve
   compatibility with existing internal-network installations. The value may
@@ -87,6 +91,14 @@ Baileys logs or include message content, raw account identifiers, QR codes,
 session data, or API tokens. Identifier-related entries use run-scoped one-way
 references for correlation. Return the option to `info` after collecting the
 relevant logs.
+
+The separate Decryption Diagnostics toggle is intended for investigating
+message decryption failures. When enabled, it records raw message-stanza
+attributes, exact message and participant identifiers, sender names,
+timestamps, message stub data, retry counters, the complete decoded message
+structure when available, and encrypted payload sizes and SHA-256
+fingerprints. It remains enabled until the option is switched off and the
+add-on is restarted. A failed encrypted message has no decoded body to record.
 
 Failed native health checks are recorded in a small persistent history even at
 the default `info` level. If Supervisor replaces an unhealthy container, the

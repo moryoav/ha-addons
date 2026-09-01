@@ -23,8 +23,9 @@ RUN apk add --no-cache nodejs
 
 COPY --from=dependencies /node_modules /node_modules
 COPY package.json package-lock.json /
-COPY api.js diagnostics.js index.js libsignal-log-filter.js message-dedupe.js \
-    recovery.js runtime.js validation.js webui.js whatsapp.js /
+COPY api.js decryption-diagnostics.js diagnostics.js index.js \
+    libsignal-log-filter.js message-dedupe.js recovery.js runtime.js \
+    validation.js webui.js whatsapp.js /
 COPY logo.png /
 COPY healthcheck.sh run.sh /
 
