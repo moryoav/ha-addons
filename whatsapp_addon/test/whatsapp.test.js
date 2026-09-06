@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
+const path = require("node:path");
 const test = require("node:test");
 
 const {
@@ -10,6 +11,7 @@ const {
   normalizeRecipientJid,
 } = require("../whatsapp");
 const { RequestValidationError } = require("../validation");
+const { createAddonRuntime } = require("../runtime");
 
 const FICTIONAL_NUMBER = "12025550123";
 const FICTIONAL_JID = `${FICTIONAL_NUMBER}@s.whatsapp.net`;
@@ -159,6 +161,106 @@ test("opt-in decryption diagnostics expose raw stanzas and complete upserts", as
     "No matching sessions found for message",
   ]);
   await client.disconnect();
+});
+
+test("mixed message batches reach separate Home Assistant events", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const requests = [];
+  const received = [];
+  client.on("msg", (message) => received.push(message));
+  createAddonRuntime({
+    clientIds: ["default"],
+    dataRoot: path.resolve("runtime-test-data"),
+    clientFactory: () => client,
+    logger: {},
+    httpClient: {
+      async post(...args) {
+        requests.push(args);
+      },
+    },
+  });
+  const messages = [false, true, true].map((fromMe, index) => ({
+    key: {
+      id: `fictional-message-${index}`,
+      remoteJid: index === 2 ? "12025550123-1234567890@g.us" : FICTIONAL_JID,
+      fromMe,
+    },
+    messageTimestamp: 1788696000,
+    message: index === 2
+      ? { imageMessage: { caption: "Fictional photo" } }
+      : { conversation: "Fictional text" },
+  }));
+
+  ev.emit("messages.upsert", { type: "notify", messages });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(received.length, 1);
+  assert.equal(received[0].key.fromMe, false);
+  assert.equal(requests.length, messages.length);
+  for (const [index, message] of messages.entries()) {
+    assert.equal(requests[index][0], `http://supervisor/core/api/events/${
+      message.key.fromMe ? "whatsapp_message_sent" : "new_whatsapp_message"
+    }`);
+    assert.deepEqual(requests[index][1], {
+      clientId: "default",
+      type: index === 2 ? "imageMessage" : "conversation",
+      ...message,
+    });
+  }
+});
+
+test("outgoing append and notify echoes are deduplicated independently of incoming messages", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const sent = [];
+  const received = [];
+  const duplicates = [];
+  client.on("msg_sent", (message) => sent.push(message));
+  client.on("msg", (message) => received.push(message));
+  client.on("msg_duplicate", (duplicate) => duplicates.push(duplicate));
+  const message = {
+    key: { id: "fictional-message-id", remoteJid: FICTIONAL_JID, fromMe: true },
+    message: { conversation: "Fictional text", messageContextInfo: {} },
+  };
+
+  ev.emit("messages.upsert", { type: "append", messages: [message] });
+  ev.emit("messages.upsert", {
+    type: "notify",
+    messages: [{ ...message, key: { ...message.key, remoteJid: FICTIONAL_LID } }],
+  });
+  ev.emit("messages.upsert", {
+    type: "notify",
+    messages: [{ ...message, key: { ...message.key, fromMe: false } }],
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].key.fromMe, true);
+  assert.deepEqual(sent[0].message, { conversation: "Fictional text" });
+  assert.equal(received.length, 1);
+  assert.equal(received[0].key.fromMe, false);
+  assert.equal(duplicates.length, 1);
+  assert.equal(duplicates[0].fromMe, true);
+});
+
+test("outgoing messages without content do not fire sent events", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const sent = [];
+  const ignored = [];
+  client.on("msg_sent", (message) => sent.push(message));
+  client.on("msg_ignored", (message) => ignored.push(message.reason));
+
+  ev.emit("messages.upsert", {
+    type: "notify",
+    messages: [
+      { key: { fromMe: true } },
+      { key: { fromMe: true }, message: { messageContextInfo: {} } },
+    ],
+  });
+
+  assert.deepEqual(sent, []);
+  assert.deepEqual(ignored, ["missing_message", "missing_message_type"]);
 });
 
 test("checkNumber returns a stable registered-number response", async () => {

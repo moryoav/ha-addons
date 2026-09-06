@@ -516,9 +516,9 @@ const createAddonRuntime = ({
     });
   };
 
-  const onMsg = (message, clientId) => {
+  const onMsg = (message, clientId, eventType) => {
     void postSupervisor(
-      "/core/api/events/new_whatsapp_message",
+      `/core/api/events/${eventType}`,
       { clientId, ...message },
       "message event delivery"
     ).then((delivered) => {
@@ -526,6 +526,7 @@ const createAddonRuntime = ({
       if (!delivered || !debugEnabled) return;
       logger.debug?.("WhatsApp message event delivered.", {
         runId,
+        eventType,
         clientRef: logRef(clientId),
         type: safeMessageType(message.type),
         messageRef: logRef(message?.key?.id),
@@ -740,7 +741,12 @@ const createAddonRuntime = ({
       onDisconnected(statusCode, clientId)
     );
     client.on("client_error", (error) => onClientError(error, clientId));
-    client.on("msg", (message) => onMsg(message, clientId));
+    client.on("msg", (message) =>
+      onMsg(message, clientId, "new_whatsapp_message")
+    );
+    client.on("msg_sent", (message) =>
+      onMsg(message, clientId, "whatsapp_message_sent")
+    );
     client.on("msg_upsert", (upsert) => onMsgUpsert(upsert, clientId));
     client.on("msg_ignored", (ignored) => onIgnoredMsg(ignored, clientId));
     client.on("msg_duplicate", (duplicate) =>

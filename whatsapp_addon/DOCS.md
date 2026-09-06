@@ -299,12 +299,32 @@ data:
 | Event type                      | Description                                             |
 | ------------------------------- | ------------------------------------------------------- |
 | new_whatsapp_message            | The message that was received                           |
+| whatsapp_message_sent           | An outgoing message reported by the connected session   |
 | whatsapp_call_update            | An incoming call lifecycle update                       |
 | whatsapp_presence_update        | Presence of contact in a chat updated                   |
 | whatsapp_send_message_result    | Result event fired after sending a message              |
 | whatsapp_addon_health_failure   | Sanitized details after the prior run ended unhealthy   |
 
-`new_whatsapp_message` event data includes the configured `clientId`, the detected message `type`, the Baileys `key`, and the message payload. The dedupe layer runs before this event is fired, so automations should only see one event for the same WhatsApp message id/content pair. Media dedupe ignores wrapper-only fields such as thumbnails, CDN paths, scan sidecars, and media key timestamp representation because WhatsApp can vary those between phone-number and LID deliveries of the same message.
+`new_whatsapp_message` and `whatsapp_message_sent` event data includes the
+configured `clientId`, the detected message `type`, the Baileys `key`, and the
+`message` payload. Other fields, such as `messageTimestamp`, are passed through
+when present. The dedupe layer runs before either event is fired and tracks
+each direction separately. Media dedupe ignores wrapper-only fields such as
+thumbnails, CDN paths, scan sidecars, and media key timestamp representation
+because WhatsApp can vary those between phone-number and LID deliveries of the
+same message.
+
+Starting with add-on 1.4.39, `whatsapp_message_sent` fires for messages with
+`key.fromMe: true` reported by the connected session. This includes messages
+sent from the phone, other linked devices, and the add-on itself. The
+`key.remoteJid` is the destination chat or group and can be a LID. This event
+does not confirm delivery or that the recipient has read the message.
+
+The add-on sends this event directly to Home Assistant, so only the add-on
+needs updating. Logging automations can listen to both message events; see the
+[logging example](https://github.com/moryoav/ha-addons#log-received-and-sent-messages).
+Keep reply and mark-as-read automations on `new_whatsapp_message` so they do not
+act on outgoing messages.
 
 `whatsapp_call_update` fires for each lifecycle update reported by Baileys. Its
 `status` is one of `offer`, `ringing`, `accept`, `reject`, `timeout`, or

@@ -78,6 +78,69 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
   }
 });
 
+test("sent message delivery preserves client identity and keeps logs private", async () => {
+  for (const delivered of [true, false]) {
+    const client = new FakeClient();
+    const requests = [];
+    const logs = [];
+    const results = [];
+    createAddonRuntime({
+      clientIds: ["backup_1"],
+      dataRoot: path.resolve("runtime-test-data"),
+      clientFactory: () => client,
+      supervisorToken: "fictional-supervisor-token",
+      fingerprintKey: Buffer.alloc(32, 5),
+      logLevel: "debug",
+      httpClient: {
+        async post(...args) {
+          requests.push(args);
+          if (!delivered) {
+            const error = new Error("Fictional private upstream error");
+            error.response = { status: 502, data: "Fictional private response" };
+            throw error;
+          }
+        },
+      },
+      diagnostics: {
+        recordMessageDelivered: (result) => results.push(result),
+      },
+      logger: {
+        debug: (...args) => logs.push(args),
+        warn: (...args) => logs.push(args),
+      },
+    });
+    const message = {
+      type: "conversation",
+      key: { id: "fictional-sent-id", remoteJid: FICTIONAL_JID, fromMe: true },
+      message: { conversation: "Fictional private text" },
+    };
+    client.emit("msg_sent", message);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0][0], "http://supervisor/core/api/events/whatsapp_message_sent");
+    assert.deepEqual(requests[0][1], { clientId: "backup_1", ...message });
+    assert.equal(requests[0][2].headers.Authorization, "Bearer fictional-supervisor-token");
+    assert.deepEqual(results, [delivered]);
+    assert.equal(logs.length, 1);
+    if (delivered) {
+      assert.equal(logs[0][1].eventType, "whatsapp_message_sent");
+    } else {
+      assert.equal(logs[0][1].status, 502);
+    }
+    const serializedLogs = JSON.stringify(logs);
+    for (const privateValue of [
+      FICTIONAL_NUMBER,
+      "backup_1",
+      "fictional-sent-id",
+      "fictional-supervisor-token",
+      "Fictional private",
+    ]) {
+      assert.ok(!serializedLogs.includes(privateValue));
+    }
+  }
+});
+
 test("call updates normalize to one stable Home Assistant payload", () => {
   assert.deepEqual(
     normalizeCallUpdate({

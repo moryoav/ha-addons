@@ -2,6 +2,15 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.39
+
+- I added `whatsapp_message_sent` for outgoing messages reported by WhatsApp,
+  including messages sent from the phone, other linked devices, and the add-on.
+  It uses the existing message payload and dedupe checks. Only the add-on
+  needs updating; the integration is unchanged.
+- I documented the new event and added an automation example for logging both
+  received and sent messages.
+
 ## 1.4.38
 
 - Added an opt-in Decryption Diagnostics toggle for capturing exact WhatsApp

@@ -406,14 +406,6 @@ class WhatsappClient extends EventEmitter {
           continue;
         }
 
-        if (message.key?.fromMe) {
-          this.emit("msg_ignored", {
-            reason: "from_me",
-            message: this.#summarizeMessage(message),
-          });
-          continue;
-        }
-
         delete message.message.messageContextInfo;
         const messageType = this.#getMessageType(message);
         if (!messageType) {
@@ -434,7 +426,10 @@ class WhatsappClient extends EventEmitter {
           this.emit("msg_dedupe_collision", dedupeResult);
         }
 
-        this.emit("msg", { type: messageType, ...message });
+        this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
+          type: messageType,
+          ...message,
+        });
       }
     });
 

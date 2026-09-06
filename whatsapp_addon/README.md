@@ -1,7 +1,12 @@
 # Home Assistant Add-on: WhatsappV2
 
-Write WhatsApp messages from Home Assistant and receive WhatsApp message, call,
-and presence events.
+Write WhatsApp messages from Home Assistant and receive events for sent and
+received messages, incoming calls, and presence updates.
+
+Starting with add-on 1.4.39, `whatsapp_message_sent` reports outgoing messages,
+including messages sent from the linked phone. The add-on sends this event
+directly to Home Assistant; no integration update is required. See the
+[event details and logging example](https://github.com/moryoav/ha-addons#events).
 
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
 

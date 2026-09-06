@@ -200,12 +200,29 @@ The add-on fires these Home Assistant events:
 | Event type | Description |
 | --- | --- |
 | `new_whatsapp_message` | A received WhatsApp message. |
+| `whatsapp_message_sent` | An outgoing WhatsApp message reported by the connected session. |
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_send_message_result` | Compatibility result event after sending a message. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
-`new_whatsapp_message` includes the configured `clientId`, the detected message `type`, the Baileys message `key`, and the message payload.
+`new_whatsapp_message` and `whatsapp_message_sent` include the configured
+`clientId`, the detected message `type`, the Baileys message `key`, and the
+`message` payload. Other fields, such as `messageTimestamp`, are passed through
+when present.
+
+Starting with add-on 1.4.39, `whatsapp_message_sent` fires for messages with
+`key.fromMe: true`, including messages sent from the phone, other linked
+devices, and the add-on itself when reported by WhatsApp. For this event,
+`key.remoteJid` identifies the destination chat or group and can be a LID.
+The existing dedupe checks apply to both directions. The event reports a sent
+message observed by the session; it is not a delivery or read receipt.
+
+Only the add-on needs updating for this event. It sends the event directly to
+Home Assistant, so no integration update is required. Existing received-message
+automations still use `new_whatsapp_message`. Logging automations can listen to
+both events, as in the example below. Reply and mark-as-read automations should
+keep listening only to the received-message event to avoid acting on own sends.
 
 `whatsapp_call_update` fires for every call lifecycle update reported by
 Baileys. Its `status` is one of `offer`, `ringing`, `accept`, `reject`,
@@ -291,6 +308,33 @@ data:
           {{ trigger.event.data.from or "an unknown caller" }}.
   mode: queued
 ```
+
+### Log received and sent messages
+
+```yaml
+- alias: Log WhatsApp messages
+  trigger:
+    - platform: event
+      event_type: new_whatsapp_message
+    - platform: event
+      event_type: whatsapp_message_sent
+  action:
+    - action: logbook.log
+      data:
+        name: "WhatsApp ({{ trigger.event.data.clientId }})"
+        message: >-
+          {% set data = trigger.event.data %}
+          {{ "Sent" if data.key.fromMe else "Received" }}:
+          {{ data.message.get("conversation") or
+             data.message.get("extendedTextMessage", {}).get("text") or
+             "[" ~ data.type ~ "]" }}
+  mode: queued
+```
+
+This example logs text messages and uses the message type for other content.
+To check outgoing events after updating the add-on, listen for
+`whatsapp_message_sent` in **Developer tools** -> **Events**, then send a
+message from the linked phone.
 
 ### Reply to `!ping`
 
