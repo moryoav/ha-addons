@@ -123,7 +123,7 @@ jobs:
           --load
           "${ADDON_PATH}"
 
-      - name: Verify packaged Baileys version
+      - name: Verify packaged Baileys and preview dependencies
         run: >-
           docker run --rm
           --platform=${{ matrix.platform }}
@@ -136,7 +136,13 @@ jobs:
           throw new Error('Unexpected Baileys version');
           const baileys=await import('@whiskeysockets/baileys');
           if(typeof baileys.default!=='function')
-          throw new Error('Baileys socket export is unavailable')})()
+          throw new Error('Baileys socket export is unavailable');
+          const preview=await import('link-preview-js');
+          if(typeof preview.getLinkPreview!=='function')
+          throw new Error('Link preview export is unavailable');
+          const sharp=(await import('sharp')).default;
+          await sharp({create:{width:2,height:2,channels:3,
+          background:'#ffffff'}}).jpeg().toBuffer()})()
           .catch(error=>{console.error(error);process.exitCode=1})"
 
       - name: Smoke-test AppArmor startup and health probe

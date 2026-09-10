@@ -2,6 +2,13 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.41
+
+- Fixed missing link previews on outgoing URL messages by including the required
+  preview dependency. Previews still depend on the linked page and Baileys;
+  missing or inaccessible preview images can prevent a preview from appearing.
+  Only the add-on needs updating; the integration is unchanged.
+
 ## 1.4.40
 
 - Added a bounded, in-memory cache so Baileys can retrieve original outgoing
