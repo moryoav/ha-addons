@@ -2,6 +2,10 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+- Added GitHub Sponsors alongside Ko-fi in the README's general support section.
+
 ## 1.4.41
 
 - Fixed missing link previews on outgoing URL messages by including the required

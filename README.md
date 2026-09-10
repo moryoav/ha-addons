@@ -4,11 +4,12 @@
 
 ---
 
-## Support me on Ko-fi
+## Support the project
 
-If this project is useful to you, you can support its continued development:
+If this project is useful to you, you can support my work through Ko-fi or GitHub Sponsors:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y5B124NZ2L)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub_Sponsors-Sponsor-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/moryoav)
 
 ---
 
