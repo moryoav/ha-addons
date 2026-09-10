@@ -126,3 +126,31 @@ test("the diagnostic Baileys logger records decrypt and retry details", () => {
   assert.equal(entries[1].message, "sent retry receipt");
   assert.equal(entries[1].details.retryCount, 3);
 });
+
+test("receipt and ack logger records retain routing and message IDs", () => {
+  const entries = [];
+  const logger = createBaileysDiagnosticLogger({
+    emit: (entry) => entries.push(entry),
+  });
+  const attrs = {
+    to: FICTIONAL_PARTICIPANT,
+    recipient: FICTIONAL_JID,
+    type: "sender",
+  };
+  logger.debug(
+    { attrs, messageIds: ["fictional-message-id"] },
+    "sending receipt for messages"
+  );
+  logger.debug(
+    {
+      recv: { tag: "message", attrs: { id: "fictional-message-id" } },
+      sent: { ...attrs, id: "fictional-message-id", error: "487" },
+    },
+    "sent ack"
+  );
+  logger.info({ unrelated: true }, "regular connection information");
+  assert.equal(entries.length, 2);
+  assert.deepEqual(entries[0].details.attrs, attrs);
+  assert.deepEqual(entries[0].details.messageIds, ["fictional-message-id"]);
+  assert.equal(entries[1].details.sent.error, "487");
+});

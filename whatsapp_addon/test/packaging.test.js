@@ -90,4 +90,6 @@ test("Docker packages the diagnostic health probe with a longer wrapper timeout"
   assert.match(dockerignore, /^!decryption-diagnostics\.js\r?$/m);
   assert.match(dockerfile, /recovery\.js runtime\.js/);
   assert.match(dockerignore, /^!recovery\.js\r?$/m);
+  assert.match(dockerfile, /message-retry-cache\.js/);
+  assert.match(dockerignore, /^!message-retry-cache\.js\r?$/m);
 });

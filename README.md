@@ -440,8 +440,27 @@ message decryption failures. When enabled, it records raw message-stanza
 attributes, exact message and participant identifiers, sender names,
 timestamps, message stub data, retry counters, the complete decoded message
 structure when available, and encrypted payload sizes and SHA-256
-fingerprints. It remains enabled until the option is switched off and the
-add-on is restarted. A failed encrypted message has no decoded body to record.
+fingerprints. It also records incoming receipts and message acknowledgements,
+outgoing receipt and acknowledgement routing reported by Baileys, and retry-cache
+lookups, including the requested conversation, message ID, and whether it was
+found. An outgoing log entry records a send attempt, not proof that WhatsApp
+accepted the acknowledgement. It remains enabled until the option is switched
+off and the add-on is restarted. A failed encrypted message has no decoded body
+to record.
+
+The add-on keeps a separate in-memory retry cache, even when diagnostics are off.
+It stores original outgoing messages, including successfully decoded copies from
+other linked devices, before Home Assistant event processing modifies them.
+Baileys can retrieve these messages by exact conversation and message ID for its
+existing retry mechanism; this does not rerun Home Assistant actions. The cache
+does not guess phone-number/LID aliases or return a message from another account.
+Each client retains up to 1,000 messages for four hours, with a 16 MiB serialized
+data budget and a 1 MiB per-message limit. Older entries are evicted when a limit
+is reached. Ordinary socket reconnects retain the cache; stopping the client,
+logging out, entering recovery pause, or restarting the add-on clears it. Nothing
+is written to disk. Baileys remains at 6.7.23, and the protective recovery pause
+remains enabled. The cache improves retry support but is not a confirmed fix for
+decryption storms.
 
 Failed native health checks are retained at both log levels. If Supervisor
 replaces an unhealthy container, the next add-on run replays the saved probe

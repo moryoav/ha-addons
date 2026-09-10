@@ -8,6 +8,7 @@
 !libsignal-log-filter.js
 !logo.png
 !message-dedupe.js
+!message-retry-cache.js
 !package.json
 !package-lock.json
 !recovery.js

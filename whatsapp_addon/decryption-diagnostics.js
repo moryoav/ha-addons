@@ -183,6 +183,12 @@ const createRawMessageDiagnostic = (node) => {
   };
 };
 
+const createReceiptDiagnostic = (node) => ({
+  source: node?.tag === "ack" ? "incoming_message_ack" : "incoming_receipt",
+  messageId: node?.attrs?.id,
+  rawNode: serializeBinaryNode(node, node?.tag || "receipt"),
+});
+
 const messageTimestampText = (value) => {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "object" && typeof value.toString === "function") {
@@ -247,7 +253,9 @@ const shouldCaptureBaileysLog = (level, message) => {
     text.includes("decrypt") ||
     text.includes("cipher") ||
     text.includes("retry") ||
-    text.includes("session")
+    text.includes("session") ||
+    text.includes("receipt") ||
+    text === "sent ack"
   );
 };
 
@@ -288,6 +296,7 @@ module.exports = {
   createBaileysDiagnosticLogger,
   createMessageUpsertDiagnostic,
   createRawMessageDiagnostic,
+  createReceiptDiagnostic,
   serializeDiagnosticValue,
   summarizeBinary,
 };

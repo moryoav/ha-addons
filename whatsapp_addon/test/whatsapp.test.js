@@ -17,7 +17,11 @@ const FICTIONAL_NUMBER = "12025550123";
 const FICTIONAL_JID = `${FICTIONAL_NUMBER}@s.whatsapp.net`;
 const FICTIONAL_LID = "999999999999999@lid";
 
-const createHarness = async ({ onWhatsApp, decryptionDiagnostics = false } = {}) => {
+const createHarness = async ({
+  onWhatsApp,
+  sendMessage,
+  decryptionDiagnostics = false,
+} = {}) => {
   const ev = new EventEmitter();
   const ws = new EventEmitter();
   const calls = {
@@ -26,6 +30,7 @@ const createHarness = async ({ onWhatsApp, decryptionDiagnostics = false } = {})
     presenceSubscribe: [],
     sendMessage: [],
     sendPresenceUpdate: [],
+    socketOptions: [],
   };
   const socket = {
     ev,
@@ -43,6 +48,7 @@ const createHarness = async ({ onWhatsApp, decryptionDiagnostics = false } = {})
     async readMessages() {},
     async sendMessage(jid, message, options) {
       calls.sendMessage.push({ jid, message, options });
+      if (sendMessage) return sendMessage(jid, message, options);
       return { key: { id: "fictional-message-id" } };
     },
     async sendPresenceUpdate(type, jid) {
@@ -51,8 +57,12 @@ const createHarness = async ({ onWhatsApp, decryptionDiagnostics = false } = {})
     async updateProfileStatus() {},
   };
   const baileys = {
+    proto: (await import("@whiskeysockets/baileys")).proto,
     DisconnectReason: { loggedOut: 401 },
-    default: () => socket,
+    default: (options) => {
+      calls.socketOptions.push(options);
+      return socket;
+    },
     fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
     useMultiFileAuthState: async () => ({
       state: { creds: {}, keys: {} },
@@ -423,4 +433,214 @@ test("general recipient normalization retains supported direct JIDs", () => {
     "120363000000000000@g.us"
   );
   assert.equal(normalizeRecipientJid(FICTIONAL_LID), FICTIONAL_LID);
+});
+
+test("retry retrieval preserves own-device messages before HA strips context", async (t) => {
+  const { client, ev, calls } = await createHarness({
+    decryptionDiagnostics: true,
+  });
+  t.after(() => client.disconnect());
+  const diagnostics = [];
+  const sent = [];
+  client.on("decryption_diagnostic", (entry) => diagnostics.push(entry));
+  client.on("msg_sent", (message) => sent.push(message));
+  const key = {
+    id: "fictional-synced-id",
+    remoteJid: FICTIONAL_LID,
+    fromMe: true,
+  };
+  const message = {
+    key,
+    message: {
+      conversation: "Fictional synced message",
+      messageContextInfo: { messageSecret: Buffer.from("fictional context") },
+    },
+  };
+  ev.emit("messages.upsert", { type: "notify", messages: [message] });
+  assert.equal(sent[0].message.messageContextInfo, undefined);
+  const getMessage = calls.socketOptions[0].getMessage;
+  const cached = await getMessage({
+    ...key,
+    participant: "999999999999999:22@lid",
+  });
+  assert.equal(cached.conversation, "Fictional synced message");
+  assert.equal(
+    cached.messageContextInfo.messageSecret.toString(),
+    "fictional context"
+  );
+  ev.emit("messages.upsert", {
+    type: "append",
+    messages: [{ key, messageStubType: 2 }],
+  });
+  assert.equal(
+    (await getMessage(key)).conversation,
+    "Fictional synced message"
+  );
+  assert.equal(
+    await getMessage({ ...key, id: "fictional-missing-id" }),
+    undefined
+  );
+  assert.deepEqual(
+    diagnostics
+      .filter((entry) => entry.operation === "lookup")
+      .map((entry) => entry.hit),
+    [true, true, false]
+  );
+  assert.equal(calls.sendMessage.length, 0);
+});
+
+test("successful add-on sends are cached even without an upsert echo", async (t) => {
+  const result = {
+    key: { id: "fictional-send-id", remoteJid: FICTIONAL_JID, fromMe: true },
+    message: { conversation: "Fictional outgoing message" },
+  };
+  const { client, calls } = await createHarness({
+    sendMessage: async () => result,
+  });
+  t.after(() => client.disconnect());
+  const diagnostics = [];
+  client.on("decryption_diagnostic", (entry) => diagnostics.push(entry));
+  assert.equal(
+    await client.sendMessage(FICTIONAL_JID, {
+      text: "Fictional outgoing message",
+    }),
+    result
+  );
+  assert.equal(
+    (await calls.socketOptions[0].getMessage(result.key)).conversation,
+    result.message.conversation
+  );
+  assert.equal(calls.sendMessage.length, 1);
+  assert.deepEqual(diagnostics, []);
+});
+
+test("the retry cache survives socket replacement but not stop, reset, or logout", async (t) => {
+  const { client, ev, calls, baileys } = await createHarness();
+  t.after(() => client.disconnect());
+  const key = {
+    id: "fictional-reconnect-id",
+    remoteJid: FICTIONAL_JID,
+    fromMe: true,
+  };
+  ev.emit("messages.upsert", {
+    type: "notify",
+    messages: [{ key, message: { conversation: "Fictional reconnect" } }],
+  });
+  const oldLookup = calls.socketOptions[0].getMessage;
+  await client.disconnect(true);
+  const nextSocket = { ev: new EventEmitter(), end: async () => {} };
+  baileys.default = (options) => {
+    calls.socketOptions.push(options);
+    return nextSocket;
+  };
+  await client.connect();
+  // A retry can arrive before connection.open is emitted.
+  assert.equal(
+    (await calls.socketOptions[1].getMessage(key)).conversation,
+    "Fictional reconnect"
+  );
+  // Stale sockets cannot add content to the active account cache.
+  const staleKey = { ...key, id: "fictional-stale-id" };
+  ev.emit("messages.upsert", {
+    type: "notify",
+    messages: [{ key: staleKey, message: { conversation: "Stale" } }],
+  });
+  assert.equal(await calls.socketOptions[1].getMessage(staleKey), undefined);
+  nextSocket.ev.emit("connection.update", {
+    connection: "close",
+    lastDisconnect: { error: { statusCode: 401 } },
+  });
+  assert.equal(await oldLookup(key), undefined);
+  assert.equal(await calls.socketOptions[1].getMessage(key), undefined);
+  await client.connect();
+  nextSocket.ev.emit("messages.upsert", {
+    messages: [{ key, message: { conversation: "New account" } }],
+  });
+  assert.equal(
+    (await calls.socketOptions[2].getMessage(key)).conversation,
+    "New account"
+  );
+  await client.disconnect(false);
+  assert.equal(await calls.socketOptions[2].getMessage(key), undefined);
+});
+
+test("an in-flight send cannot refill a cache after the client stops", async () => {
+  let finishSend;
+  const { client, calls } = await createHarness({
+    sendMessage: () =>
+      new Promise((resolve) => {
+        finishSend = resolve;
+      }),
+  });
+  const key = {
+    id: "fictional-late-send",
+    remoteJid: FICTIONAL_JID,
+    fromMe: true,
+  };
+  const pending = client.sendMessage(FICTIONAL_JID, {
+    text: "Fictional late send",
+  });
+  await client.disconnect(false);
+  finishSend({ key, message: { conversation: "Fictional late send" } });
+  await pending;
+  assert.equal(await calls.socketOptions[0].getMessage(key), undefined);
+});
+
+test("receipt and acknowledgement diagnostics are opt-in and observational", async (t) => {
+  for (const enabled of [false, true]) {
+    const { client, ws, calls } = await createHarness({
+      decryptionDiagnostics: enabled,
+    });
+    t.after(() => client.disconnect());
+    const entries = [];
+    client.on("decryption_diagnostic", (entry) => entries.push(entry));
+    const node = {
+      tag: "receipt",
+      attrs: { id: "fictional-retry", from: FICTIONAL_LID, type: "retry" },
+      content: [{ tag: "retry", attrs: { count: "2" } }],
+    };
+    ws.emit("CB:receipt", node);
+    ws.emit("CB:ack,class:message", {
+      tag: "ack",
+      attrs: { id: "fictional-retry", from: FICTIONAL_LID, class: "message" },
+    });
+    if (enabled) {
+      assert.deepEqual(
+        entries.map((entry) => entry.source),
+        ["incoming_receipt", "incoming_message_ack"]
+      );
+      assert.equal(entries[0].rawNode.content[0].attrs.count, "2");
+      assert.equal(entries[0].rawNode.attrs.from, FICTIONAL_LID);
+    } else {
+      assert.equal(ws.listenerCount("CB:receipt"), 0);
+      assert.deepEqual(entries, []);
+    }
+    assert.equal(calls.sendMessage.length, 0);
+  }
+});
+
+test("diagnostic failures do not interrupt retry retrieval or normal messages", async (t) => {
+  const { client, ev, calls } = await createHarness({
+    decryptionDiagnostics: true,
+  });
+  t.after(() => client.disconnect());
+  client.on("decryption_diagnostic", () => {
+    throw new Error("Fictional diagnostic sink failure");
+  });
+  const sent = [];
+  client.on("msg_sent", (message) => sent.push(message));
+  const key = {
+    id: "fictional-diagnostic-failure",
+    remoteJid: FICTIONAL_JID,
+    fromMe: true,
+  };
+  ev.emit("messages.upsert", {
+    type: "notify",
+    messages: [{ key, message: { conversation: "Fictional text" } }],
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(
+    (await calls.socketOptions[0].getMessage(key)).conversation,
+    "Fictional text"
+  );
 });

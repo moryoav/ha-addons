@@ -1,3 +1,15 @@
+## 1.4.40
+
+- Added a bounded, in-memory cache so Baileys can retrieve original outgoing
+  messages for requested retries, including messages synced from linked devices.
+  Messages remain available across ordinary reconnects for up to four hours,
+  subject to count and size limits. Stopping or resetting a client clears its cache.
+- Expanded Decryption Diagnostics with incoming receipts, acknowledgements,
+  outgoing receipt routing, and retry-cache hits and misses.
+- Kept Baileys at 6.7.23 and retained the existing protective recovery pause.
+  This improves retry handling but is not a confirmed fix for decryption storms.
+  Only the add-on needs updating; the integration is unchanged.
+
 ## 1.4.39
 
 - I added `whatsapp_message_sent` for outgoing messages reported by WhatsApp,

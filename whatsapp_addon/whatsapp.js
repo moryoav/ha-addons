@@ -4,8 +4,10 @@ const {
   createBaileysDiagnosticLogger,
   createMessageUpsertDiagnostic,
   createRawMessageDiagnostic,
+  createReceiptDiagnostic,
 } = require("./decryption-diagnostics");
 const { MessageDedupe } = require("./message-dedupe");
+const { MessageRetryCache } = require("./message-retry-cache");
 const {
   RequestValidationError,
   normalizePhoneJid,
@@ -108,6 +110,7 @@ class WhatsappClient extends EventEmitter {
   #timeout;
   #attempts;
   #messageDedupe;
+  #retryCache;
   #offline;
   #refreshMs;
   #baileys;
@@ -183,6 +186,7 @@ class WhatsappClient extends EventEmitter {
       default: makeWASocket,
       fetchLatestBaileysVersion,
       useMultiFileAuthState,
+      proto,
     } = baileys;
     if (
       typeof makeWASocket !== "function" ||
@@ -211,7 +215,10 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
 
-    this.#conn = makeWASocket({
+    const retryCache = (this.#retryCache ||= new MessageRetryCache({
+      codec: proto?.Message,
+    }));
+    const socket = (this.#conn = makeWASocket({
       version: versionResult.version,
       auth: authResult.state,
       syncFullHistory: false,
@@ -220,10 +227,27 @@ class WhatsappClient extends EventEmitter {
       generateHighQualityLinkPreview: true,
       browser: ["Ubuntu", "Chrome", "20.0.04"],
       defaultQueryTimeoutMs: undefined,
-    });
+      getMessage: async (key) => {
+        const message =
+          this.#retryCache === retryCache ? retryCache.get(key) : undefined;
+        this.#emitDecryptionDiagnostic(() => ({
+          source: "message_retry_cache",
+          operation: "lookup",
+          key: { ...key },
+          hit: !!message,
+          ...retryCache.stats,
+        }));
+        return message;
+      },
+    }));
     if (!this.#conn?.ev || typeof this.#conn.ev.on !== "function") {
       throw new WhatsappProtocolError();
     }
+    // Register before the connection opens and before HA consumers strip context.
+    socket.ev.on("messages.upsert", ({ messages }) => {
+      if (this.#conn !== socket || this.#retryCache !== retryCache) return;
+      for (const message of messages || []) this.#cacheRetryMessage(message);
+    });
     if (
       this.#decryptionDiagnostics &&
       typeof this.#conn.ws?.on === "function"
@@ -231,6 +255,11 @@ class WhatsappClient extends EventEmitter {
       this.#conn.ws.on("CB:message", (node) => {
         this.#emitDecryptionDiagnostic(() => createRawMessageDiagnostic(node));
       });
+      for (const event of ["CB:receipt", "CB:ack,class:message"]) {
+        this.#conn.ws.on(event, (node) => {
+          this.#emitDecryptionDiagnostic(() => createReceiptDiagnostic(node));
+        });
+      }
     }
 
     this.#conn.ev.on("creds.update", (state) => {
@@ -276,6 +305,7 @@ class WhatsappClient extends EventEmitter {
     this.#status.connected = false;
     this.#status.disconnected = !reconnect;
     this.#status.reconnecting = !!reconnect;
+    if (!reconnect) this.#clearRetryCache();
 
     if (this.#conn && typeof this.#conn.end === "function") {
       await this.#conn.end();
@@ -322,6 +352,23 @@ class WhatsappClient extends EventEmitter {
     } catch {
       // Optional diagnostics must never interrupt WhatsApp message processing.
     }
+  };
+
+  #cacheRetryMessage = (message) => {
+    if (!this.#retryCache || message?.key?.fromMe !== true) return;
+    const result = this.#retryCache.put(message);
+    this.#emitDecryptionDiagnostic(() => ({
+      source: "message_retry_cache",
+      operation: "store",
+      key: { ...message.key },
+      ...result,
+      ...this.#retryCache.stats,
+    }));
+  };
+
+  #clearRetryCache = () => {
+    this.#retryCache?.close();
+    this.#retryCache = undefined;
   };
 
   #scheduleReconnect = () => {
@@ -453,6 +500,7 @@ class WhatsappClient extends EventEmitter {
     const upstreamCode = safeUpstreamCode(lastDisconnect?.error);
     const statusCode = Number.isInteger(upstreamCode) ? upstreamCode : null;
     if (statusCode === this.#baileys.DisconnectReason?.loggedOut) {
+      this.#clearRetryCache();
       this.#status.reconnecting = false;
       this.#status.disconnected = true;
       this.emit("logout");
@@ -553,9 +601,16 @@ class WhatsappClient extends EventEmitter {
       if (!result.exists) throw new WhatsappNumberNotFoundError();
     }
 
-    return this.#runUpstream("message send", () =>
-      this.#conn.sendMessage(jid, message, options)
-    );
+    const socket = this.#conn;
+    const retryCache = this.#retryCache;
+    return this.#runUpstream("message send", async () => {
+      const result = await socket.sendMessage(jid, message, options);
+      // Also handle sends without an upsert echo. Never repopulate a stopped client.
+      if (this.#conn === socket && this.#retryCache === retryCache) {
+        this.#cacheRetryMessage(result);
+      }
+      return result;
+    });
   };
 
   waitForMessage(from, callback) {
