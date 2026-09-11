@@ -36,6 +36,71 @@ fires `whatsapp_send_message_result` after a message is sent. Success means the
 linked client accepted the send operation; it does not guarantee delivery,
 receipt, or that the recipient read the message.
 
+See [the send-result event example](../reference/events.md#capture-a-send-result-event)
+for older automations that collect results in a separate event listener.
+
+## Edit a sent text message
+
+I use the original `sent_message.key` to update a notification after a task
+finishes. This covers the message editing mentioned in my
+[advanced automations tutorial](https://smarthome.yoavmor.com/home-assistant/enhancing-the-whatsapp-addon-for-home-assistant-new-features-for-advanced-automations/).
+
+```yaml
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: 999000111222333@lid
+    body:
+      text: "The task is running."
+  response_variable: task_message
+- delay: "00:00:05"
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: "{{ task_message.sent_message.key.remoteJid }}"
+    body:
+      text: "The task has finished."
+      edit: "{{ task_message.sent_message.key }}"
+```
+
+Replace the delay with your task. Use the same client session and the original
+key, including `id`, `remoteJid`, and `fromMe`. Editing is subject to WhatsApp's
+editing window and message eligibility; this example edits a text message
+sent by the linked account. An accepted action is not proof that the recipient
+has received the edit.
+
+## Delete a sent message
+
+This sends a new temporary notification, then requests its deletion for
+everyone. Use it only when removal is the intended behavior:
+
+```yaml
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: 999000111222333@lid
+    body:
+      text: "Temporary test notification."
+  response_variable: temporary_message
+- delay: "00:00:10"
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: "{{ temporary_message.sent_message.key.remoteJid }}"
+    body:
+      delete: "{{ temporary_message.sent_message.key }}"
+```
+
+`body.delete` is a full message key, not just an ID. WhatsApp applies its own
+deletion limits, and recipients may already have seen the message. For a later
+automation run, use the [saved-key pattern](scripts.md#save-a-message-key-for-another-run).
+Keep the original key when chaining edits, reactions, or deletion; a response
+to an edit/delete operation identifies that protocol operation.
+
+These payloads are supported by the pinned Baileys 6.7.23 message types and
+passed through by `whatsapp.send_message`. They do not use separate edit or
+delete Home Assistant actions.
+
 ## Send an image
 
 ```yaml

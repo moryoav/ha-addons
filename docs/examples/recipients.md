@@ -1,5 +1,16 @@
 # Recipients and number lookup
 
+## Choose the sending account
+
+For notifications on my personal phone, I link a separate WhatsApp account to
+the add-on and send from that account to my personal account or a shared group.
+Messages sent by the integration belong to the linked account. Linking my
+personal account makes the bot send as me, so those sends are not incoming
+messages from a separate contact. This is the account distinction explained in
+my [setup tutorial](https://smarthome.yoavmor.com/home-assistant/integrating-whatsapp-into-home-assistant-part-1-setup-and-notifications/).
+Follow the [current installation guide](https://github.com/moryoav/ha-addons#installation)
+to pair that account with this add-on.
+
 ## Supported identifiers
 
 Message targets can use:
@@ -28,6 +39,47 @@ received. Do not convert it to a phone-number JID.
 The add-on suppresses duplicate inbound phone/LID deliveries when WhatsApp sends
 the same message twice with different `remoteJid` values during the LID
 migration.
+
+## Find a group ID and send a notification
+
+I capture the group ID from an incoming event, as in my
+[group messaging tutorial](https://smarthome.yoavmor.com/home-assistant/integrating-whatsapp-into-home-assistant-part-2-messaging-groups/).
+
+1. Add the WhatsApp account linked to the add-on to the group. Complete any
+   invitation or approval in WhatsApp first.
+2. In Home Assistant, open **Developer Tools > Events** and listen to
+   `new_whatsapp_message`.
+3. Send a message to that group from a different WhatsApp account.
+4. Find the event for your `clientId` and copy **the entire** `key.remoteJid`,
+   including `@g.us`. Stop listening when finished.
+
+For example, this shortened event identifies a group and its sender:
+
+```yaml
+clientId: default
+key:
+  remoteJid: 120363000000000000@g.us
+  fromMe: false
+  id: EXAMPLE_MESSAGE_ID
+  participant: 999000111222333@lid
+```
+
+Send to `remoteJid`; `participant` identifies the member who sent the message,
+not the group:
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 120363000000000000@g.us
+  body:
+    text: "The dryer has finished."
+```
+
+Group IDs do not all have the same length. Keep the exact value from the event
+instead of constructing it from a phone number. If the test message comes from
+the linked account itself, look for `whatsapp_message_sent` instead; ordinary
+incoming-message automations deliberately ignore own sends.
 
 ## Check whether a phone number is registered
 

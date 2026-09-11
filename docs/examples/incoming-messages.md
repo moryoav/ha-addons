@@ -115,6 +115,8 @@ action reports an error.
 silent; it is not a special WhatsApp response. This example sends one incoming
 text to the agent. It does not add chat history or configure the agent's tools.
 For a longer request, use the [bounded typing helper](presence.md#keep-typing-while-another-action-runs).
+For context across messages, see the complete [conversation history recipe](conversation-history.md).
+For outgoing alerts, see [AI-written notifications](ai-notifications.md).
 
 ## Recognize incoming media
 
@@ -168,7 +170,7 @@ I also found these combinations in the existing configuration:
 | Agent reply as a voice message | A text-to-speech service that produces a downloadable audio file, followed by `body.audio` with `ptt: true`. |
 | Download or transform a video, then send clips | A separate video service returning ready-to-send URLs. |
 | Generate a sticker, then send it | A custom generator returning a prepared WebP URL. |
-| Keep per-chat history for an agent | A separate logger/storage helper that handles incoming and outgoing events. |
+| Keep per-chat history for an agent | Agent-managed conversation IDs or separate storage, such as the [File and Shell Command recipe](conversation-history.md). |
 
 These processors and storage helpers are not bundled with WhatsApp for Home
 Assistant. An incoming media URL can refer to encrypted WhatsApp data; it is

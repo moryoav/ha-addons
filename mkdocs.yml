@@ -21,9 +21,13 @@ nav:
       - Automations: examples/automations.md
       - Reusable scripts: examples/scripts.md
       - Incoming messages and agents: examples/incoming-messages.md
+      - AI-written notifications: examples/ai-notifications.md
+      - Conversation history: examples/conversation-history.md
+      - Sensor charts: examples/sensor-charts.md
   - Reference:
       - Actions: reference/actions.md
       - Events: reference/events.md
+      - Blog tutorials: reference/blog-tutorials.md
 
 plugins:
   - search

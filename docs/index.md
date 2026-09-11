@@ -7,23 +7,27 @@ call, and presence events through the companion add-on.
 
 | Topic | Examples |
 | --- | --- |
-| [Messages and media](examples/messages.md) | Text, stickers, documents, videos, polls, voice messages, locations, reactions, and quoted follow-ups. |
-| [Recipients and number lookup](examples/recipients.md) | Phone JIDs, LIDs, groups, and registration checks. |
+| [Messages and media](examples/messages.md) | Text, stickers, documents, videos, polls, voice messages, locations, reactions, edits, deletion, and quoted follow-ups. |
+| [Recipients and number lookup](examples/recipients.md) | Phone JIDs, LIDs, group ID discovery, and registration checks. |
 | [Presence](examples/presence.md) | Subscriptions, online notifications, typing indicators, and a bounded typing loop. |
 | [Automations](examples/automations.md) | Calls, logging, replies, read markers, arrival messages, sensor alerts, and webhooks. |
 | [Reusable scripts](examples/scripts.md) | Return send responses, quote notifications, save message keys, and send files prepared by helpers. |
 | [Incoming messages and agents](examples/incoming-messages.md) | Filter chats, extract text, reply with a conversation agent, and recognize incoming media. |
+| [AI-written notifications](examples/ai-notifications.md) | Rephrase routine notifications with a fallback to the original text. |
+| [Conversation history](examples/conversation-history.md) | Keep recent exchanges in a file and use them in replies to one chat. |
+| [Sensor charts](examples/sensor-charts.md) | Log readings to Google Sheets and send a published chart with a sensor alert. |
 
 ## Reference
 
 - [Actions](reference/actions.md): the Home Assistant actions exposed by the integration.
 - [Events](reference/events.md): message, call, presence, send-result, and health events.
+- [Blog tutorials](reference/blog-tutorials.md): links to the original walkthroughs and their current examples.
 
 The examples use fictional phone numbers and synthetic identifiers. Replace
 `clientId`, recipients, and entity IDs with the values from your installation.
 
 I adapted the additional recipes from existing Home Assistant automations and
-scripts. I also verified poll creation with a live send and a returned vote
+scripts and my blog tutorials. I also verified poll creation with a live send and a returned vote
 event. Examples that need another integration or a custom helper list that
 dependency.
 

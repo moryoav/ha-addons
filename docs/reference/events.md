@@ -40,6 +40,49 @@ thumbnails, CDN paths, scan sidecars, and media key timestamp representation
 because WhatsApp can vary those between phone-number and LID deliveries of the
 same message.
 
+## Capture a send-result event
+
+The integration fires `whatsapp_send_message_result` after a successful
+`whatsapp.send_message` call. Its fields are `client_id`, `to`, `body`, and
+`sent_message`. This event uses **`client_id`**, while incoming and outgoing
+message events use **`clientId`**. It is not a delivery receipt and does not
+collect messages sent from the phone.
+
+My [advanced automations tutorial](https://smarthome.yoavmor.com/home-assistant/enhancing-the-whatsapp-addon-for-home-assistant-new-features-for-advanced-automations/)
+stores the last message ID in a Text helper. Create
+`input_text.whatsapp_last_sent_id` with a maximum length of 255, then filter
+the collector to one client and destination:
+
+```yaml
+- alias: Store the last WhatsApp text notification ID
+  triggers:
+    - trigger: event
+      event_type: whatsapp_send_message_result
+      event_data:
+        client_id: default
+        to: 120363000000000000@g.us
+  conditions:
+    - condition: template
+      value_template: >-
+        {% set body = trigger.event.data.get('body', {}) %}
+        {{ body is mapping and 'text' in body and 'edit' not in body }}
+  actions:
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.whatsapp_last_sent_id
+      data:
+        value: "{{ trigger.event.data.sent_message.key.id }}"
+  mode: queued
+```
+
+The `to` filter matches the action's original target exactly. A send to a phone
+number will not match a filter containing its LID. The body condition excludes
+reaction, edit, and delete results from this text-notification collector.
+
+The helper holds the latest matching ID, so another send can overwrite it.
+For a specific task, use the action's [response variable](../examples/messages.md#capture-the-sent-message-id)
+and preserve the [full message key](../examples/scripts.md#save-a-message-key-for-another-run).
+
 ## Call events
 
 `whatsapp_call_update` fires for every call lifecycle update reported by

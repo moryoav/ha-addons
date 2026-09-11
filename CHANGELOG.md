@@ -4,6 +4,10 @@ All notable changes to this repository are documented here.
 
 ## Unreleased
 
+- Added examples from the blog tutorials for group ID discovery, message edits
+  and deletion, send-result event handling, AI-written notifications with a
+  fallback, conversation history, and sensor chart alerts. Linked the original
+  tutorials and clarified changes to older setup and message examples.
 - Expanded the knowledge base with sanitized examples from existing Home
   Assistant automations and scripts: stickers, documents, videos, polls, typing,
   quoted follow-ups, saved message keys, reusable scripts, agent replies, sensor
