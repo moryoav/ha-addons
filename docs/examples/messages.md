@@ -162,8 +162,16 @@ data:
 
 ## Send a sticker
 
-I use a prepared WebP file for stickers. Image generation and conversion to
-WebP happen before the send action.
+I use a prepared image for static stickers. The image must meet all four
+requirements:
+
+- **Format:** WebP (`.webp`).
+- **Dimensions:** exactly 512 x 512 pixels.
+- **Background:** transparent.
+- **File size:** less than 100 KB.
+
+Image generation, resizing, background removal, and conversion to WebP happen
+before the send action.
 
 ```yaml
 action: whatsapp.send_message

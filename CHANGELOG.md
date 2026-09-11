@@ -4,6 +4,8 @@ All notable changes to this repository are documented here.
 
 ## Unreleased
 
+- Clarified static sticker requirements: WebP format, exactly 512 x 512 pixels,
+  a transparent background, and a file size under 100 KB.
 - Removed blog references and historical guidance from the knowledge base to
   keep the documentation focused on current usage.
 - Added examples for group ID discovery, message edits
