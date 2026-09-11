@@ -1,7 +1,6 @@
 # Conversation history
 
-I adapted this recipe from my [conversation history tutorial](https://smarthome.yoavmor.com/home-assistant/adding-conversation-history-to-ai-assistants-in-home-assistant/).
-It keeps a local text log for one WhatsApp chat and includes recent exchanges
+I keep a local text log for one WhatsApp chat and include recent exchanges
 when asking a conversation agent for a reply.
 
 Some agents already retain context when a later call reuses the returned

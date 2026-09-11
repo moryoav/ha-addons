@@ -27,7 +27,6 @@ nav:
   - Reference:
       - Actions: reference/actions.md
       - Events: reference/events.md
-      - Blog tutorials: reference/blog-tutorials.md
 
 plugins:
   - search

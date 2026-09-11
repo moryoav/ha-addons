@@ -31,19 +31,18 @@ data:
 ```
 
 The response includes `client_id`, `to`, `body`, `sent_message`, and
-`message_id`. For compatibility with older automations, the integration also
+`message_id`. The integration also
 fires `whatsapp_send_message_result` after a message is sent. Success means the
 linked client accepted the send operation; it does not guarantee delivery,
 receipt, or that the recipient read the message.
 
 See [the send-result event example](../reference/events.md#capture-a-send-result-event)
-for older automations that collect results in a separate event listener.
+to collect results in a separate event listener.
 
 ## Edit a sent text message
 
 I use the original `sent_message.key` to update a notification after a task
-finishes. This covers the message editing mentioned in my
-[advanced automations tutorial](https://smarthome.yoavmor.com/home-assistant/enhancing-the-whatsapp-addon-for-home-assistant-new-features-for-advanced-automations/).
+finishes.
 
 ```yaml
 - action: whatsapp.send_message

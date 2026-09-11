@@ -21,15 +21,11 @@ call, and presence events through the companion add-on.
 
 - [Actions](reference/actions.md): the Home Assistant actions exposed by the integration.
 - [Events](reference/events.md): message, call, presence, send-result, and health events.
-- [Blog tutorials](reference/blog-tutorials.md): links to the original walkthroughs and their current examples.
 
 The examples use fictional phone numbers and synthetic identifiers. Replace
 `clientId`, recipients, and entity IDs with the values from your installation.
 
-I adapted the additional recipes from existing Home Assistant automations and
-scripts and my blog tutorials. I also verified poll creation with a live send and a returned vote
-event. Examples that need another integration or a custom helper list that
-dependency.
+Examples that need another integration or a custom helper list that dependency.
 
 ## Setup and support
 

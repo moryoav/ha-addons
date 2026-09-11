@@ -6,8 +6,7 @@ For notifications on my personal phone, I link a separate WhatsApp account to
 the add-on and send from that account to my personal account or a shared group.
 Messages sent by the integration belong to the linked account. Linking my
 personal account makes the bot send as me, so those sends are not incoming
-messages from a separate contact. This is the account distinction explained in
-my [setup tutorial](https://smarthome.yoavmor.com/home-assistant/integrating-whatsapp-into-home-assistant-part-1-setup-and-notifications/).
+messages from a separate contact.
 Follow the [current installation guide](https://github.com/moryoav/ha-addons#installation)
 to pair that account with this add-on.
 
@@ -20,7 +19,7 @@ Message targets can use:
 - Group JID, such as the synthetic `120363000000000000@g.us`.
 - Broadcast JID, such as `status@broadcast`.
 
-**For direct chats, migrate automations to LID (`@lid`) targets whenever
+**For direct chats, use LID (`@lid`) targets whenever
 available.**
 Phone-number JIDs (`@s.whatsapp.net`) are less reliable with Baileys. Run
 `whatsapp.check_number` with the phone number, then use the returned `lid` as
@@ -37,13 +36,11 @@ If Home Assistant receives or stores an `@lid` id, pass it back exactly as
 received. Do not convert it to a phone-number JID.
 
 The add-on suppresses duplicate inbound phone/LID deliveries when WhatsApp sends
-the same message twice with different `remoteJid` values during the LID
-migration.
+the same message twice with different `remoteJid` values.
 
 ## Find a group ID and send a notification
 
-I capture the group ID from an incoming event, as in my
-[group messaging tutorial](https://smarthome.yoavmor.com/home-assistant/integrating-whatsapp-into-home-assistant-part-2-messaging-groups/).
+I capture the group ID from an incoming event:
 
 1. Add the WhatsApp account linked to the add-on to the group. Complete any
    invitation or approval in WhatsApp first.
@@ -118,6 +115,4 @@ bare phone numbers retain the existing lookup before sending. Call
 `whatsapp.check_number` when an automation needs an explicit preflight and a
 structured registration response.
 
-Use add-on and integration version 1.4.31 or newer together. The registration
-lookup is unavailable on older add-ons; the integration reports a clear update
-error instead of treating a missing endpoint as an unregistered number.
+`whatsapp.check_number` requires add-on and integration version 1.4.31 or newer.

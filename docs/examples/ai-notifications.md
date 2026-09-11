@@ -1,7 +1,6 @@
 # AI-written notifications
 
-I use a conversation agent to vary the wording of routine notifications, as in
-my [AI notifications tutorial](https://smarthome.yoavmor.com/home-assistant/adding-ai-to-your-home-assistant-notifications/).
+I use a conversation agent to vary the wording of routine notifications.
 The automation supplies the facts, the agent rewrites them, and WhatsApp sends
 the result. If the agent fails or returns no usable text, this script sends
 the original message.

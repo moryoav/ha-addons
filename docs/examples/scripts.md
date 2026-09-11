@@ -1,8 +1,7 @@
 # Reusable notification scripts
 
 I use scripts to share notification behavior between automations and to return
-the WhatsApp send response to the caller. The examples below are simplified
-versions of those patterns, with fictional recipients.
+the WhatsApp send response to the caller. The examples use fictional recipients.
 
 ## Send a notification and return its response
 

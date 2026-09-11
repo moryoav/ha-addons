@@ -11,7 +11,7 @@ filters, text extraction, media types, and conversation replies.
 | `whatsapp_message_sent` | An outgoing WhatsApp message reported by the connected session. |
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
 | `whatsapp_presence_update` | A contact presence update. |
-| `whatsapp_send_message_result` | Compatibility result event after sending a message. |
+| `whatsapp_send_message_result` | Result event after a successful send action. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
 ## Message events
@@ -21,16 +21,15 @@ filters, text extraction, media types, and conversation replies.
 `message` payload. Other fields, such as `messageTimestamp`, are passed through
 when present.
 
-Starting with add-on 1.4.39, `whatsapp_message_sent` fires for messages with
+`whatsapp_message_sent` requires add-on 1.4.39 or newer. It fires for messages with
 `key.fromMe: true`, including messages sent from the phone, other linked
 devices, and the add-on itself when reported by WhatsApp. For this event,
 `key.remoteJid` identifies the destination chat or group and can be a LID.
-The existing dedupe checks apply to both directions. The event reports a sent
+The dedupe checks apply to both directions. The event reports a sent
 message observed by the session; it is not a delivery or read receipt.
 
-Only the add-on needs updating for this event. It sends the event directly to
-Home Assistant, so no integration update is required. Existing received-message
-automations still use `new_whatsapp_message`. Logging automations can listen to
+The add-on sends the event directly to Home Assistant. Received-message
+automations use `new_whatsapp_message`. Logging automations can listen to
 both events, as in the [logging example](../examples/automations.md#log-received-and-sent-messages). Reply and mark-as-read automations should
 keep listening only to the received-message event to avoid acting on own sends.
 
@@ -48,8 +47,7 @@ The integration fires `whatsapp_send_message_result` after a successful
 message events use **`clientId`**. It is not a delivery receipt and does not
 collect messages sent from the phone.
 
-My [advanced automations tutorial](https://smarthome.yoavmor.com/home-assistant/enhancing-the-whatsapp-addon-for-home-assistant-new-features-for-advanced-automations/)
-stores the last message ID in a Text helper. Create
+I store the last message ID in a Text helper. Create
 `input_text.whatsapp_last_sent_id` with a maximum length of 255, then filter
 the collector to one client and destination:
 

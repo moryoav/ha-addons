@@ -226,3 +226,7 @@ curl -X POST \
 Keep the webhook ID private. This is a
 [Home Assistant webhook](https://www.home-assistant.io/docs/automation/trigger/#webhook-trigger)
 that calls the integration; it does not expose the add-on API.
+
+An external monitor on the local network can use this webhook while Home
+Assistant is reachable. To report a Home Assistant outage, the monitor needs a
+notification route that works independently of Home Assistant.

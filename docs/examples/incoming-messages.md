@@ -120,8 +120,7 @@ For outgoing alerts, see [AI-written notifications](ai-notifications.md).
 
 ## Recognize incoming media
 
-The existing workflows branch on the event's detected `type` and inspect the
-matching message object:
+I branch on the event's detected `type` and inspect the matching message object:
 
 | Event `type` | Message field | Use in a workflow |
 | --- | --- | --- |
@@ -161,7 +160,7 @@ cover the listed shapes and do not implement a general Baileys message decoder.
 
 ## Workflows that need separate helpers
 
-I also found these combinations in the existing configuration:
+These workflows require another integration or a custom helper:
 
 | Workflow | Additional requirement |
 | --- | --- |
