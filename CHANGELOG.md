@@ -4,6 +4,10 @@ All notable changes to this repository are documented here.
 
 ## Unreleased
 
+- Added a searchable GitHub Pages knowledge base with the existing message,
+  presence, recipient, and automation examples, plus action and event references.
+- Replaced the README and add-on documentation example sections with links to
+  the knowledge base, and added automatic MkDocs validation and publication.
 - Added GitHub Sponsors alongside Ko-fi in the README's general support section.
 
 ## 1.4.41

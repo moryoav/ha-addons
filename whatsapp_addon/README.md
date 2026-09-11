@@ -218,6 +218,8 @@ Redact them from logs, issue reports, screenshots, and automation traces.
 
 ## Documentation
 
-See [the repository README](https://github.com/moryoav/ha-addons/blob/main/README.md) for HACS integration setup, actions, events, examples, troubleshooting, and removal instructions.
+See [the repository README](https://github.com/moryoav/ha-addons/blob/main/README.md) for HACS integration setup, actions, events, troubleshooting, and removal instructions.
 
-See [the add-on documentation](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md) for additional action examples and [the add-on changelog](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/CHANGELOG.md) for release notes.
+I keep the action and automation examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
+
+See [the add-on documentation](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md) for add-on options and the web UI, and [the add-on changelog](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/CHANGELOG.md) for release notes.

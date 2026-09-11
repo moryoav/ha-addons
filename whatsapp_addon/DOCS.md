@@ -140,159 +140,14 @@ client return the `client_recovery_paused` error until Retry or Reset and
 re-pair is started. This recovery mode contains the failure but does not fix
 the underlying upstream encryption problem.
 
-### **How to get a User ID**
+## Action examples
 
-A WhatsApp target id can use one of these formats:
+I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
 
-- Phone-number user JID: fictional `12025550123@s.whatsapp.net`
-- New WhatsApp LID user JID: synthetic `999000111222333@lid`
-- Group JID: synthetic `120363000000000000@g.us`
-- Broadcast JID: `status@broadcast`
-
-If you only pass a phone number, the add-on appends `@s.whatsapp.net`. If Home Assistant receives or stores an `@lid` id, pass it back exactly as received. Do not convert it to a phone-number JID.
-
-When replying to an incoming event, the safest target is usually:
-
-```jinja2
-{{ trigger.event.data.key.remoteJid }}
-```
-
-The add-on suppresses duplicate inbound phone/LID deliveries when WhatsApp sends
-the same message twice with different `remoteJid` values during the LID
-migration.
-
-### **Check whether a phone number is registered**
-
-```yaml
-- action: whatsapp.check_number
-  data:
-    clientId: default
-    to: "+12025550123"
-  response_variable: number_check
-```
-
-This action requires `response_variable`. `to` may be an international phone
-number containing bare digits with an optional leading `+`, or a phone-number
-`@s.whatsapp.net` JID. Groups, LIDs, broadcasts, and device-qualified JIDs are
-rejected because Baileys does not provide the same authoritative lookup for
-those identifiers.
-
-The response has this shape:
-
-```yaml
-jid: 12025550123@s.whatsapp.net
-exists: true
-lid: 999000111222333@lid
-```
-
-An unregistered number returns `exists: false` and normally `lid: null`; it is
-not an action failure. A lookup confirms registration at that moment only. It
-does not guarantee a later message will be delivered or read. Avoid bulk or
-repeated enumeration and treat `to`, `jid`, and `lid` as private identifiers.
-
-Invalid input, an unknown or disconnected `clientId`, a stale API token, rate
-limiting, and an upstream WhatsApp failure are distinct action errors. They are
-not returned as `exists: false`, so automations can distinguish an unregistered
-number from an operational failure.
-
-`whatsapp.send_message` sends direct phone JIDs without a registration lookup;
-bare phone numbers retain the existing lookup before sending. Use
-`whatsapp.check_number` when a workflow needs an explicit preflight and a
-structured registration response.
-
-### **Send a simple text message**
-
-```yaml
-action: whatsapp.send_message
-data:
-  clientId: default
-  to: 12025550123@s.whatsapp.net # Fictional User ID
-  body:
-    text: Hi it's a simple text message
-```
-
-### **Send a message and capture the response**
-
-```yaml
-- action: whatsapp.send_message
-  response_variable: whatsapp_result
-  data:
-    clientId: default
-    to: 12025550123@s.whatsapp.net
-    body:
-      text: Hi, this response contains the sent WhatsApp message id
-```
-
-The response includes `client_id`, `to`, `body`, `sent_message`, and
-`message_id`. For compatibility with older automations, the integration also
-fires `whatsapp_send_message_result` after a message is sent. Success means the
-linked client accepted the send operation; it does not guarantee delivery,
-receipt, or that the recipient read the message.
-
-### **How to send an image**
-
-```yaml
-action: whatsapp.send_message
-data:
-  clientId: default
-  to: 12025550123@s.whatsapp.net
-  body:
-    image:
-      url: "https://dummyimage.com/600x400/000/fff.png"
-    caption: Simple text
-```
-
-### **How to send audio message**
-
-```yaml
-action: whatsapp.send_message
-data:
-  clientId: default
-  to: 12025550123@s.whatsapp.net
-  body:
-    audio:
-      url: "https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/examples/hello_world.mp3?raw=true"
-    ptt: true # Send audio as a voice
-```
-
-### **How to send a location**
-
-```yaml
-action: whatsapp.send_message
-data:
-  clientId: default
-  to: 12025550123@s.whatsapp.net
-  body:
-    location:
-      degreesLatitude: 24.121231
-      degreesLongitude: 55.1121221
-```
-
-### **How to subscribe to presence update**
-
-```yaml
-action: whatsapp.presence_subscribe
-data:
-  clientId: default
-  userId: 12025550123@s.whatsapp.net
-```
-
-### **How to mark a received message as read**
-
-```yaml
-action: whatsapp.read_messages
-data:
-  clientId: "{{ trigger.event.data.clientId }}"
-  body:
-    keys:
-      id: "{{ trigger.event.data.key.id }}"
-      remoteJid: "{{ trigger.event.data.key.remoteJid }}"
-      fromMe: "{{ trigger.event.data.key.fromMe }}"
-```
-
-`read_messages` expects the key from the received `new_whatsapp_message` event.
-
----
+- [Messages and media](https://moryoav.github.io/ha-addons/examples/messages/): text, images, voice messages, locations, send responses, and reactions.
+- [Recipients and number lookup](https://moryoav.github.io/ha-addons/examples/recipients/): identifiers and WhatsApp registration checks.
+- [Presence](https://moryoav.github.io/ha-addons/examples/presence/): subscriptions and online notifications.
+- [Automations](https://moryoav.github.io/ha-addons/examples/automations/): incoming calls, logging, replies, read markers, and arrival messages.
 
 ## Events
 
@@ -322,7 +177,7 @@ does not confirm delivery or that the recipient has read the message.
 
 The add-on sends this event directly to Home Assistant, so only the add-on
 needs updating. Logging automations can listen to both message events; see the
-[logging example](https://github.com/moryoav/ha-addons#log-received-and-sent-messages).
+[logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages).
 Keep reply and mark-as-read automations on `new_whatsapp_message` so they do not
 act on outgoing messages.
 
@@ -350,153 +205,12 @@ activates the recovery pause described above.
 
 ---
 
-## **Sample automations**
+## Sample automations
 
-## Incoming WhatsApp call
-
-```yaml
-- alias: Incoming WhatsApp call
-  trigger:
-    - platform: event
-      event_type: whatsapp_call_update
-      event_data:
-        status: offer
-  action:
-    - action: persistent_notification.create
-      data:
-        title: Incoming WhatsApp call
-        message: >-
-          {{ "Video" if trigger.event.data.isVideo else "Voice" }} call from
-          {{ trigger.event.data.from or "an unknown caller" }}.
-  mode: queued
-```
-
-## Ping Pong
-
-```yaml
-- alias: Ping Pong
-  description: ""
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-  condition:
-    - condition: template
-      value_template: "{{ trigger.event.data.message.conversation == '!ping' }}"
-  action:
-    - action: whatsapp.send_message
-      data:
-        clientId: default
-        to: "{{ trigger.event.data.key.remoteJid }}"
-        body:
-          text: pong
-  mode: single
-```
-
-## Mark incoming messages as read
-
-```yaml
-- alias: Mark WhatsApp messages as read
-  description: ""
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-  condition: []
-  action:
-    - action: whatsapp.read_messages
-      data:
-        clientId: "{{ trigger.event.data.clientId }}"
-        body:
-          keys:
-            id: "{{ trigger.event.data.key.id }}"
-            remoteJid: "{{ trigger.event.data.key.remoteJid }}"
-            fromMe: "{{ trigger.event.data.key.fromMe }}"
-  mode: queued
-```
-
-## Arrive at home
-
-```yaml
-- alias: Arrive at home
-  description: ""
-  trigger:
-    - platform: device
-      domain: device_tracker
-      entity_id: device_tracker.example_phone
-      type: enter
-      zone: zone.home
-  condition: []
-  action:
-    - action: whatsapp.send_message
-      data:
-        clientId: default
-        to: 12025550123@s.whatsapp.net
-        body:
-          text: Hi, I'm at home
-  mode: single
-```
-
-## Driving mode
-
-```yaml
-- alias: Driving mode
-  description: ""
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-  condition: []
-  action:
-    - action: whatsapp.send_message
-      data:
-        clientId: "{{ trigger.event.data.clientId }}" # Which instance of whatsapp should the message come from
-        to: "{{ trigger.event.data.key.remoteJid }}"
-        body:
-          text: Sorry, I'm driving, I will contact you soon
-        options:
-          quoted: "{{ trigger.event.data }}" # Quote message
-  mode: single
-```
-
-## Message reaction
-
-```yaml
-- alias: React to message
-  description: ""
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-  condition: []
-  action:
-    - action: whatsapp.send_message
-      data:
-        clientId: "{{ trigger.event.data.clientId }}"
-        to: "{{ trigger.event.data.key.remoteJid }}"
-        body:
-          react:
-            text: "👍🏻" # Use an empty string to remove the reaction
-            key: "{{ trigger.event.data.key }}"
-  mode: single
-```
-
-## Presence notify (SUBSCRIBE FIRST!)
-
-```yaml
-- alias: Nuova automazione
-  description: ""
-  trigger:
-    - platform: event
-      event_type: whatsapp_presence_update
-      event_data: {}
-  condition:
-    - condition: template
-      value_template:
-        "{{ trigger.event.data.presences['12025550123@s.whatsapp.net'].lastKnownPresence
-        == 'available' }}"
-  action:
-    - action: persistent_notification.create
-      data:
-        message: Contact is online!
-  mode: single
-```
+I keep the [automation examples](https://moryoav.github.io/ha-addons/examples/automations/) in the knowledge base,
+including incoming calls, message logging, replies, read markers, arrival messages,
+and quoted replies. See also [reactions](https://moryoav.github.io/ha-addons/examples/messages/#react-to-an-incoming-message)
+and [presence notifications](https://moryoav.github.io/ha-addons/examples/presence/#notify-when-a-contact-is-online).
 
 ## Privacy and compatibility
 

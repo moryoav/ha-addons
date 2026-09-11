@@ -222,7 +222,7 @@ message observed by the session; it is not a delivery or read receipt.
 Only the add-on needs updating for this event. It sends the event directly to
 Home Assistant, so no integration update is required. Existing received-message
 automations still use `new_whatsapp_message`. Logging automations can listen to
-both events, as in the example below. Reply and mark-as-read automations should
+both events, as in the [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages). Reply and mark-as-read automations should
 keep listening only to the received-message event to avoid acting on own sends.
 
 `whatsapp_call_update` fires for every call lifecycle update reported by
@@ -268,150 +268,12 @@ When replying to an incoming event, the safest target is usually:
 
 ## Examples
 
-### Send a text message
+I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
 
-```yaml
-action: whatsapp.send_message
-data:
-  clientId: default
-  to: 12025550123@s.whatsapp.net
-  body:
-    text: Hi from Home Assistant
-```
-
-### Capture the sent message id
-
-```yaml
-- action: whatsapp.send_message
-  response_variable: whatsapp_result
-  data:
-    clientId: default
-    to: 12025550123@s.whatsapp.net
-    body:
-      text: This call stores the sent WhatsApp message id.
-```
-
-### Notify when an incoming WhatsApp call is offered
-
-```yaml
-- alias: Incoming WhatsApp call
-  trigger:
-    - platform: event
-      event_type: whatsapp_call_update
-      event_data:
-        status: offer
-  action:
-    - action: persistent_notification.create
-      data:
-        title: Incoming WhatsApp call
-        message: >-
-          {{ "Video" if trigger.event.data.isVideo else "Voice" }} call from
-          {{ trigger.event.data.from or "an unknown caller" }}.
-  mode: queued
-```
-
-### Log received and sent messages
-
-```yaml
-- alias: Log WhatsApp messages
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-    - platform: event
-      event_type: whatsapp_message_sent
-  action:
-    - action: logbook.log
-      data:
-        name: "WhatsApp ({{ trigger.event.data.clientId }})"
-        message: >-
-          {% set data = trigger.event.data %}
-          {{ "Sent" if data.key.fromMe else "Received" }}:
-          {{ data.message.get("conversation") or
-             data.message.get("extendedTextMessage", {}).get("text") or
-             "[" ~ data.type ~ "]" }}
-  mode: queued
-```
-
-This example logs text messages and uses the message type for other content.
-To check outgoing events after updating the add-on, listen for
-`whatsapp_message_sent` in **Developer tools** -> **Events**, then send a
-message from the linked phone.
-
-### Reply to `!ping`
-
-```yaml
-- alias: WhatsApp ping pong
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-  condition:
-    - condition: template
-      value_template: "{{ trigger.event.data.message.conversation == '!ping' }}"
-  action:
-    - action: whatsapp.send_message
-      data:
-        clientId: "{{ trigger.event.data.clientId }}"
-        to: "{{ trigger.event.data.key.remoteJid }}"
-        body:
-          text: pong
-  mode: single
-```
-
-### Mark incoming messages as read
-
-```yaml
-- alias: Mark WhatsApp messages as read
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-  action:
-    - action: whatsapp.read_messages
-      data:
-        clientId: "{{ trigger.event.data.clientId }}"
-        body:
-          keys:
-            id: "{{ trigger.event.data.key.id }}"
-            remoteJid: "{{ trigger.event.data.key.remoteJid }}"
-            fromMe: "{{ trigger.event.data.key.fromMe }}"
-  mode: queued
-```
-
-### Check whether a phone number is registered
-
-```yaml
-- action: whatsapp.check_number
-  data:
-    clientId: default
-    to: "+12025550123"
-  response_variable: number_check
-```
-
-`whatsapp.check_number` requires `response_variable`. It accepts an
-international phone number as bare digits with an optional leading `+`, or a
-phone-number `@s.whatsapp.net` JID. It does not accept groups, LIDs, broadcasts,
-or device-qualified JIDs.
-
-The response has this shape:
-
-```yaml
-jid: 12025550123@s.whatsapp.net
-exists: true
-lid: 999000111222333@lid
-```
-
-`exists: false` is a successful lookup and normally has `lid: null`. The lookup
-checks WhatsApp registration at that moment; it does not guarantee that a
-subsequent message will be delivered. Avoid bulk or repeated enumeration, and
-treat the returned JID and LID as private account identifiers.
-
-Invalid input, an unknown or disconnected client, rate limiting, authentication
-failure, and an upstream WhatsApp failure are reported as action errors. They
-are never collapsed into `exists: false`.
-
-`whatsapp.send_message` sends direct phone JIDs without a registration lookup;
-bare phone numbers retain the existing lookup before sending. Call
-`whatsapp.check_number` when an automation needs an explicit preflight and a
-structured registration response.
+- [Messages and media](https://moryoav.github.io/ha-addons/examples/messages/): text, images, voice messages, locations, send responses, and reactions.
+- [Recipients and number lookup](https://moryoav.github.io/ha-addons/examples/recipients/): identifiers and WhatsApp registration checks.
+- [Presence](https://moryoav.github.io/ha-addons/examples/presence/): subscriptions and online notifications.
+- [Automations](https://moryoav.github.io/ha-addons/examples/automations/): incoming calls, logging, replies, read markers, and arrival messages.
 
 ## Data updates
 

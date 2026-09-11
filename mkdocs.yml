@@ -1,0 +1,35 @@
+site_name: WhatsApp for Home Assistant
+site_description: Home Assistant WhatsApp actions, events, and automation examples.
+site_url: https://moryoav.github.io/ha-addons/
+repo_url: https://github.com/moryoav/ha-addons
+repo_name: moryoav/ha-addons
+edit_uri: edit/main/docs/
+
+theme:
+  name: readthedocs
+  highlightjs: true
+  hljs_languages:
+    - yaml
+    - jinja2
+
+nav:
+  - Home: index.md
+  - Examples:
+      - Messages and media: examples/messages.md
+      - Recipients and number lookup: examples/recipients.md
+      - Presence: examples/presence.md
+      - Automations: examples/automations.md
+  - Reference:
+      - Actions: reference/actions.md
+      - Events: reference/events.md
+
+plugins:
+  - search
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn

@@ -108,6 +108,28 @@ For add-on changes, verify that the add-on can:
 
 For HACS readiness, the HACS and Hassfest GitHub Actions should pass without ignored checks before opening a HACS/default submission.
 
+## Documentation
+
+I keep the knowledge base source in `docs/` and its navigation in `mkdocs.yml`.
+To preview documentation changes locally:
+
+```bash
+python -m pip install -r requirements_docs.txt
+python -m mkdocs serve
+```
+
+Check the site before submitting changes:
+
+```bash
+python -m mkdocs build --strict
+```
+
+The Documentation workflow checks pull requests and publishes documentation
+changes from `main` to [GitHub Pages](https://moryoav.github.io/ha-addons/).
+The generated `site/` directory is ignored by Git. Edit the Markdown source
+in `docs/` to update examples, and keep the README and add-on documentation links
+pointing to the relevant knowledge base pages.
+
 ## Security Notes
 
 This project can send WhatsApp messages and process WhatsApp event payloads. Please be especially careful with changes involving:
