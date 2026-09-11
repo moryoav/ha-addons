@@ -7,10 +7,12 @@ call, and presence events through the companion add-on.
 
 | Topic | Examples |
 | --- | --- |
-| [Messages and media](examples/messages.md) | Text, send responses, images, voice messages, locations, and reactions. |
+| [Messages and media](examples/messages.md) | Text, stickers, documents, videos, polls, voice messages, locations, reactions, and quoted follow-ups. |
 | [Recipients and number lookup](examples/recipients.md) | Phone JIDs, LIDs, groups, and registration checks. |
-| [Presence](examples/presence.md) | Subscribe to a contact and notify when they are available. |
-| [Automations](examples/automations.md) | Incoming calls, message logging, replies, read markers, and arrival messages. |
+| [Presence](examples/presence.md) | Subscriptions, online notifications, typing indicators, and a bounded typing loop. |
+| [Automations](examples/automations.md) | Calls, logging, replies, read markers, arrival messages, sensor alerts, and webhooks. |
+| [Reusable scripts](examples/scripts.md) | Return send responses, quote notifications, save message keys, and send files prepared by helpers. |
+| [Incoming messages and agents](examples/incoming-messages.md) | Filter chats, extract text, reply with a conversation agent, and recognize incoming media. |
 
 ## Reference
 
@@ -19,6 +21,11 @@ call, and presence events through the companion add-on.
 
 The examples use fictional phone numbers and synthetic identifiers. Replace
 `clientId`, recipients, and entity IDs with the values from your installation.
+
+I adapted the additional recipes from existing Home Assistant automations and
+scripts. I also verified poll creation with a live send and a returned vote
+event. Examples that need another integration or a custom helper list that
+dependency.
 
 ## Setup and support
 

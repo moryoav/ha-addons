@@ -2,6 +2,9 @@
 
 The add-on fires these Home Assistant events:
 
+See [incoming message examples](../examples/incoming-messages.md) for chat
+filters, text extraction, media types, and conversation replies.
+
 | Event type | Description |
 | --- | --- |
 | `new_whatsapp_message` | A received WhatsApp message. |

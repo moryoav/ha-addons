@@ -23,3 +23,5 @@ the recipient read the message.
 - [Recipients and number lookup](../examples/recipients.md)
 - [Presence](../examples/presence.md)
 - [Automations and read markers](../examples/automations.md)
+- [Reusable notification scripts](../examples/scripts.md)
+- [Incoming messages and conversation agents](../examples/incoming-messages.md)

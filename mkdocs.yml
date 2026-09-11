@@ -19,6 +19,8 @@ nav:
       - Recipients and number lookup: examples/recipients.md
       - Presence: examples/presence.md
       - Automations: examples/automations.md
+      - Reusable scripts: examples/scripts.md
+      - Incoming messages and agents: examples/incoming-messages.md
   - Reference:
       - Actions: reference/actions.md
       - Events: reference/events.md

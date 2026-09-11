@@ -144,10 +144,12 @@ the underlying upstream encryption problem.
 
 I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
 
-- [Messages and media](https://moryoav.github.io/ha-addons/examples/messages/): text, images, voice messages, locations, send responses, and reactions.
+- [Messages and media](https://moryoav.github.io/ha-addons/examples/messages/): text, stickers, documents, videos, polls, voice messages, locations, and reactions.
 - [Recipients and number lookup](https://moryoav.github.io/ha-addons/examples/recipients/): identifiers and WhatsApp registration checks.
-- [Presence](https://moryoav.github.io/ha-addons/examples/presence/): subscriptions and online notifications.
-- [Automations](https://moryoav.github.io/ha-addons/examples/automations/): incoming calls, logging, replies, read markers, and arrival messages.
+- [Presence](https://moryoav.github.io/ha-addons/examples/presence/): subscriptions, online notifications, and typing indicators.
+- [Automations](https://moryoav.github.io/ha-addons/examples/automations/): calls, logging, replies, read markers, sensor alerts, and local webhooks.
+- [Reusable scripts](https://moryoav.github.io/ha-addons/examples/scripts/): send responses, quoted follow-ups, and saved message keys.
+- [Incoming messages and agents](https://moryoav.github.io/ha-addons/examples/incoming-messages/): chat filters, text extraction, and conversation replies.
 
 ## Events
 

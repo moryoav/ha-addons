@@ -4,6 +4,11 @@ All notable changes to this repository are documented here.
 
 ## Unreleased
 
+- Expanded the knowledge base with sanitized examples from existing Home
+  Assistant automations and scripts: stickers, documents, videos, polls, typing,
+  quoted follow-ups, saved message keys, reusable scripts, agent replies, sensor
+  alerts, and local webhooks. Documented custom-helper requirements and verified
+  poll creation and a returned vote event with a live test.
 - Added a searchable GitHub Pages knowledge base with the existing message,
   presence, recipient, and automation examples, plus action and event references.
 - Replaced the README and add-on documentation example sections with links to

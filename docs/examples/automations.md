@@ -152,3 +152,77 @@ This example replies to every incoming message while the automation is enabled.
 
 For more event-based examples, see [message reactions](messages.md#react-to-an-incoming-message)
 and [presence notifications](presence.md#notify-when-a-contact-is-online).
+
+## Send a sensor alert with a templated message
+
+I use the same send action for water, temperature, appliance, and availability
+alerts. The trigger supplies the value included in the message. Replace the
+sample entity and threshold with your own.
+
+```yaml
+- alias: WhatsApp temperature alert
+  triggers:
+    - trigger: numeric_state
+      entity_id: sensor.example_temperature
+      above: 30
+      for: "00:05:00"
+  actions:
+    - action: whatsapp.send_message
+      data:
+        clientId: default
+        to: 120363000000000000@g.us
+        body:
+          text: >-
+            The temperature is {{ trigger.to_state.state }}
+            {{ trigger.to_state.attributes.get('unit_of_measurement', '') }}.
+  mode: single
+```
+
+This numeric-state trigger fires when the value crosses the threshold and
+stays above it for five minutes. To add a completion reaction or a threaded
+follow-up later, keep the send response as shown in
+[reusable notification scripts](scripts.md).
+
+## Forward a local webhook to WhatsApp
+
+I use a Home Assistant webhook to accept text from another local application.
+The recipient and client remain fixed in the automation. Replace the webhook
+ID with your own long, random value before using the example.
+
+```yaml
+- alias: Forward a local webhook to WhatsApp
+  triggers:
+    - trigger: webhook
+      webhook_id: REPLACE_WITH_LONG_RANDOM_ID
+      allowed_methods:
+        - POST
+      local_only: true
+  conditions:
+    - condition: template
+      value_template: >-
+        {{ trigger.json is defined and trigger.json is mapping
+           and trigger.json.get('msg') is string
+           and trigger.json.msg | trim != '' }}
+  actions:
+    - action: whatsapp.send_message
+      data:
+        clientId: default
+        to: 120363000000000000@g.us
+        body:
+          text: "{{ trigger.json.msg | trim }}"
+  mode: queued
+  max: 10
+```
+
+The sending application posts JSON with `Content-Type: application/json`:
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"msg":"The backup is complete."}' \
+  "http://homeassistant.local:8123/api/webhook/REPLACE_WITH_LONG_RANDOM_ID"
+```
+
+Keep the webhook ID private. This is a
+[Home Assistant webhook](https://www.home-assistant.io/docs/automation/trigger/#webhook-trigger)
+that calls the integration; it does not expose the add-on API.
