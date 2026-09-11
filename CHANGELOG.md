@@ -2,7 +2,9 @@
 
 All notable changes to this repository are documented here.
 
-## Unreleased
+## 1.4.42
+
+Documentation release. Add-on runtime and integration behavior are unchanged.
 
 - Clarified static sticker requirements: WebP format, exactly 512 x 512 pixels,
   a transparent background, and a file size under 100 KB.

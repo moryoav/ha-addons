@@ -1,3 +1,11 @@
+## 1.4.42
+
+- Linked the add-on documentation to the searchable GitHub Pages knowledge base
+  with current action, event, media, presence, and automation examples.
+- Added examples for notification scripts, conversation history, AI-written
+  notifications, and sensor charts, plus the static sticker image requirements.
+- Published a documentation release with no runtime behavior changes.
+
 ## 1.4.41
 
 - Fixed missing link previews on outgoing URL messages by including the required
