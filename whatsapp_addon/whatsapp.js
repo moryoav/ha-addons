@@ -116,6 +116,8 @@ class WhatsappClient extends EventEmitter {
   #baileys;
   #socketLogger;
   #decryptionDiagnostics;
+  #experimentalLidSenderReceipts;
+  #lidSenderReceipts;
 
   #status = {
     attempt: 0,
@@ -136,6 +138,7 @@ class WhatsappClient extends EventEmitter {
     baileys,
     socketLogger,
     decryptionDiagnostics = false,
+    experimentalLidSenderReceipts = false,
     autoConnect = true,
   }) {
     super();
@@ -152,6 +155,7 @@ class WhatsappClient extends EventEmitter {
     this.#messageDedupe = new MessageDedupe();
     this.#baileys = baileys || import("@whiskeysockets/baileys");
     this.#decryptionDiagnostics = decryptionDiagnostics === true;
+    this.#experimentalLidSenderReceipts = experimentalLidSenderReceipts === true;
     this.#socketLogger =
       socketLogger ||
       (this.#decryptionDiagnostics
@@ -243,6 +247,16 @@ class WhatsappClient extends EventEmitter {
     if (!this.#conn?.ev || typeof this.#conn.ev.on !== "function") {
       throw new WhatsappProtocolError();
     }
+    if (this.#experimentalLidSenderReceipts) {
+      // No helper load, extra handlers or metadata cache in the default-off path.
+      const { attachLidSenderReceipts } = require("./lid-sender-receipts");
+      this.#closeLidSenderReceipts();
+      this.#lidSenderReceipts = attachLidSenderReceipts({
+        socket,
+        isCurrent: () => this.#conn === socket && !this.#status.disconnected,
+        onDiagnostic: (diagnostic) => this.#emitDecryptionDiagnostic(() => diagnostic),
+      });
+    }
     // Register before the connection opens and before HA consumers strip context.
     socket.ev.on("messages.upsert", ({ messages }) => {
       if (this.#conn !== socket || this.#retryCache !== retryCache) return;
@@ -298,6 +312,7 @@ class WhatsappClient extends EventEmitter {
   };
 
   disconnect = async (reconnect = false) => {
+    this.#closeLidSenderReceipts();
     clearInterval(this.#refreshInterval);
     clearInterval(this.#sendPresenceUpdateInterval);
     clearTimeout(this.#reconnectTimer);
@@ -364,6 +379,11 @@ class WhatsappClient extends EventEmitter {
       ...result,
       ...this.#retryCache.stats,
     }));
+  };
+
+  #closeLidSenderReceipts = () => {
+    this.#lidSenderReceipts?.close();
+    this.#lidSenderReceipts = undefined;
   };
 
   #clearRetryCache = () => {

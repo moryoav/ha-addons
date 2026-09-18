@@ -154,6 +154,16 @@ const normalizeDecryptionDiagnostics = (value) => {
   return value;
 };
 
+const normalizeExperimentalLidSenderReceipts = (value) => {
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") {
+    throw new RequestValidationError(
+      "experimental_lid_sender_receipts must be a boolean."
+    );
+  }
+  return value;
+};
+
 const parseOptions = (content) => {
   let options;
   try {
@@ -170,6 +180,10 @@ const parseOptions = (content) => {
     decryptionDiagnostics: normalizeDecryptionDiagnostics(
       options.decryption_diagnostics
     ),
+    // Keep the legacy options/factory shape when this experiment is disabled.
+    ...(normalizeExperimentalLidSenderReceipts(options.experimental_lid_sender_receipts)
+      ? { experimentalLidSenderReceipts: true }
+      : {}),
   };
 };
 
@@ -298,6 +312,7 @@ const createAddonRuntime = ({
   fingerprintKey = PROCESS_LOG_KEY,
   logLevel = "info",
   decryptionDiagnostics = false,
+  experimentalLidSenderReceipts = false,
   runId = createRunId(),
   diagnostics,
   initialRecoveryRecord,
@@ -317,6 +332,9 @@ const createAddonRuntime = ({
   const debugEnabled = normalizeLogLevel(logLevel) === "debug";
   const decryptionDiagnosticsEnabled = normalizeDecryptionDiagnostics(
     decryptionDiagnostics
+  );
+  const experimentalLidSenderReceiptsEnabled = normalizeExperimentalLidSenderReceipts(
+    experimentalLidSenderReceipts
   );
   const callRetryWaiters = new Map();
   const recovery = {
@@ -704,6 +722,9 @@ const createAddonRuntime = ({
     const client = clientFactory({
       path: sessionPath,
       decryptionDiagnostics: decryptionDiagnosticsEnabled,
+      ...(experimentalLidSenderReceiptsEnabled
+        ? { experimentalLidSenderReceipts: true }
+        : {}),
     });
     clients[clientId] = client;
 
@@ -1105,6 +1126,9 @@ const startAddon = async ({
   const decryptionDiagnostics = normalizeDecryptionDiagnostics(
     options.decryptionDiagnostics
   );
+  const experimentalLidSenderReceipts = normalizeExperimentalLidSenderReceipts(
+    options.experimentalLidSenderReceipts
+  );
   if (logger && typeof logger === "object") logger.level = logLevel;
 
   const diagnostics = diagnosticsFactory({
@@ -1134,6 +1158,11 @@ const startAddon = async ({
     decryptionDiagnostics,
     clientCount: Array.isArray(clientIds) ? clientIds.length : 0,
   });
+  if (experimentalLidSenderReceipts) {
+    logger.warn?.("Experimental LID sender receipts enabled; live validation is required.", {
+      runId: safeRunId,
+    });
+  }
   await diagnostics.start?.();
 
   let runtime;
@@ -1175,6 +1204,7 @@ const startAddon = async ({
       logger,
       logLevel,
       decryptionDiagnostics,
+      experimentalLidSenderReceipts,
       runId: safeRunId,
       diagnostics,
       initialRecoveryRecord,
@@ -1275,6 +1305,7 @@ module.exports = {
   loadOptions,
   normalizeApiToken,
   normalizeDecryptionDiagnostics,
+  normalizeExperimentalLidSenderReceipts,
   normalizeLogLevel,
   normalizeCallUpdate,
   parseOptions,

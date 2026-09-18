@@ -14,6 +14,9 @@ The add-on options are:
   records complete message metadata and decoded message structures, exact JIDs
   and message IDs, retry activity, and encrypted payload fingerprints. Keep it
   disabled during normal operation.
+- `experimental_lid_sender_receipts`: `false` by default. Enables the experimental
+  own-device LID receipt workaround described below. Leave disabled unless
+  testing the replay/decryption-storm issue. No integration update is needed.
 - `api_token`: an optional bearer token for the internal add-on API. Use a
   strong random value for defense in depth. Leave it unset to preserve
   compatibility with existing internal-network installations. The value may
@@ -123,7 +126,7 @@ Open the add-on page and select Open Web UI. The Ingress UI shows each configure
 If the add-on detects a sustained burst of repeated libsignal decryption
 failures, it pauses every WhatsApp client to protect the host from a
 resource-consuming loop. The health endpoint and Ingress UI remain available,
-and Home Assistant creates one persistent notification directing you to the
+and Home Assistant creates one persistent notification directing the user to the
 Web UI. The privacy-safe pause marker survives an add-on or host restart.
 
 The recovery panel offers two choices:
@@ -139,6 +142,73 @@ client, detection pauses all clients. Normal action requests for a paused
 client return the `client_recovery_paused` error until Retry or Reset and
 re-pair is started. This recovery mode contains the failure but does not fix
 the underlying upstream encryption problem.
+
+### Experimental LID sender receipts
+
+This option is disabled by default and is intended only for investigating
+[issue #7](https://github.com/moryoav/ha-addons/issues/7). It is a fix candidate,
+not a confirmed solution for every decryption failure.
+
+To test, turn on **Experimental LID sender receipts** in the add-on's
+Configuration tab, save, and restart the add-on. The YAML option is
+`experimental_lid_sender_receipts: true`. No integration update, reload, or
+changes to automations are required. To roll back, switch it off, save, and
+restart. When disabled, no workaround handlers, tracking cache, or extra
+receipts are installed.
+
+When enabled, the add-on matches a direct encrypted own-device LID stanza to
+its successfully decrypted message and sends a supplemental `sender` delivery
+receipt to the originating device with the original recipient. This bypasses
+the LID-specific receipt-routing problem without modifying or upgrading
+Baileys. The existing Baileys receipt is not intercepted. These are not read
+receipts and do not mark chats as read.
+
+The supplemental receipt follows the same rule as the Baileys receipt it
+corrects: it covers every successfully decrypted payload, including edits,
+deletions, reactions and other control messages, because a misrouted receipt
+leaves any of them pending for replay. A redelivered copy, or the fresh copy a
+device sends in answer to a retry request, is acknowledged once that copy
+decrypts, so a message that was already stuck can still leave the server queue.
+
+The experiment excludes groups, broadcasts, newsletters, peer synchronization
+traffic, other people's incoming messages, failed or partial decryptions, and
+local sends without a matching incoming stanza. If two of the account's devices
+ever present the same message ID, the match is skipped rather than guessing a
+device. It never acknowledges a copy that failed to decrypt, discards messages,
+resets sessions, changes encryption state, or weakens the protective recovery
+pause.
+
+Tracking is in-memory and per socket: at most 1,024 metadata records with a
+five-minute expiry, at most 1,024 queued receipts, and one network write at a
+time. No plaintext or ciphertext is read or retained by this tracking cache.
+Disconnect, logout, reset, or socket replacement discards the tracking state.
+Write errors are contained; there is no additional automatic receipt-retry loop.
+
+Decryption Diagnostics is independent of this switch. When enabled separately,
+it also records sanitized `lid_sender_receipts` outcomes such as `sent`,
+`send_failed`, `ambiguous`, and `queue_full`. `sent` means the socket write
+completed, not that WhatsApp has confirmed acceptance. Decryption Diagnostics
+also records private message data as described above; redact captures before
+sharing them.
+
+For validation, repeat a send that requires session setup, continue ordinary
+phone/desktop messaging, and observe multiple reconnects. Check whether
+successfully processed messages stop accumulating for replay and whether the
+pause remains absent. Also check normal notifications to yourself, direct
+contacts and groups.
+
+The earliest signal does not need a storm. With Decryption Diagnostics on, a
+message from one of the account's own devices (its `from` is the account's own
+LID and it carries a `recipient`) that was decrypted once should no longer come
+back with `offline` set after the next reconnect, and the recurring
+`Key used already or never filled` failures for `fromMe` messages should stop.
+If own messages are still redelivered after several reconnects, WhatsApp is not
+accepting the supplemental receipt and the experiment has failed; switch it off.
+
+Enabling this option does not clear an existing pause. Messages that were left
+pending before the switch was on replay and fail one more time while they
+drain, so recovery may still need the existing Retry or Reset and re-pair
+controls. Do not re-pair preemptively on an otherwise working system.
 
 ## Action examples
 

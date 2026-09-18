@@ -12,3 +12,10 @@ configuration:
   decryption_diagnostics:
     name: Decryption Diagnostics
     description: For internal debugging purposes only. Keep this switched off during normal operation.
+  experimental_lid_sender_receipts:
+    name: Experimental LID sender receipts
+    description: >-
+      Disabled by default. Tests supplemental delivery receipts for successfully
+      decrypted own-device LID messages to investigate replay/decryption storms.
+      Does not mark messages as read or reset pairing. Leave off unless testing
+      this issue. Save and restart the add-on after changing this switch.
