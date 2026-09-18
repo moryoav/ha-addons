@@ -25,6 +25,7 @@ const harness = async (settings = {}) => {
   const sockets = [];
   const sent = [];
   const baileys = {
+    proto: (await import("@whiskeysockets/baileys")).proto,
     DisconnectReason: { loggedOut: 401 },
     fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
     useMultiFileAuthState: async () => ({ state: { creds: {}, keys: {} }, saveCreds: async () => {} }),
