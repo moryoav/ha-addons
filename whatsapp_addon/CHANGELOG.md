@@ -1,3 +1,14 @@
+## 1.4.43
+
+- Added `experimental_lid_sender_receipts`, disabled by default, for testing
+  supplemental receipts after successful own-device direct-LID decryption.
+- Kept ordinary message handling, authentication, the protective recovery pause,
+  Baileys 6.7.23 and the Home Assistant integration unchanged.
+- Bounded per-socket metadata and receipt work, excluded failed decryptions,
+  group/control traffic and ambiguous matches, and added regression tests plus
+  opt-in validation and rollback instructions.
+- This is an experimental workaround for issue #7, not a confirmed cure.
+
 ## 1.4.42
 
 - Linked the add-on documentation to the searchable GitHub Pages knowledge base

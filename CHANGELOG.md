@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.43
+
+Add-on-only experimental release. The Home Assistant integration is unchanged.
+
+- Added the default-off `experimental_lid_sender_receipts` configuration switch
+  for investigating own-device LID message replay and decryption storms (#7).
+- When enabled, send supplemental sender receipts only after successful,
+  unambiguous direct own-device LID decryption. Keep normal message delivery,
+  authentication, the protective recovery pause and Baileys 6.7.23 unchanged.
+- Bound per-socket tracking and receipt queues, contain write failures, and
+  exclude groups, control traffic and failed decryptions. Added regression
+  tests plus opt-in validation and rollback instructions.
+- This is a fix candidate requiring live validation, not a confirmed cure.
+
 ## 1.4.42
 
 Documentation release. Add-on runtime and integration behavior are unchanged.
