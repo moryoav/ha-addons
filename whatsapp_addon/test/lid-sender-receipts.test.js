@@ -190,6 +190,31 @@ test("accepts ordinary media, wrapped text, any timestamp form, and bare own LID
   }
 });
 
+// Baileys freezes `socket.user` at creation and replaces `creds.me` at login, so on
+// the first connection after a pairing the own LID exists only in the live credentials.
+test("own identity is read from the live credentials, not the socket's creation-time snapshot", async () => {
+  const h = harness();
+  h.socket.user = { id: "12025550123:9@s.whatsapp.net" };
+  h.socket.authState = { creds: { me: { id: "12025550123:9@s.whatsapp.net" } } };
+  h.receive(); h.upsert(); await tick();
+  assert.deepEqual(h.sends, []); // No LID known yet: nothing is guessed.
+
+  h.socket.authState.creds.me = { ...h.socket.authState.creds.me, lid: `${OWN}:9@lid` };
+  assert.equal(h.socket.user.lid, undefined);
+  h.receive(raw({ id: "after-login" }));
+  h.upsert(message({ key: { id: "after-login", fromMe: true, remoteJid: PEER } }));
+  await tick();
+  assert.deepEqual(h.sends.map((node) => node.attrs.id), ["after-login"]);
+
+  // A different account logging in before the queued write must cancel it.
+  h.receive(raw({ id: "stale-login" }));
+  h.upsert(message({ key: { id: "stale-login", fromMe: true, remoteJid: PEER } }));
+  h.socket.authState.creds.me = { id: "12025550199:9@s.whatsapp.net", lid: "999999999999993:9@lid" };
+  await tick();
+  assert.deepEqual(h.sends.map((node) => node.attrs.id), ["after-login"]);
+  h.helper.close();
+});
+
 test("missing own LID or current device is not guessed", async () => {
   for (const property of ["lid", "id"]) {
     const h = harness();

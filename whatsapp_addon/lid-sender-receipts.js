@@ -75,6 +75,14 @@ const attachLidSenderReceipts = ({
     }
   };
   const keyFor = (recipient, id) => JSON.stringify([recipient, id]);
+  // Baileys assembles its socket by object spread, which turns `socket.user` into a
+  // snapshot taken at creation. Pairing stores no LID; it is first learned at login,
+  // and Baileys then replaces `creds.me` rather than updating it. So on the first
+  // connection after a pairing only the live credentials ever carry the own LID.
+  const me = () => {
+    const live = socket.authState?.creds?.me;
+    return { id: live?.id ?? socket.user?.id, lid: live?.lid ?? socket.user?.lid };
+  };
   const prune = () => {
     const time = now();
     for (const [key, record] of records) {
@@ -94,7 +102,7 @@ const attachLidSenderReceipts = ({
         if (record.ambiguous || record.expiresAt <= now() ||
             records.get(record.key) !== record) continue;
         // Recheck identity; never send receipts belonging to a previous login.
-        if (parseLid(socket.user?.lid)?.user !== record.ownUser) continue;
+        if (parseLid(me().lid)?.user !== record.ownUser) continue;
         try {
           // Bypass sendReceipt(), whose direct-LID branch is defective in 6.x.
           // 'sender' is a linked-device delivery receipt, NOT a 'read' receipt.
@@ -125,11 +133,11 @@ const attachLidSenderReceipts = ({
     try {
       if (!active() || node?.tag !== "message") return;
       const attrs = node.attrs || {};
-      const own = parseLid(socket.user?.lid);
+      const own = parseLid(me().lid);
       const sender = parseLid(attrs.from);
       const recipient = parseLid(attrs.recipient);
       const id = attrs.id;
-      const ownDevice = /:(\d{1,5})@/.exec(socket.user?.id || "")?.[1];
+      const ownDevice = /:(\d{1,5})@/.exec(me().id || "")?.[1];
       if (!own || !sender || !recipient || sender.user !== own.user ||
           attrs.recipient.includes(":") || ownDevice === undefined ||
           sender.device === Number(ownDevice) || attrs.participant != null ||

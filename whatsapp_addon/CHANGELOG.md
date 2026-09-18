@@ -1,3 +1,14 @@
+## 1.4.44
+
+- Fixed `experimental_lid_sender_receipts` doing nothing on the first connection
+  after a new pairing. WhatsApp reports the account LID only at login, and the
+  workaround read a copy of the account details taken before that, so it started
+  working only after the first reconnect. Everything received in between was
+  left pending and failed together at that reconnect, as reported in issue #7.
+  It now reads the live credentials and is active from the first message.
+- Installations that were not re-paired were unaffected. The option stays off by
+  default, and the integration is unchanged.
+
 ## 1.4.43
 
 - Added `experimental_lid_sender_receipts`, disabled by default, for testing

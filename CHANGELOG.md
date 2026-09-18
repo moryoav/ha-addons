@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented here.
 
+## 1.4.44
+
+Add-on-only fix for the experimental option. The Home Assistant integration is
+unchanged.
+
+- Fixed `experimental_lid_sender_receipts` doing nothing on the first connection
+  after a new pairing (#7). WhatsApp reports the account LID only at login, and
+  the workaround read a copy of the account details taken before that, so it
+  only started working after the first reconnect. It now reads the live
+  credentials and is active from the first message. Installations that were not
+  re-paired were unaffected.
+- Added a regression test that reproduces a just-paired connection on the
+  installed Baileys receive path.
+
 ## 1.4.43
 
 Add-on-only experimental release. The Home Assistant integration is unchanged.

@@ -20,7 +20,7 @@ const waitFor = async (check, label) => {
   assert.fail(`Timed out waiting for ${label}`);
 };
 
-const start = async (t) => {
+const start = async (t, { justPaired = false } = {}) => {
   const baileys = await import("@whiskeysockets/baileys");
   const { default: makeWASocket, initAuthCreds, Curve, generateSignalPubKey,
     encodeWAMessage, decodeBinaryNode } = baileys;
@@ -51,7 +51,9 @@ const start = async (t) => {
   }));
 
   const creds = initAuthCreds();
-  creds.me = { id: "12025550123:9@s.whatsapp.net", lid: `${OWN_LID}:9@lid`, name: "Fictional" };
+  // Pairing stores an ID and a name only; every later connection also has the LID.
+  creds.me = { id: "12025550123:9@s.whatsapp.net", name: "Fictional",
+    ...(justPaired ? {} : { lid: `${OWN_LID}:9@lid` }) };
   const stored = {};
   const keys = {
     get: async (type, ids) => Object.fromEntries(
@@ -82,6 +84,8 @@ const start = async (t) => {
     await new Promise((resolve) => server.close(resolve));
   });
   await waitFor(() => socket.ws.isOpen, "the loopback transport");
+  // What Baileys emits on login success, once WhatsApp reports the account LID.
+  if (justPaired) socket.ev.emit("creds.update", { me: { ...creds.me, lid: `${OWN_LID}:9@lid` } });
 
   // The account's own desktop companion: a plain libsignal peer of the add-on.
   const identity = Curve.generateKeyPair();
@@ -152,4 +156,19 @@ test("real decryptions of text, control messages and retry copies each get the c
   // The origin device's fresh copy of that ID decrypts, so it is acknowledged.
   const retry = await h.ownMessage("fictional-text", { conversation: "Fictional message" });
   assert.deepEqual(await h.deliver(retry, 2), [misrouted("fictional-text"), corrected("fictional-text")]);
+});
+
+// Issue #7, 18 Sep: after a re-pair nothing was acknowledged until the first
+// reconnect, and everything received in between replayed and failed at once.
+test("the first connection after a pairing is covered although its LID only arrives at login", async (t) => {
+  const h = await start(t, { justPaired: true });
+  assert.equal(h.socket.user.lid, undefined,
+    "Baileys now keeps socket.user current: reading the live credentials may no longer be needed.");
+  assert.equal(h.socket.authState.creds.me.lid, `${OWN_LID}:9@lid`);
+  const helper = attachLidSenderReceipts({ socket: h.socket });
+  t.after(() => helper.close());
+
+  const text = await h.ownMessage("fictional-first-connection", { conversation: "Fictional message" });
+  assert.deepEqual(await h.deliver(text, 2),
+    [misrouted("fictional-first-connection"), corrected("fictional-first-connection")]);
 });
