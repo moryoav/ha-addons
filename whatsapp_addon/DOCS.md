@@ -163,18 +163,26 @@ the LID-specific receipt-routing problem without modifying or upgrading
 Baileys. The existing Baileys receipt is not intercepted. These are not read
 receipts and do not mark chats as read.
 
-The experiment excludes groups, broadcasts, newsletters, other people's
-incoming messages, internal/control and unknown message content, failed or
-partial decryptions, and local sends without a matching incoming stanza.
-Ambiguous matches are skipped rather than guessing a recipient or device.
-It never discards messages, resets sessions, changes encryption state, or
-weakens the protective recovery pause.
+The supplemental receipt follows the same rule as the Baileys receipt it
+corrects: it covers every successfully decrypted payload, including edits,
+deletions, reactions and other control messages, because a misrouted receipt
+leaves any of them pending for replay. A redelivered copy, or the fresh copy a
+device sends in answer to a retry request, is acknowledged once that copy
+decrypts, so a message that was already stuck can still leave the server queue.
+
+The experiment excludes groups, broadcasts, newsletters, peer synchronization
+traffic, other people's incoming messages, failed or partial decryptions, and
+local sends without a matching incoming stanza. If two of the account's devices
+ever present the same message ID, the match is skipped rather than guessing a
+device. It never acknowledges a copy that failed to decrypt, discards messages,
+resets sessions, changes encryption state, or weakens the protective recovery
+pause.
 
 Tracking is in-memory and per socket: at most 1,024 metadata records with a
-five-minute expiry, at most 128 queued receipts, and one network write at a
-time. No plaintext or ciphertext is retained in this tracking cache. Disconnect,
-logout, reset, or socket replacement discards the tracking state. Write errors
-are contained; there is no additional automatic receipt-retry loop.
+five-minute expiry, at most 1,024 queued receipts, and one network write at a
+time. No plaintext or ciphertext is read or retained by this tracking cache.
+Disconnect, logout, reset, or socket replacement discards the tracking state.
+Write errors are contained; there is no additional automatic receipt-retry loop.
 
 Decryption Diagnostics is independent of this switch. When enabled separately,
 it also records sanitized `lid_sender_receipts` outcomes such as `sent`,
@@ -187,9 +195,20 @@ For validation, repeat a send that requires session setup, continue ordinary
 phone/desktop messaging, and observe multiple reconnects. Check whether
 successfully processed messages stop accumulating for replay and whether the
 pause remains absent. Also check normal notifications to yourself, direct
-contacts and groups. Enabling this option does not clear an existing pause or
-repair an old backlog; recovery may still need the existing Retry or Reset and
-re-pair controls. Do not re-pair preemptively on an otherwise working system.
+contacts and groups.
+
+The earliest signal does not need a storm. With Decryption Diagnostics on, a
+message from one of the account's own devices (its `from` is the account's own
+LID and it carries a `recipient`) that was decrypted once should no longer come
+back with `offline` set after the next reconnect, and the recurring
+`Key used already or never filled` failures for `fromMe` messages should stop.
+If own messages are still redelivered after several reconnects, WhatsApp is not
+accepting the supplemental receipt and the experiment has failed; switch it off.
+
+Enabling this option does not clear an existing pause. Messages that were left
+pending before the switch was on replay and fail one more time while they
+drain, so recovery may still need the existing Retry or Reset and re-pair
+controls. Do not re-pair preemptively on an otherwise working system.
 
 ## Action examples
 

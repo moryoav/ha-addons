@@ -84,8 +84,6 @@ for (const [name, attrs] of Object.entries({
   participant: { participant: `${OWN}:22@lid` },
   "device recipient": { recipient: "999999999999992:1@lid" },
   "missing recipient": { recipient: undefined },
-  "missing timestamp": { t: undefined },
-  "invalid timestamp": { t: "not-a-time" },
   "missing ID": { id: undefined },
   "oversized ID": { id: "x".repeat(257) },
   "invalid sender device": { from: `${OWN}:99999@lid` },
@@ -105,17 +103,11 @@ for (const [name, change] of Object.entries({
   "wrong chat": { key: { id: "fictional-message", fromMe: true, remoteJid: "999999999999993@lid" } },
   "wrong ID": { key: { id: "other-message", fromMe: true, remoteJid: PEER } },
   "not from us": { key: { id: "fictional-message", fromMe: false, remoteJid: PEER } },
-  "wrong timestamp": { messageTimestamp: TIME + 1 },
-  "missing timestamp": { messageTimestamp: undefined },
+  "group participant": { key: { id: "fictional-message", fromMe: true, remoteJid: PEER, participant: `${OWN}:22@lid` } },
   ciphertext: { message: undefined, messageStubType: 2 },
   "partial failed decrypt": { messageStubType: 2 },
-  "internal category": { category: "peer" },
-  protocol: { message: { protocolMessage: { type: 5 } } },
-  "sender keys": { message: { senderKeyDistributionMessage: {} } },
-  "text plus control": { message: { conversation: "hello", protocolMessage: {} } },
-  "empty content": { message: {} },
-  "unknown content": { message: { unknownFutureMessage: {} } },
-  "wrapped control": { message: { ephemeralMessage: { message: { protocolMessage: {} } } } },
+  "missing content": { message: undefined },
+  "malformed content": { message: [] },
 })) {
   test(`does not acknowledge an upsert with ${name}`, async () => {
     const h = harness();
@@ -127,13 +119,36 @@ for (const [name, change] of Object.entries({
   });
 }
 
+// Baileys sends its own (misrouted) receipt for every decrypted payload, so each
+// of these stays pending and replays unless the corrected receipt covers it too.
+for (const [name, payload] of Object.entries({
+  "delete for everyone": { protocolMessage: { type: 0, key: { id: "older-message" } } },
+  edit: { protocolMessage: { type: 14, editedMessage: { conversation: "edited" } } },
+  "wrapped control": { ephemeralMessage: { message: { protocolMessage: { type: 3 } } } },
+  "text plus control": { conversation: "hello", protocolMessage: {} },
+  "sender keys": { senderKeyDistributionMessage: {} },
+  pin: { pinInChatMessage: {} },
+  "content unknown to this build": { unknownFutureMessage: {} },
+  "content with no known fields": {},
+})) {
+  test(`acknowledges decrypted ${name}`, async () => {
+    const h = harness();
+    h.receive();
+    h.upsert(message({ message: payload }));
+    await tick();
+    assert.equal(h.sends.length, 1);
+    assert.equal(h.sends[0].attrs.to, `${OWN}:22@lid`);
+    h.helper.close();
+  });
+}
+
 for (const [name, contents] of Object.entries({
   "missing encryption": [],
   plaintext: [{ tag: "plaintext", content: Buffer.from("text") }],
   unavailable: [...raw().content, { tag: "unavailable", attrs: {} }],
   "unknown encryption": raw({}, "msmsg").content,
   "multiple ciphertexts": [...raw().content, ...raw().content],
-  "oversized ciphertext": [{ tag: "enc", attrs: { type: "msg" }, content: Buffer.alloc(1024 * 1024 + 1) }],
+  "empty ciphertext": [{ tag: "enc", attrs: { type: "msg" }, content: Buffer.alloc(0) }],
 })) {
   test(`does not track ${name}`, async () => {
     const h = harness();
@@ -157,17 +172,21 @@ test("local outbound echoes, history-only upserts and placeholder responses need
   h.helper.close();
 });
 
-test("accepts ordinary media, wrapped text, protobuf Long timestamps, and bare own LID", async () => {
+test("accepts ordinary media, wrapped text, any timestamp form, and bare own LID", async () => {
   for (const payload of [{ imageMessage: {} }, { audioMessage: {} },
     { ephemeralMessage: { message: { conversation: "text" } } },
     { viewOnceMessageV2: { message: { videoMessage: {} } } }]) {
-    const h = harness();
-    h.socket.user.lid = `${OWN}@lid`;
-    h.receive();
-    h.upsert(message({ message: payload, messageTimestamp: { toString: () => String(TIME) } }));
-    await tick();
-    assert.equal(h.sends.length, 1);
-    h.helper.close();
+    // Baileys' event buffer can replace a merged message's timestamp, and a raw
+    // stanza's `t` plays no part in the receipt, so neither is matched on.
+    for (const messageTimestamp of [{ toString: () => String(TIME) }, TIME + 60, undefined]) {
+      const h = harness();
+      h.socket.user.lid = `${OWN}@lid`;
+      h.receive(raw({ t: undefined }));
+      h.upsert(message({ message: payload, messageTimestamp }));
+      await tick();
+      assert.equal(h.sends.length, 1);
+      h.helper.close();
+    }
   }
 });
 
@@ -182,16 +201,75 @@ test("missing own LID or current device is not guessed", async () => {
   }
 });
 
-test("ambiguous origin, timestamp or ciphertext is never guessed", async () => {
-  for (const second of [raw({ from: `${OWN}:23@lid` }), raw({ t: String(TIME + 1) }),
-    { ...raw(), content: [{ tag: "enc", attrs: { type: "msg" }, content: Buffer.from("different") }] }]) {
-    const h = harness();
-    h.receive(); h.receive(second); h.upsert();
-    await tick();
-    assert.deepEqual(h.sends, []);
-    assert.equal(h.diagnostics[0].outcome, "ambiguous");
-    h.helper.close();
-  }
+test("an ambiguous originating device is never guessed, and is reported once", async () => {
+  const h = harness();
+  h.receive(); h.receive(raw({ from: `${OWN}:23@lid` })); h.receive(raw({ from: `${OWN}@lid` }));
+  h.upsert(); h.receive(); h.upsert();
+  await tick();
+  assert.deepEqual(h.sends, []);
+  assert.deepEqual(h.diagnostics.map((d) => d.outcome), ["ambiguous"]);
+  h.helper.close();
+});
+
+// Issue #7: after a replay fails, Baileys asks the origin device to retry. Its answer
+// reuses the ID with fresh ciphertext, and must be acknowledged or it replays forever.
+const retryCopy = (type = "msg") => ({ ...raw({ t: String(TIME + 3000) }),
+  content: [{ tag: "enc", attrs: { type, v: "2", count: "1" }, content: Buffer.from("fresh ciphertext") }] });
+const failed = () => message({ message: undefined, messageStubType: 2 });
+
+test("a retry copy with fresh ciphertext and timestamp earns the receipt its failed replay could not", async () => {
+  const h = harness();
+  h.receive(raw({ offline: "1" }, "msg"));
+  h.upsert(failed(), { type: "append" });
+  await tick();
+  assert.deepEqual(h.sends, []); // Never acknowledge the copy that failed.
+  h.receive(retryCopy());
+  h.upsert(message({ messageTimestamp: TIME + 3000 }));
+  await tick();
+  assert.deepEqual(h.sends.map((node) => node.attrs), [
+    { id: "fictional-message", type: "sender", to: `${OWN}:22@lid`, recipient: PEER }]);
+  assert.deepEqual(h.diagnostics.map((d) => d.outcome), ["sent"]);
+  h.helper.close();
+});
+
+test("a replay rejected without any upsert does not block its retry copy", async () => {
+  const h = harness();
+  h.receive(raw({ offline: "1" })); // pkmsg replay: Baileys NACKs it and emits nothing.
+  h.receive(retryCopy("pkmsg"));
+  h.upsert();
+  await tick();
+  assert.equal(h.sends.length, 1);
+  h.helper.close();
+});
+
+test("copies merged into one buffered upsert are acknowledged once, separate successes once each", async () => {
+  const merged = harness();
+  merged.receive(raw({ offline: "1" }, "msg")); merged.receive(retryCopy());
+  merged.upsert(); // Baileys' event buffer keeps only the latest message per key.
+  await tick();
+  assert.equal(merged.sends.length, 1);
+  merged.helper.close();
+
+  const separate = harness();
+  separate.receive(retryCopy()); separate.upsert(); await tick();
+  separate.receive(retryCopy("pkmsg")); separate.upsert(); await tick();
+  separate.upsert(); await tick(); // An echo of the second copy earns nothing more.
+  assert.equal(separate.sends.length, 2);
+  separate.helper.close();
+});
+
+test("a refreshed record keeps expiry order, so newer entries are still pruned on time", async () => {
+  let now = 0;
+  const h = harness({ now: () => now, ttlMs: 100 });
+  h.receive(raw({ id: "a" }));
+  now = 50; h.receive(raw({ id: "b" }));
+  now = 90; h.receive(raw({ id: "a" })); // Refreshed: expires at 190, after "b" at 150.
+  now = 160; h.receive(raw({ id: "c" }));
+  assert.equal(h.helper.stats.tracked, 2); // "b" pruned, "a" and "c" remain.
+  h.upsert(message({ key: { id: "a", remoteJid: PEER, fromMe: true } }));
+  await tick();
+  assert.equal(h.sends.length, 1);
+  h.helper.close();
 });
 
 test("collision arriving after enqueue cancels the optional write", async () => {
@@ -226,6 +304,18 @@ test("tracking expires and cannot grow beyond its cap", async () => {
   await tick();
   assert.equal(h.helper.stats.tracked, 0);
   assert.deepEqual(h.sends, []);
+  h.helper.close();
+});
+
+test("one buffered offline flush of many messages loses no receipts by default", async () => {
+  const h = harness();
+  const ids = Array.from({ length: 300 }, (_, index) => `offline-${index}`);
+  for (const id of ids) h.receive(raw({ id, offline: "1" }));
+  h.socket.ev.emit("messages.upsert", { type: "append",
+    messages: ids.map((id) => message({ key: { id, remoteJid: PEER, fromMe: true } })) });
+  await tick();
+  assert.deepEqual(h.sends.map((node) => node.attrs.id), ids);
+  assert.ok(!h.diagnostics.some((d) => d.outcome === "queue_full"));
   h.helper.close();
 });
 

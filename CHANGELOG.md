@@ -11,9 +11,13 @@ Add-on-only experimental release. The Home Assistant integration is unchanged.
 - When enabled, send supplemental sender receipts only after successful,
   unambiguous direct own-device LID decryption. Keep normal message delivery,
   authentication, the protective recovery pause and Baileys 6.7.23 unchanged.
+- Cover every decrypted payload, including edits, deletions and other control
+  messages, and the fresh copy a device sends after a retry request, so neither
+  stays pending for replay.
 - Bound per-socket tracking and receipt queues, contain write failures, and
-  exclude groups, control traffic and failed decryptions. Added regression
-  tests plus opt-in validation and rollback instructions.
+  exclude groups, peer synchronization traffic and failed decryptions. Added
+  regression tests, including one against the installed Baileys receive path,
+  plus opt-in validation and rollback instructions.
 - This is a fix candidate requiring live validation, not a confirmed cure.
 
 ## 1.4.42

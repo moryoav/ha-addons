@@ -4,9 +4,13 @@
   supplemental receipts after successful own-device direct-LID decryption.
 - Kept ordinary message handling, authentication, the protective recovery pause,
   Baileys 6.7.23 and the Home Assistant integration unchanged.
-- Bounded per-socket metadata and receipt work, excluded failed decryptions,
-  group/control traffic and ambiguous matches, and added regression tests plus
-  opt-in validation and rollback instructions.
+- Covered every decrypted payload, including edits, deletions and other control
+  messages, and the fresh copy a device sends after a retry request, so neither
+  stays pending for replay. Failed decryptions are never acknowledged.
+- Bounded per-socket metadata and receipt work, excluded group and peer
+  synchronization traffic and ambiguous originating devices, and added
+  regression tests, including one against the installed Baileys receive path,
+  plus opt-in validation and rollback instructions.
 - This is an experimental workaround for issue #7, not a confirmed cure.
 
 ## 1.4.42

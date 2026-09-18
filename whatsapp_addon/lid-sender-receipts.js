@@ -1,23 +1,9 @@
-const { createHash } = require("node:crypto");
-
 const MAX_TRACKED_MESSAGES = 1024;
-const MAX_PENDING_RECEIPTS = 128;
+// One buffered offline flush can release every tracked message at once, and a
+// receipt dropped here leaves its message pending on the server for good.
+const MAX_PENDING_RECEIPTS = MAX_TRACKED_MESSAGES;
 const METADATA_TTL_MS = 5 * 60 * 1000;
-const MAX_CIPHERTEXT_BYTES = 1024 * 1024;
 const LID = /^([1-9]\d{4,30})(?::(\d{1,5}))?@lid$/;
-const USER_CONTENT = new Set([
-  "conversation", "extendedTextMessage", "imageMessage", "videoMessage",
-  "audioMessage", "documentMessage", "stickerMessage", "contactMessage",
-  "contactsArrayMessage", "locationMessage", "liveLocationMessage",
-  "reactionMessage", "pollCreationMessage", "pollCreationMessageV2",
-  "pollCreationMessageV3", "pollUpdateMessage", "buttonsMessage",
-  "buttonsResponseMessage", "listMessage", "listResponseMessage",
-  "templateMessage", "templateButtonReplyMessage",
-]);
-const WRAPPERS = new Set([
-  "ephemeralMessage", "viewOnceMessage", "viewOnceMessageV2",
-  "viewOnceMessageV2Extension", "documentWithCaptionMessage",
-]);
 
 const parseLid = (value) => {
   if (typeof value !== "string") return undefined;
@@ -26,29 +12,14 @@ const parseLid = (value) => {
   return { user: match[1], device: Number(match[2] || 0) };
 };
 
-const timestamp = (value) => {
-  if (value == null) return undefined;
-  const text = String(value); // Also accepts protobuf Long timestamps.
-  return /^\d{1,16}$/.test(text) && Number.isSafeInteger(Number(text)) &&
-    Number(text) > 0 ? String(Number(text)) : undefined;
-};
-
-// Positive allowlist: unknown/control content is left entirely to Baileys.
-const isUserContent = (message, depth = 0) => {
-  if (!message || typeof message !== "object" || Array.isArray(message) || depth > 4) {
-    return false;
-  }
-  const keys = Object.keys(message).filter(
-    (key) => key !== "messageContextInfo" && message[key] != null
-  );
-  if (keys.length !== 1) return false;
-  const key = keys[0];
-  if (WRAPPERS.has(key)) return isUserContent(message[key]?.message, depth + 1);
-  if (!USER_CONTENT.has(key)) return false;
-  return key === "conversation"
-    ? typeof message[key] === "string"
-    : typeof message[key] === "object" && !Array.isArray(message[key]);
-};
+// The rule Baileys applies to its own receipt: any decoded payload, whatever its
+// type. A CIPHERTEXT stub (even beside partial content) is a failed decryption.
+// Filtering by content would leave edits, deletions and other control messages
+// pending, and those replay into the retry path exactly like text does.
+const isDecrypted = (message) =>
+  (message.messageStubType == null || message.messageStubType === 0) &&
+  message.message != null && typeof message.message === "object" &&
+  !Array.isArray(message.message);
 
 const removeListener = (emitter, event, listener) => {
   if (typeof emitter.off === "function") emitter.off(event, listener);
@@ -141,7 +112,6 @@ const attachLidSenderReceipts = ({
           if (!closed) report("send_failed");
           // No automatic retry loop. Baileys continues its normal handling.
         }
-        record.state = "done";
       }
     } catch {
       if (!closed) report("handler_failed");
@@ -159,39 +129,44 @@ const attachLidSenderReceipts = ({
       const sender = parseLid(attrs.from);
       const recipient = parseLid(attrs.recipient);
       const id = attrs.id;
-      const time = timestamp(attrs.t);
       const ownDevice = /:(\d{1,5})@/.exec(socket.user?.id || "")?.[1];
       if (!own || !sender || !recipient || sender.user !== own.user ||
           attrs.recipient.includes(":") || ownDevice === undefined ||
           sender.device === Number(ownDevice) || attrs.participant != null ||
           attrs.category != null || typeof id !== "string" || !id.length ||
-          id.length > 256 || !time || !Array.isArray(node.content)) return;
+          id.length > 256 || !Array.isArray(node.content)) return;
       if (node.content.some((child) => child?.tag === "unavailable" || child?.tag === "plaintext")) return;
       const encrypted = node.content.filter((child) => child?.tag === "enc");
       if (encrypted.length !== 1) return;
       const enc = encrypted[0];
       if (!["msg", "pkmsg"].includes(enc.attrs?.type) ||
-          !(enc.content instanceof Uint8Array) || !enc.content.byteLength ||
-          enc.content.byteLength > MAX_CIPHERTEXT_BYTES) return;
+          !(enc.content instanceof Uint8Array) || !enc.content.byteLength) return;
 
       prune();
       const key = keyFor(attrs.recipient, id);
-      const digest = createHash("sha256").update(enc.content).digest("hex");
       const existing = records.get(key);
       if (existing) {
-        // Ambiguous concurrent copies must not cause us to guess an origin device.
-        if (existing.from !== attrs.from || existing.time !== time || existing.digest !== digest) {
+        if (existing.ambiguous) return;
+        if (existing.from !== attrs.from) {
+          // Two own devices claiming one ID: never guess which one to acknowledge.
           existing.ambiguous = true;
           report("ambiguous");
-        } else if (existing.state === "done") {
-          existing.state = "waiting";
+          return;
         }
+        // A redelivery, or the origin device's answer to a Baileys retry request:
+        // same ID, usually fresh ciphertext and timestamp. The receipt depends on
+        // neither, and only a receipt for this copy lets the message leave the
+        // server queue. Re-insert so insertion order still matches expiry order.
+        records.delete(key);
+        existing.pending += 1;
+        existing.expiresAt = now() + ttlMs;
+        records.set(key, existing);
         return;
       }
       while (records.size >= maxEntries) records.delete(records.keys().next().value);
       records.set(key, {
-        key, id, from: attrs.from, recipient: attrs.recipient, time, digest,
-        ownUser: own.user, expiresAt: now() + ttlMs, state: "waiting", ambiguous: false,
+        key, id, from: attrs.from, recipient: attrs.recipient, ownUser: own.user,
+        expiresAt: now() + ttlMs, pending: 1, ambiguous: false,
       });
     } catch {
       report("handler_failed");
@@ -207,16 +182,15 @@ const attachLidSenderReceipts = ({
         const key = message?.key;
         if (!key || key.fromMe !== true || key.participant != null) continue;
         const record = records.get(keyFor(key.remoteJid, key.id));
-        if (!record || record.ambiguous || record.state !== "waiting") continue;
-        record.state = "done";
-        if ((message.messageStubType != null && message.messageStubType !== 0) ||
-            message.category != null || timestamp(message.messageTimestamp) !== record.time ||
-            !isUserContent(message.message)) continue;
+        // One receipt per raw copy: a local echo or second consumer earns nothing.
+        if (!record || record.ambiguous || record.pending < 1) continue;
+        record.pending -= 1;
+        // A failed copy only uses up its own turn; a later copy can still succeed.
+        if (!isDecrypted(message)) continue;
         if (queue.length >= maxPending) {
           report("queue_full");
           continue;
         }
-        record.state = "queued";
         queue.push(record);
       }
       void drain();
