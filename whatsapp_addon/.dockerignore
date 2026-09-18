@@ -6,6 +6,7 @@
 !healthcheck.sh
 !index.js
 !libsignal-log-filter.js
+!lid-sender-receipts.js
 !logo.png
 !message-dedupe.js
 !message-retry-cache.js
