@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "WhatsApp Add-on",
-        "description": "Home Assistant will detect the local WhatsApp add-on automatically. Start the add-on and submit again if it is not detected yet."
+        "description": "Home Assistant will detect the local WhatsApp add-on automatically. Start the add-on and submit again if it is not detected yet. For decrypted incoming attachments, update both components to 2.0.0 or newer and enable Download incoming media in the add-on."
       },
       "reconfigure": {
         "title": "Reconfigure WhatsApp Add-on",

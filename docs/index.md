@@ -1,5 +1,11 @@
 # WhatsApp for Home Assistant
 
+**New in 2.0: [decrypt incoming media](examples/incoming-media.md).** Receive
+ready-to-use local files and authenticated links for photos, voice notes,
+documents, videos, and stickers. Use them in Home Assistant OCR, transcription,
+and other processing automations, with automatic retention and unique files
+for every attachment.
+
 Send WhatsApp messages from Home Assistant automations and receive message,
 call, and presence events through the companion add-on.
 

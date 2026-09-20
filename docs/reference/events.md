@@ -21,6 +21,15 @@ filters, text extraction, media types, and conversation replies.
 `message` payload. Other fields, such as `messageTimestamp`, are passed through
 when present.
 
+With incoming media downloads enabled in add-on 2.0.0 or newer,
+`new_whatsapp_message` also includes a `media` object with `status: ready`,
+a decrypted `local_path`, an authenticated `url`, MIME type, size, and expiry.
+The event waits until its file is ready. Failures still deliver the message
+with `media.status: error` and a safe error code. Ordinary text and outgoing
+events are unchanged. The download endpoint requires integration 2.0.0 or newer.
+See [Decrypt incoming media](../examples/incoming-media.md) for setup,
+the full event contract, retention, and processing examples.
+
 `whatsapp_message_sent` requires add-on 1.4.39 or newer. It fires for messages with
 `key.fromMe: true`, including messages sent from the phone, other linked
 devices, and the add-on itself when reported by WhatsApp. For this event,

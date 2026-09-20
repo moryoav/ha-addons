@@ -1,4 +1,5 @@
 const EventEmitter = require("eventemitter2");
+const axios = require("axios");
 
 const {
   createBaileysDiagnosticLogger,
@@ -347,6 +348,87 @@ class WhatsappClient extends EventEmitter {
     return Object.keys(message.message).find(
       (key) => key !== "messageContextInfo"
     );
+  };
+
+  getMediaContent = (message) => {
+    if (message?.key?.fromMe) return undefined;
+    const content = this.#baileys.extractMessageContent(message?.message);
+    return content?.imageMessage || content?.audioMessage || content?.videoMessage ||
+      content?.documentMessage || content?.stickerMessage;
+  };
+
+  downloadMedia = async (message, { signal, timeoutMs }) => {
+    this.#assertConnected();
+    signal.throwIfAborted();
+    const socket = this.#conn;
+    const sources = new Set();
+    let output;
+    let earlyError;
+    let rejectEarly;
+    let onAbort;
+    const aborted = new Promise((resolve, reject) => {
+      rejectEarly = reject;
+      onAbort = () => {
+        for (const source of sources) source.destroy();
+        reject(signal.reason);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    const download = this.#baileys.downloadMediaMessage(
+      message,
+      "stream",
+      { options: {
+        signal, timeout: timeoutMs,
+        adapter: async (config) => {
+          let response;
+          try {
+            response = await axios.getAdapter(axios.defaults.adapter)(config);
+          } catch (error) {
+            error.response?.data?.destroy?.();
+            throw error;
+          }
+          const source = response.data;
+          sources.add(source);
+          // Baileys 6.x pipes the HTTP source into its decryptor without forwarding
+          // source errors. Bridge those errors and close HTTP on early size/abort failures.
+          source.on("error", (error) => {
+            earlyError = error;
+            output?.destroy(error);
+            rejectEarly(error);
+          });
+          return response;
+        },
+      } },
+      {
+        // The library's reupload log otherwise includes the private message key.
+        logger: { info() {} },
+        reuploadRequest: (value) => {
+          signal.throwIfAborted();
+          return socket.updateMediaMessage(value);
+        },
+      }
+    ).then((stream) => {
+      output = stream;
+      // A reupload may finish after cancellation. Never leave its stream running.
+      stream.on("error", () => {});
+      stream.once("close", () => {
+        for (const source of sources) source.destroy();
+      });
+      if (signal.aborted || earlyError) {
+        stream.destroy();
+        throw signal.aborted ? signal.reason : earlyError;
+      }
+      return stream;
+    });
+    try {
+      return await Promise.race([download, aborted]);
+    } catch (error) {
+      earlyError = error;
+      for (const source of sources) source.destroy();
+      throw error;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
   };
 
   #summarizeMessage = (message) => ({

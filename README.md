@@ -16,6 +16,26 @@ If this project is useful to you, you can support my work through Ko-fi or GitHu
 Send WhatsApp messages from Home Assistant automations and receive WhatsApp
 message, call, and presence events through the companion add-on.
 
+## New in 2.0: decrypted incoming media
+
+Turn received WhatsApp attachments into inputs for Home Assistant automations.
+The add-on can now download and decrypt images, voice notes, audio, videos,
+documents, and stickers automatically, then enrich `new_whatsapp_message`
+with a ready-to-use local file, an authenticated download link, and its expiry.
+
+Each message gets its own file, so the next attachment cannot overwrite it.
+Files expire automatically after a configurable retention period, with size
+and storage limits. Automations can send the decrypted file to an OCR,
+transcription, document-processing, or AI integration of your choice. Those
+processing steps remain outside the WhatsApp add-on.
+
+**Update both the add-on and HACS integration to 2.0.0, restart Home Assistant,
+then enable Download incoming media in the add-on configuration.** Downloads
+are off by default. Existing actions and message payloads remain compatible.
+
+See [Decrypt incoming media](https://moryoav.github.io/ha-addons/examples/incoming-media/)
+for setup, retention options, the enriched event, and an automation example.
+
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="320"/>
 
 ![Supports aarch64 Architecture][aarch64-shield]
@@ -32,7 +52,9 @@ This repository contains two pieces:
 - `whatsapp_addon`: the Home Assistant add-on that runs the local WhatsApp Web client bridge.
 - `custom_components/whatsapp`: the Home Assistant integration that exposes actions, diagnostics, setup flow support, and add-on connectivity.
 
-The integration talks only to the local add-on HTTP API. WhatsApp account pairing is handled by the add-on QR-code flow.
+The integration uses the local add-on HTTP API and serves decrypted attachments
+from the shared `/media/whatsapp` directory using Home Assistant authentication.
+WhatsApp account pairing is handled by the add-on QR-code flow.
 
 ## Important limitation
 
@@ -50,7 +72,7 @@ The packaged add-on follows the current Home Assistant app presentation guidance
   base-image bootstrap uses the standard Home Assistant startup permissions,
   then the network-facing Node bridge runs in a restricted child profile where
   packaged code and dependencies are read-only and writes are limited to
-  temporary and persistent session data.
+  temporary files, persistent session data, and `/media/whatsapp` attachments.
 - No Docker API access.
 - No host network, host PID, or host UTS access.
 - No `full_access` mode.

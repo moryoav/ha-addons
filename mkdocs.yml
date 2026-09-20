@@ -21,6 +21,7 @@ nav:
       - Automations: examples/automations.md
       - Reusable scripts: examples/scripts.md
       - Incoming messages and agents: examples/incoming-messages.md
+      - Decrypt incoming media: examples/incoming-media.md
       - AI-written notifications: examples/ai-notifications.md
       - Conversation history: examples/conversation-history.md
       - Sensor charts: examples/sensor-charts.md

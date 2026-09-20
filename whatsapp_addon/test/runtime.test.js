@@ -36,6 +36,10 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
       apiToken: "fictional-token_123456",
       logLevel: "info",
       decryptionDiagnostics: false,
+      mediaOptions: {
+        enabled: false, retentionMs: 86400000,
+        maxFileBytes: 64 * 1024 * 1024, maxStorageBytes: 1024 * 1024 * 1024,
+      },
     }
   );
   assert.equal(normalizeApiToken(""), undefined);
@@ -138,6 +142,48 @@ test("sent message delivery preserves client identity and keeps logs private", a
     ]) {
       assert.ok(!serializedLogs.includes(privateValue));
     }
+  }
+});
+
+test("failed media downloads still deliver the incoming event with safe error data", async () => {
+  const client = new FakeClient();
+  const requests = [];
+  const logs = [];
+  createAddonRuntime({
+    clientIds: ["default"], clientFactory: () => client,
+    logger: { warn: (...args) => logs.push(args) },
+    mediaStore: { enrich: async () => ({ status: "error", error: "timeout" }) },
+    httpClient: { post: async (...args) => requests.push(args) },
+  });
+  const message = { type: "audioMessage", key: { id: "private-id", fromMe: false },
+    message: { audioMessage: { mediaKey: "private-key", url: "private-url" } } };
+  client.emit("msg", message);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][0], "http://supervisor/core/api/events/new_whatsapp_message");
+  assert.deepEqual(requests[0][1], { clientId: "default", ...message, media: { status: "error", error: "timeout" } });
+  assert.ok(!JSON.stringify(logs).includes("private-"));
+});
+
+test("startup initializes storage before clients and closes it on normal shutdown or startup failure", async () => {
+  for (const fail of [false, true]) {
+    const calls = [];
+    const start = () => startAddon({
+      logger: {},
+      optionsLoader: async () => ({ clientIds: ["default"], mediaOptions: { enabled: true } }),
+      diagnosticsFactory: () => ({ start() {}, stop() {} }),
+      replayHealthDiagnosticsFn: async () => {}, readRecoveryRecordFn: async () => null,
+      mediaStoreFactory: (options) => {
+        assert.equal(options.enabled, true);
+        return { start: async () => calls.push("storage-start"), close: async () => calls.push("storage-close") };
+      },
+      clientFactory: () => { calls.push("client-start"); return new FakeClient(); },
+      listenFn: async () => { if (fail) throw new Error("test failure"); return {}; },
+      closeServerFn: async () => {}, httpClient: { post: async () => {} },
+    });
+    if (fail) await assert.rejects(start());
+    else await (await start()).close();
+    assert.deepEqual(calls, ["storage-start", "client-start", "storage-close"]);
   }
 });
 

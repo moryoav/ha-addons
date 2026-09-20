@@ -21,6 +21,7 @@ const createHarness = async ({
   onWhatsApp,
   sendMessage,
   decryptionDiagnostics = false,
+  downloadMediaMessage,
 } = {}) => {
   const ev = new EventEmitter();
   const ws = new EventEmitter();
@@ -58,6 +59,8 @@ const createHarness = async ({
   };
   const baileys = {
     proto: (await import("@whiskeysockets/baileys")).proto,
+    extractMessageContent: (await import("@whiskeysockets/baileys")).extractMessageContent,
+    downloadMediaMessage,
     DisconnectReason: { loggedOut: 401 },
     default: (options) => {
       calls.socketOptions.push(options);
@@ -90,6 +93,123 @@ test("the installed runtime Baileys dependency is exactly 6.7.23", async () => {
   const baileys = await import("@whiskeysockets/baileys");
   assert.equal(typeof baileys.default, "function");
   assert.equal(typeof baileys.fetchLatestBaileysVersion, "function");
+});
+
+test("media detection handles supported messages and wrappers without treating text, quotes or sent messages as downloads", async (t) => {
+  const { client } = await createHarness();
+  t.after(() => client.disconnect());
+  for (const type of ["imageMessage", "audioMessage", "videoMessage", "documentMessage", "stickerMessage"]) {
+    const media = { mimetype: "application/octet-stream", url: "https://mmg.whatsapp.net/fictional" };
+    for (const wrapper of [null, "ephemeralMessage", "documentWithCaptionMessage", "viewOnceMessageV2"]) {
+      const inner = { [type]: media };
+      const message = { key: { fromMe: false }, message: wrapper ? { [wrapper]: { message: inner } } : inner };
+      assert.equal(client.getMediaContent(message), media);
+      assert.equal(client.getMediaContent({ ...message, key: { fromMe: true } }), undefined);
+    }
+  }
+  assert.equal(client.getMediaContent({ message: { conversation: "text" } }), undefined);
+  assert.equal(client.getMediaContent({ message: { extendedTextMessage: {
+    text: "quote", contextInfo: { quotedMessage: { imageMessage: {} } },
+  } } }), undefined);
+});
+
+test("media downloads use the connected session for reupload and pass cancellation to the installed helper", async (t) => {
+  const { Readable } = require("node:stream");
+  const controller = new AbortController();
+  const message = { message: { imageMessage: {} } };
+  let args;
+  let uploaded;
+  const { client, socket } = await createHarness({ downloadMediaMessage: async (...values) => {
+    args = values;
+    await values[3].reuploadRequest(message);
+    return Readable.from(["bytes"]);
+  } });
+  t.after(() => client.disconnect());
+  socket.updateMediaMessage = async (value) => { uploaded = value; return value; };
+  const stream = await client.downloadMedia(message, { signal: controller.signal, timeoutMs: 1234 });
+  assert.equal(uploaded, message);
+  assert.equal(args[0], message);
+  assert.equal(args[1], "stream");
+  assert.equal(args[2].options.signal, controller.signal);
+  assert.equal(args[2].options.timeout, 1234);
+  assert.equal(args[3].logger.info({ key: "private" }), undefined);
+  stream.destroy();
+});
+
+test("cancellation while waiting for reupload returns promptly and destroys a late stream", async (t) => {
+  const { PassThrough } = require("node:stream");
+  let finish;
+  const { client } = await createHarness({ downloadMediaMessage: () => new Promise((resolve) => { finish = resolve; }) });
+  t.after(() => client.disconnect());
+  const controller = new AbortController();
+  const task = client.downloadMedia({}, { signal: controller.signal, timeoutMs: 1000 });
+  const reason = new Error("cancelled");
+  controller.abort(reason);
+  await assert.rejects(task, (error) => error === reason);
+  const late = new PassThrough();
+  finish(late);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(late.destroyed, true);
+});
+
+test("an interrupted HTTP download rejects the installed Baileys decrypt stream without an unhandled error", async (t) => {
+  const http = require("node:http");
+  const { Writable } = require("node:stream");
+  const { pipeline } = require("node:stream/promises");
+  const real = await import("@whiskeysockets/baileys");
+  const server = http.createServer((request, response) => {
+    response.writeHead(200, { "Content-Length": "100000" });
+    response.write(Buffer.alloc(32));
+    setTimeout(() => response.destroy(), 30);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}/media`;
+  const { client } = await createHarness({ downloadMediaMessage: (message, type, options, ctx) =>
+    real.downloadMediaMessage(message, type, { options: {
+      ...options.options,
+      adapter: (config) => options.options.adapter({ ...config, url }),
+    } }, ctx),
+  });
+  t.after(() => client.disconnect());
+  const controller = new AbortController();
+  const stream = await client.downloadMedia({ message: { audioMessage: {
+    mediaKey: Buffer.alloc(32), url: "https://mmg.whatsapp.net/fictional.enc",
+  } } }, { signal: controller.signal, timeoutMs: 1000 });
+  await assert.rejects(pipeline(stream, new Writable({ write(chunk, encoding, done) { done(); } })));
+});
+
+test("media messages are deduplicated before enrichment and emitted once after readiness", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const requests = [];
+  const enriched = [];
+  let ready;
+  createAddonRuntime({
+    clientIds: ["default"], clientFactory: () => client, logger: {},
+    mediaStore: { enrich: (message) => {
+      if (message.type !== "imageMessage") return Promise.resolve(undefined);
+      enriched.push(message);
+      return new Promise((resolve) => { ready = resolve; });
+    } },
+    httpClient: { post: async (...args) => requests.push(args) },
+  });
+  const incoming = { key: { id: "fictional-media", remoteJid: FICTIONAL_JID, fromMe: false },
+    message: { imageMessage: { caption: "Fictional caption" } } };
+  ev.emit("messages.upsert", { type: "notify", messages: [incoming, incoming, {
+    key: { id: "fictional-text", remoteJid: FICTIONAL_JID, fromMe: false },
+    message: { conversation: "Fictional text" },
+  }] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(enriched.length, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][1].type, "conversation");
+  const media = { status: "ready", local_path: "/media/whatsapp/fictional/file.jpg", url: "/api/whatsapp/media/fictional" };
+  ready(media);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1][1], { clientId: "default", type: "imageMessage", ...incoming, media });
+  assert.equal(incoming.media, undefined);
 });
 
 test("Baileys call lifecycle arrays are forwarded to the runtime", async () => {
