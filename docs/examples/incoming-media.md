@@ -7,9 +7,8 @@ temporary file and an authenticated download link in `new_whatsapp_message`.
 
 This opens up workflows such as extracting text from photos and PDFs,
 transcribing voice messages, classifying documents, or passing a received
-image to an automation. OCR, transcription, conversion, and AI processing are
-handled by whichever Home Assistant integration or service the automation uses.
-The WhatsApp add-on only downloads, decrypts, verifies, and stores the file.
+image to an automation. Pass the saved file to your chosen Home Assistant
+integration or service for OCR, transcription, conversion, or AI processing.
 
 ## Enable incoming media
 

@@ -9,8 +9,7 @@ All notable changes to this repository are documented here.
 Major feature release: incoming WhatsApp attachments can now become usable
 local files directly in Home Assistant. Photos, voice notes, audio, videos,
 documents, and stickers open up OCR, speech-to-text, document extraction,
-image analysis, and other user-defined automation workflows without a separate
-WhatsApp decryption app.
+image analysis, and other user-defined automation workflows.
 
 - Added automatic incoming-media downloading and decryption using the existing
   WhatsApp session. Only complete decrypted files that match the message's
@@ -18,8 +17,8 @@ WhatsApp decryption app.
 - Enriched `new_whatsapp_message` with a `media` object containing the local
   file path, authenticated download link, MIME type, size, original filename
   when available, and expiry. The event arrives after its attachment is ready.
-- Added a unique directory for every attachment. Simultaneous messages and
-  repeated filenames no longer risk overwriting an earlier file.
+- Added a unique directory for every attachment, so simultaneous messages and
+  repeated filenames cannot overwrite an earlier file.
 - Added configurable temporary storage with a default 24-hour retention,
   64 MiB per-file limit, and 1 GiB attachment-content budget. Expiry survives
   restarts; cleanup runs automatically, including when downloading is disabled.
@@ -28,14 +27,12 @@ WhatsApp decryption app.
 - Added authenticated Home Assistant downloads for documents and audiovisual
   files, with expiry enforced on every request. Files remain outside `www`
   and are never published through an anonymous download endpoint.
-- Kept OCR, transcription, conversion, and AI processing outside the add-on.
-  Automations choose their own processing integration using the decrypted file.
 - Added bounded concurrent downloads, a queue and deadline, recovery requests
   for expired WhatsApp media, and cleanup of failed or interrupted downloads.
   Download failures still deliver the original message with a safe media error.
 - Preserved existing message fields, actions, pairing, and outgoing events.
   Incoming media downloads are opt-in and do not block unrelated messages.
-- Added setup and migration guidance, the complete media event contract,
+- Added setup guidance, the complete media event contract,
   processing examples, retention behavior, and troubleshooting documentation.
 - Added regression coverage for real media decryption, integrity checks,
   concurrency, retention, authentication, stream failures, and container access.

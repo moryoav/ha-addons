@@ -176,8 +176,7 @@ These workflows require another integration or a custom helper:
 | Generate a sticker, then send it | A custom generator returning a prepared WebP URL. |
 | Keep per-chat history for an agent | Agent-managed conversation IDs or separate storage, such as the [File and Shell Command recipe](conversation-history.md). |
 
-These processors are not bundled with WhatsApp for Home Assistant. The original
-URL inside `message.imageMessage`, `message.audioMessage`, or another media
+The original URL inside `message.imageMessage`, `message.audioMessage`, or another media
 message still refers to encrypted WhatsApp data. Use the added `media.local_path`
 or authenticated `media.url` when `media.status` is `ready`. See
 [sending helper results](scripts.md#send-media-returned-by-a-helper) for the

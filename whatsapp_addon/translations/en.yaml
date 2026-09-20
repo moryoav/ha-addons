@@ -6,7 +6,7 @@ configuration:
       Automatically download and decrypt incoming attachments into unique
       temporary files and include their path and link in message events.
       Update both the add-on and integration to 2.0.0 first. Applies to all
-      sessions and chats. OCR and transcription stay in your automations.
+      sessions and chats. Use the saved files in your Home Assistant automations.
   media_retention_hours:
     name: Media retention (hours)
     description: >-

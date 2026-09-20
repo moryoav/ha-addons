@@ -8,7 +8,7 @@ received messages, incoming calls, and presence updates.
 Automatically download and decrypt incoming images, voice notes, audio, videos,
 documents, and stickers. Each attachment gets a unique temporary file and an
 authenticated link in `new_whatsapp_message`, ready for OCR, transcription, or
-other processing in Home Assistant. Processing stays outside this add-on.
+other processing in Home Assistant.
 
 Update both the add-on and integration to 2.0.0, restart Home Assistant, then
 enable **Download incoming media**. Downloads are off by default. Files are

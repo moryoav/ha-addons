@@ -13,7 +13,7 @@ expiry after the file is ready and verified. Failed downloads still deliver
 the message with an error code.
 
 Use these files in Home Assistant OCR, transcription, or document-processing
-automations. The add-on does not perform those processing steps.
+automations.
 See the [full incoming media guide](https://moryoav.github.io/ha-addons/examples/incoming-media/)
 for event examples, authenticated access, limits, and troubleshooting.
 

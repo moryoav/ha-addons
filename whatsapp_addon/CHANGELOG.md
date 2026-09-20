@@ -4,8 +4,7 @@
 
 Major feature release: turn received WhatsApp attachments into usable local
 files for OCR, voice-to-text, document extraction, image analysis, and other
-Home Assistant automation workflows. A separate WhatsApp decryption app is
-no longer needed for these downloads.
+Home Assistant automation workflows.
 
 - Added automatic downloading and decryption for incoming images, voice notes,
   audio, videos, documents, and stickers through the linked WhatsApp session.
@@ -22,8 +21,6 @@ no longer needed for these downloads.
   while attachments download.
 - Added a shared media mount with AppArmor writes limited to `/media/whatsapp`.
   The updated integration serves attachments using Home Assistant authentication.
-- Kept OCR, transcription, conversion, and AI processing in the user's own
-  Home Assistant integrations and automations, outside the WhatsApp add-on.
 - Added detailed setup, automation, retention, access, and troubleshooting
   guidance, plus decryption, storage, authentication, and container tests.
 

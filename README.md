@@ -26,8 +26,7 @@ with a ready-to-use local file, an authenticated download link, and its expiry.
 Each message gets its own file, so the next attachment cannot overwrite it.
 Files expire automatically after a configurable retention period, with size
 and storage limits. Automations can send the decrypted file to an OCR,
-transcription, document-processing, or AI integration of your choice. Those
-processing steps remain outside the WhatsApp add-on.
+transcription, document-processing, or AI integration of your choice.
 
 **Update both the add-on and HACS integration to 2.0.0, restart Home Assistant,
 then enable Download incoming media in the add-on configuration.** Downloads
