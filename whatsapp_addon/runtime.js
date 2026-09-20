@@ -16,6 +16,7 @@ const {
 } = require("./diagnostics");
 const { createWebUiApp, INGRESS_PORT } = require("./webui");
 const { WhatsappClient } = require("./whatsapp");
+const { MediaStore, parseMediaOptions } = require("./media-store");
 const {
   DEFAULT_RECOVERY_PATH,
   RECOVERY_REASON,
@@ -180,6 +181,7 @@ const parseOptions = (content) => {
     decryptionDiagnostics: normalizeDecryptionDiagnostics(
       options.decryption_diagnostics
     ),
+    mediaOptions: parseMediaOptions(options),
     // Keep the legacy options/factory shape when this experiment is disabled.
     ...(normalizeExperimentalLidSenderReceipts(options.experimental_lid_sender_receipts)
       ? { experimentalLidSenderReceipts: true }
@@ -315,6 +317,7 @@ const createAddonRuntime = ({
   experimentalLidSenderReceipts = false,
   runId = createRunId(),
   diagnostics,
+  mediaStore,
   initialRecoveryRecord,
   recoveryPath = DEFAULT_RECOVERY_PATH,
   persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
@@ -534,8 +537,7 @@ const createAddonRuntime = ({
     });
   };
 
-  const onMsg = (message, clientId, eventType) => {
-    void postSupervisor(
+  const deliverMessage = (message, clientId, eventType) => postSupervisor(
       `/core/api/events/${eventType}`,
       { clientId, ...message },
       "message event delivery"
@@ -550,6 +552,21 @@ const createAddonRuntime = ({
         messageRef: logRef(message?.key?.id),
         chatRef: logRef(message?.key?.remoteJid),
       });
+    });
+
+  const onMsg = (message, clientId, eventType) => {
+    if (!mediaStore || eventType !== "new_whatsapp_message") {
+      void deliverMessage(message, clientId, eventType);
+      return;
+    }
+    void mediaStore.enrich(message, clients[clientId]).then((media) => {
+      if (media?.status === "error") {
+        logger.warn?.("WhatsApp incoming media could not be saved.", {
+          error: media.error,
+          clientRef: logRef(clientId),
+        });
+      }
+      return deliverMessage(media ? { ...message, media } : message, clientId, eventType);
     });
   };
 
@@ -1106,6 +1123,7 @@ const startAddon = async ({
   listenFn = listen,
   closeServerFn = closeServer,
   diagnosticsFactory = createRuntimeDiagnostics,
+  mediaStoreFactory = (options) => new MediaStore(options),
   replayHealthDiagnosticsFn = replayHealthcheckDiagnostics,
   readRecoveryRecordFn = readRecoveryRecord,
   persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
@@ -1166,6 +1184,7 @@ const startAddon = async ({
   await diagnostics.start?.();
 
   let runtime;
+  let mediaStore;
   let pendingDecryptStorm;
   let apiApp;
   let webUiApp;
@@ -1194,6 +1213,10 @@ const startAddon = async ({
   };
   libsignalFilter?.setDecryptStormHandler?.(handleDecryptStorm);
   try {
+    if (options.mediaOptions) {
+      mediaStore = mediaStoreFactory({ ...options.mediaOptions, logger });
+      await mediaStore.start();
+    }
     runtime = createAddonRuntime({
       clientIds,
       apiToken,
@@ -1207,6 +1230,7 @@ const startAddon = async ({
       experimentalLidSenderReceipts,
       runId: safeRunId,
       diagnostics,
+      mediaStore,
       initialRecoveryRecord,
       recoveryPath,
       persistRecoveryRecordSyncFn,
@@ -1239,6 +1263,7 @@ const startAddon = async ({
     webUiServer = await listenFn(webUiApp, ingressPort);
     diagnostics.markApiReady?.();
   } catch (error) {
+    await mediaStore?.close();
     if (runtime) {
       await Promise.allSettled(
         Object.values(runtime.clients).map((client) => client.disconnect?.())
@@ -1267,6 +1292,7 @@ const startAddon = async ({
         runId: safeRunId,
       });
       const callDeliveryTask = runtime.stopCallDelivery?.();
+      await mediaStore?.close();
       await Promise.allSettled([
         ...Object.values(runtime.clients).map((client) =>
           client.disconnect?.()

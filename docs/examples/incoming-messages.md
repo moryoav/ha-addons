@@ -158,22 +158,27 @@ For example, this automation acknowledges an image with a reaction:
 Message payloads can also contain wrappers or protocol fields. These examples
 cover the listed shapes and do not implement a general Baileys message decoder.
 
+Incoming attachments can be saved automatically with the
+[incoming media feature](incoming-media.md). It enriches this same event with
+a decrypted local file and an authenticated download link before your
+automation runs.
+
 ## Workflows that need separate helpers
 
 These workflows require another integration or a custom helper:
 
 | Workflow | Additional requirement |
 | --- | --- |
-| Voice message to text, then an agent reply | A separate audio downloader/decrypter and transcription integration. |
-| Image or document analysis | A separate media processor that accepts the incoming message data. |
+| Voice message to text, then an agent reply | Enable incoming media downloads and pass the saved audio to a transcription integration. |
+| Image or document analysis | Enable incoming media downloads and pass the saved file to an OCR or analysis integration. |
 | Agent reply as a voice message | A text-to-speech service that produces a downloadable audio file, followed by `body.audio` with `ptt: true`. |
 | Download or transform a video, then send clips | A separate video service returning ready-to-send URLs. |
 | Generate a sticker, then send it | A custom generator returning a prepared WebP URL. |
 | Keep per-chat history for an agent | Agent-managed conversation IDs or separate storage, such as the [File and Shell Command recipe](conversation-history.md). |
 
-These processors and storage helpers are not bundled with WhatsApp for Home
-Assistant. An incoming media URL can refer to encrypted WhatsApp data; it is
-not automatically a ready-to-send image, document, or audio URL. Keep the full
-message object for a processor that knows how to handle it. See
+These processors are not bundled with WhatsApp for Home Assistant. The original
+URL inside `message.imageMessage`, `message.audioMessage`, or another media
+message still refers to encrypted WhatsApp data. Use the added `media.local_path`
+or authenticated `media.url` when `media.status` is `ready`. See
 [sending helper results](scripts.md#send-media-returned-by-a-helper) for the
 outgoing side of the workflow.

@@ -3,6 +3,18 @@
 Write WhatsApp messages from Home Assistant and receive events for sent and
 received messages, incoming calls, and presence updates.
 
+## New in 2.0: decrypted incoming media
+
+Automatically download and decrypt incoming images, voice notes, audio, videos,
+documents, and stickers. Each attachment gets a unique temporary file and an
+authenticated link in `new_whatsapp_message`, ready for OCR, transcription, or
+other processing in Home Assistant. Processing stays outside this add-on.
+
+Update both the add-on and integration to 2.0.0, restart Home Assistant, then
+enable **Download incoming media**. Downloads are off by default. Files are
+kept for 24 hours by default, with configurable retention and storage limits.
+See the [incoming media guide](https://moryoav.github.io/ha-addons/examples/incoming-media/).
+
 Starting with add-on 1.4.39, `whatsapp_message_sent` reports outgoing messages,
 including messages sent from the linked phone. The add-on sends this event
 directly to Home Assistant; no integration update is required. See the

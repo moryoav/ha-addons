@@ -8,6 +8,7 @@
 !libsignal-log-filter.js
 !lid-sender-receipts.js
 !logo.png
+!media-store.js
 !message-dedupe.js
 !message-retry-cache.js
 !package.json

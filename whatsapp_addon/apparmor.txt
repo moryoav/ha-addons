@@ -50,11 +50,13 @@ profile whatsapp_addon flags=(attach_disconnected,mediate_deleted) {
     signal (receive) peer=*_whatsapp_addon,
 
     # Runtime code and container metadata are read-only. Native modules may be
-    # memory-mapped, and only temporary and persistent session data is writable.
+    # memory-mapped. Writes are limited to session data, temporary files, and
+    # this add-on's generated attachments in the shared media directory.
     /** r,
     /usr/bin/node mr,
     /node_modules/{,**} mr,
     /tmp/{,**} rwk,
     /data/{,**} rwk,
+    /media/whatsapp/{,**} rwk,
   }
 }

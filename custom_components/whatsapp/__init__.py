@@ -18,6 +18,7 @@ from homeassistant.exceptions import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.setup import async_setup_component
 
 from .client import (
     WhatsappApiError,
@@ -46,6 +47,7 @@ from .const import (
     SERVICE_SEND_PRESENCE_UPDATE,
     SERVICE_SET_STATUS,
 )
+from .media import WhatsAppMediaView
 
 
 @dataclass(slots=True)
@@ -118,6 +120,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     if hass.services.has_service(DOMAIN, SERVICE_SEND_MESSAGE):
         return True
+
+    if not await async_setup_component(hass, "http", {}):
+        return False
+    hass.http.register_view(WhatsAppMediaView(hass))
 
     async def async_send_message(call: ServiceCall) -> dict[str, Any] | None:
         result = await _async_call_api(

@@ -218,6 +218,7 @@ jobs:
             --name "${smoke_target}" \
             --security-opt apparmor=whatsapp_addon \
             --network "${smoke_network}" \
+            --tmpfs /media \
             --env SUPERVISOR_API=http://supervisor:8080 \
             --env SUPERVISOR_TOKEN=ci \
             "whatsapp-addon:ci-${{ matrix.arch }}" \
@@ -235,6 +236,26 @@ jobs:
             await dns.lookup('localhost');
             const path='/tmp/apparmor-smoke';
             fs.writeFileSync(path,'ok');fs.unlinkSync(path);
+            const mediaBytes=Buffer.from('Fictional attachment');
+            const mediaHash=require('node:crypto').createHash('sha256')
+            .update(mediaBytes).digest();
+            const mediaStore=new (require('/media-store').MediaStore)
+            ({enabled:true});
+            await mediaStore.start();
+            const attachment=await mediaStore.enrich({},
+            {getMediaContent:()=>({mimetype:'application/pdf',
+            fileSha256:mediaHash}),downloadMedia:async()=>
+            require('node:stream').Readable.from([mediaBytes])});
+            if(attachment.status!=='ready'||
+            !fs.readFileSync(attachment.local_path).equals(mediaBytes))
+            throw new Error('Media storage is blocked by AppArmor');
+            await mediaStore.close();
+            let otherMediaDenied=false;
+            try{fs.writeFileSync('/media/unrelated','x')}
+            catch(error){otherMediaDenied=
+            ['EACCES','EPERM'].includes(error.code)}
+            if(!otherMediaDenied)
+            throw new Error('Unrelated media is writable');
             const baileys=await import('@whiskeysockets/baileys');
             if(typeof baileys.default!=='function')
             throw new Error('Baileys unavailable')})()

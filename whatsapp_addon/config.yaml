@@ -1,5 +1,5 @@
 name: WhatsappV2
-version: "1.4.44"
+version: "2.0.0"
 slug: whatsapp_addon
 description: WhatsApp Web bridge for Home Assistant actions and events
 url: "https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon"
@@ -15,16 +15,27 @@ arch:
   - aarch64
   - amd64
 init: false
+map:
+  - type: media
+    read_only: false
 options:
   clients:
     - default
   log_level: info
   decryption_diagnostics: false
   experimental_lid_sender_receipts: false
+  download_media: false
+  media_retention_hours: 24
+  media_max_file_mb: 64
+  media_max_storage_mb: 1024
 schema:
   clients:
     - str
   log_level: list(info|debug)
   decryption_diagnostics: bool
   experimental_lid_sender_receipts: bool
+  download_media: bool
+  media_retention_hours: int(1,720)
+  media_max_file_mb: int(1,1024)
+  media_max_storage_mb: int(1,102400)
   api_token: password?

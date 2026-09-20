@@ -8,7 +8,9 @@ rules:
   common-modules: done
   config-flow-test-coverage: done
   config-flow: done
-  dependency-transparency: done
+  dependency-transparency:
+    status: done
+    comment: HTTP provides authenticated attachment downloads; the documented shared media mount contains files decrypted by the companion add-on.
   docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done

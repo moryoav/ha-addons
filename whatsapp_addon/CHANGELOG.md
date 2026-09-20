@@ -1,3 +1,37 @@
+## 2.0.0
+
+### Decrypted incoming media for Home Assistant automations
+
+Major feature release: turn received WhatsApp attachments into usable local
+files for OCR, voice-to-text, document extraction, image analysis, and other
+Home Assistant automation workflows. A separate WhatsApp decryption app is
+no longer needed for these downloads.
+
+- Added automatic downloading and decryption for incoming images, voice notes,
+  audio, videos, documents, and stickers through the linked WhatsApp session.
+- Added a ready-to-use file path, authenticated link, MIME type, size, original
+  filename when available, and expiry to `new_whatsapp_message`. Files are
+  fully decrypted and checksum-verified before the event fires.
+- Added unique files for every attachment, including simultaneous messages
+  and repeated filenames, with default 24-hour retention that survives restarts.
+- Added configurable file-size and storage limits. A full budget rejects new
+  downloads without removing unexpired files. Cleanup runs automatically,
+  including while downloads are disabled.
+- Added bounded downloads and deadlines, expired-media reupload requests,
+  safe error events, and cleanup after interruption. Other messages continue
+  while attachments download.
+- Added a shared media mount with AppArmor writes limited to `/media/whatsapp`.
+  The updated integration serves attachments using Home Assistant authentication.
+- Kept OCR, transcription, conversion, and AI processing in the user's own
+  Home Assistant integrations and automations, outside the WhatsApp add-on.
+- Added detailed setup, automation, retention, access, and troubleshooting
+  guidance, plus decryption, storage, authentication, and container tests.
+
+**Update both the add-on and HACS integration to 2.0.0 and restart Home
+Assistant before enabling Download incoming media.** The feature is off by
+default. Existing actions, pairing, message fields, and outgoing events remain
+compatible.
+
 ## 1.4.44
 
 - Fixed `experimental_lid_sender_receipts` doing nothing on the first connection

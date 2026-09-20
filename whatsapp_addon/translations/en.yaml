@@ -1,5 +1,27 @@
 ---
 configuration:
+  download_media:
+    name: Download incoming media
+    description: >-
+      Automatically download and decrypt incoming attachments into unique
+      temporary files and include their path and link in message events.
+      Update both the add-on and integration to 2.0.0 first. Applies to all
+      sessions and chats. OCR and transcription stay in your automations.
+  media_retention_hours:
+    name: Media retention (hours)
+    description: >-
+      Keep each new attachment for this many hours after its download completes.
+      Default 24. Existing files keep their original expiry. Cleanup also runs
+      when downloads are disabled and catches up after a restart.
+  media_max_file_mb:
+    name: Maximum attachment size (MiB)
+    description: Maximum decrypted size of one attachment. Default 64 MiB.
+  media_max_storage_mb:
+    name: Media storage budget (MiB)
+    description: >-
+      Total attachment-content budget. Default 1024 MiB. Must be at least the
+      maximum attachment size. Active downloads reserve the maximum file size.
+      Rejects new downloads instead of removing unexpired files when full.
   clients:
     name: WhatsApp sessions
     description: Session names that can be used as clientId values in Home Assistant actions.

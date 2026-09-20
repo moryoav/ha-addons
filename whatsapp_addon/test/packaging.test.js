@@ -58,6 +58,8 @@ test("AppArmor confines Node after the trusted base-image bootstrap", () => {
   assert.match(childProfile, /^\s*\/node_modules\/\{,\*\*\}\s+mr,\s*$/m);
   assert.match(childProfile, /^\s*\/tmp\/\{,\*\*\}\s+rwk,\s*$/m);
   assert.match(childProfile, /^\s*\/data\/\{,\*\*\}\s+rwk,\s*$/m);
+  assert.match(childProfile, /^\s*\/media\/whatsapp\/\{,\*\*\}\s+rwk,\s*$/m);
+  assert.doesNotMatch(childProfile, /^\s*\/media\/\{,\*\*\}\s+rwk,\s*$/m);
   assert.doesNotMatch(childProfile, /^\s*file,\s*$/m);
   assert.doesNotMatch(childProfile, /^\s*\/\S+\s+\S*x\S*,\s*$/m);
 
@@ -92,4 +94,6 @@ test("Docker packages the diagnostic health probe with a longer wrapper timeout"
   assert.match(dockerignore, /^!recovery\.js\r?$/m);
   assert.match(dockerfile, /message-retry-cache\.js/);
   assert.match(dockerignore, /^!message-retry-cache\.js\r?$/m);
+  assert.match(dockerfile, /media-store\.js/);
+  assert.match(dockerignore, /^!media-store\.js\r?$/m);
 });

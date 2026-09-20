@@ -2,9 +2,34 @@
 
 ## How to use
 
+### Decrypt incoming media (2.0.0)
+
+Update both the add-on and integration to 2.0.0, restart Home Assistant, then
+enable **Download incoming media** and restart the add-on. Incoming images,
+audio, voice notes, videos, documents, and stickers are decrypted into unique
+files under `/media/whatsapp`. Their existing `new_whatsapp_message` event
+includes `media.status`, `media.local_path`, `media.url`, MIME type, size, and
+expiry after the file is ready and verified. Failed downloads still deliver
+the message with an error code.
+
+Use these files in Home Assistant OCR, transcription, or document-processing
+automations. The add-on does not perform those processing steps.
+See the [full incoming media guide](https://moryoav.github.io/ha-addons/examples/incoming-media/)
+for event examples, authenticated access, limits, and troubleshooting.
+
 ## Configuration
 
 The add-on options are:
+
+- `download_media`: `false` by default. Save incoming attachments automatically
+  and enrich their message events. Applies to all configured sessions and chats.
+- `media_retention_hours`: `24` by default, from 1 to 720 hours. Expiry is set
+  when each file completes; changes affect new downloads. Cleanup continues
+  while downloads are disabled and catches up after an add-on restart.
+- `media_max_file_mb`: `64` by default, from 1 to 1024 MiB per attachment.
+- `media_max_storage_mb`: `1024` by default, from 1 to 102400 MiB of attachment
+  content. Must be at least `media_max_file_mb`. New downloads are rejected
+  when the budget is full; unexpired files are not removed to make room.
 
 - `clients`: one or more unique WhatsApp session names. The default is
   `default`. A name must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
@@ -54,11 +79,16 @@ Assistant persistent notifications.
 The add-on includes a custom AppArmor profile. Its trusted base-image bootstrap
 uses the standard Home Assistant startup permissions, then the network-facing
 Node bridge runs in a restricted child profile where packaged files are
-read-only and writes are limited to temporary and persistent session data. The
+read-only and writes are limited to temporary files, persistent session data,
+and generated attachments under `/media/whatsapp`. The
 add-on runs without host networking, Docker API access, privileged capabilities,
 `full_access`, host PID, or host UTS, and uses the default Supervisor API role.
 A native container health check calls the local `/health` endpoint after
 startup.
+
+The shared `/media` mount makes decrypted files available to Home Assistant.
+Download links require Home Assistant authentication, including for documents.
+The files are not published through `/local` or an unauthenticated add-on port.
 
 The add-on has no `/config` mount. It cannot install, overwrite, or remove a
 custom integration. Version 1.4.31 retired the bundled legacy component; an
