@@ -116,3 +116,66 @@ bare phone numbers retain the existing lookup before sending. Call
 structured registration response.
 
 `whatsapp.check_number` requires add-on and integration version 1.4.31 or newer.
+
+## Look up a group name
+
+Incoming group messages identify the chat only by its `key.remoteJid`.
+`whatsapp.get_group_info` returns the group name and metadata for that JID:
+
+```yaml
+- action: whatsapp.get_group_info
+  data:
+    clientId: default
+    to: 120363000000000000@g.us
+  response_variable: group
+```
+
+`whatsapp.get_group_info` requires `response_variable`. It accepts only a
+group `@g.us` JID; phone numbers, LIDs, and broadcasts are rejected before the
+add-on is called. The linked account must be a member of the group.
+
+The response has this shape:
+
+```yaml
+jid: 120363000000000000@g.us
+subject: Family
+description: Weekend plans and grocery lists
+owner: 12025550123@s.whatsapp.net
+created_at: "2023-04-18T09:12:44.000Z"
+size: 3
+announce_only: false
+admins_only_settings: false
+is_community: false
+parent_community: null
+participants:
+  - jid: 12025550123@s.whatsapp.net
+    lid: 123456789012345@lid
+    admin: superadmin
+  - jid: 12025550199@s.whatsapp.net
+    lid: 987654321098765@lid
+    admin: admin
+  - jid: 12025550177@s.whatsapp.net
+    lid: 555566667777888@lid
+    admin: null
+```
+
+`subject` is the group name shown in WhatsApp. `description`, `owner`,
+`created_at`, and `parent_community` are `null` when WhatsApp does not report
+them. `owner` can be a LID or `null`. Each participant `jid` is a phone JID or
+`null` in groups that use LID addressing, so keep the `lid` field as the
+fallback identifier.
+`announce_only` means only admins can send; `admins_only_settings` means only
+admins can change the group settings. `admin` is `superadmin`, `admin`, or
+`null` for ordinary members.
+
+Participants are identifiers only; WhatsApp does not include member names in
+group metadata. For the sender name of a received message, read `pushName` from
+the `new_whatsapp_message` event as shown in
+[incoming messages](incoming-messages.md#show-the-sender-and-group-name).
+
+Each call queries WhatsApp and shares the per-client lookup rate limit with
+`whatsapp.check_number`, so cache the result when an automation handles a busy
+group. An unknown or disconnected client, a group the account has left, rate
+limiting, and an upstream WhatsApp failure are reported as action errors.
+
+`whatsapp.get_group_info` requires add-on and integration version 2.1.0 or newer.

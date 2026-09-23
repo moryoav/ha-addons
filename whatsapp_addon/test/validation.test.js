@@ -6,6 +6,7 @@ const {
   RequestValidationError,
   normalizeClientId,
   normalizeConfiguredClientIds,
+  normalizeGroupJid,
   normalizePhoneJid,
   resolveSessionPath,
 } = require("../validation");
@@ -76,5 +77,33 @@ test("phone lookup accepts only international numbers and phone JIDs", () => {
     undefined,
   ]) {
     assert.throws(() => normalizePhoneJid(value), RequestValidationError);
+  }
+});
+
+test("group lookup accepts only @g.us group JIDs", () => {
+  const groupJid = "120363000000000000@g.us";
+  assert.equal(normalizeGroupJid(groupJid), groupJid);
+  assert.equal(
+    normalizeGroupJid("12025550123-1600000000@g.us"),
+    "12025550123-1600000000@g.us"
+  );
+
+  for (const value of [
+    "120363000000000000",
+    FICTIONAL_JID,
+    FICTIONAL_NUMBER,
+    `${FICTIONAL_NUMBER}@lid`,
+    "status@broadcast",
+    "abc@g.us",
+    "-12345@g.us",
+    "12345-@g.us",
+    "12@g.us",
+    `${"1".repeat(65)}@g.us`,
+    " 120363000000000000@g.us ",
+    "",
+    undefined,
+    null,
+  ]) {
+    assert.throws(() => normalizeGroupJid(value), RequestValidationError);
   }
 });

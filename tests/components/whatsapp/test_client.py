@@ -13,6 +13,7 @@ from custom_components.whatsapp.client import (
     WhatsappClient,
     WhatsappUnsupportedCapability,
     normalize_api_token,
+    normalize_group_target,
     normalize_phone_target,
 )
 
@@ -71,7 +72,7 @@ def _modern_health(*, capabilities=None) -> dict:
         "api_version": 1,
         "capabilities": capabilities
         if capabilities is not None
-        else ["send_message", "check_number"],
+        else ["send_message", "check_number", "get_group_info"],
         "client_count": 1,
     }
 
@@ -93,7 +94,9 @@ async def test_health_modern_success() -> None:
     client = WhatsappClient(FakeSession(FakeResponse(json_data=health)), "http://addon")
 
     assert await client.async_health() == health
-    assert client.capabilities == frozenset({"send_message", "check_number"})
+    assert client.capabilities == frozenset(
+        {"send_message", "check_number", "get_group_info"}
+    )
 
 
 @pytest.mark.parametrize(
@@ -513,3 +516,226 @@ async def test_http_error_text_is_sanitized() -> None:
         await client.async_read_messages({})
     assert exc_info.value.status == 500
     assert "bad" not in str(exc_info.value)
+
+
+FICTIONAL_GROUP_JID = "120363000000000000@g.us"
+
+
+def _group_info(**overrides) -> dict:
+    """Return a valid add-on group lookup response."""
+    return {
+        "jid": FICTIONAL_GROUP_JID,
+        "subject": "Fictional Family",
+        "description": "Weekend plans",
+        "owner": "12025550123@s.whatsapp.net",
+        "created_at": "2023-04-18T09:12:44.000Z",
+        "size": 2,
+        "announce_only": False,
+        "admins_only_settings": True,
+        "is_community": False,
+        "parent_community": None,
+        "participants": [
+            {
+                "jid": "12025550123@s.whatsapp.net",
+                "lid": "123456789012345@lid",
+                "admin": "superadmin",
+            },
+            {"jid": None, "lid": "999999999999999@lid", "admin": None},
+        ],
+        **overrides,
+    }
+
+
+@pytest.mark.parametrize(
+    "target",
+    [FICTIONAL_GROUP_JID, "12025550123-1600000000@g.us"],
+)
+def test_normalize_group_target_accepts_group_jids(target) -> None:
+    """Test group JIDs are accepted unchanged."""
+    assert normalize_group_target(target) == target
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "120363000000000000",
+        "12025550123@s.whatsapp.net",
+        "+12025550123",
+        "12025550123@lid",
+        "status@broadcast",
+        "abc@g.us",
+        "-12345@g.us",
+        "12@g.us",
+        "1" * 65 + "@g.us",
+        " 120363000000000000@g.us",
+        "",
+    ],
+)
+def test_normalize_group_target_rejects_non_group_targets(target) -> None:
+    """Test phone numbers, LIDs, broadcasts, and malformed values fail."""
+    with pytest.raises(ValueError):
+        normalize_group_target(target)
+
+
+async def test_get_group_info_success() -> None:
+    """Test a group lookup response is validated and reduced to documented fields."""
+    payload = _group_info(ignored="upstream extension")
+    payload["participants"][0]["id"] = "upstream extension"
+    session = FakeSession(FakeResponse(json_data=payload))
+    client = WhatsappClient(session, "http://addon")
+
+    result = await client.async_get_group_info(
+        {"clientId": "default", "to": FICTIONAL_GROUP_JID}
+    )
+
+    assert result == _group_info()
+    assert session.calls[0][0:2] == ("POST", "http://addon/groupMetadata")
+    assert session.calls[0][2]["json"] == {
+        "clientId": "default",
+        "to": FICTIONAL_GROUP_JID,
+    }
+
+
+async def test_get_group_info_allows_sparse_metadata() -> None:
+    """Test optional fields may be null while the group name is still returned."""
+    payload = _group_info(
+        subject="",
+        description=None,
+        owner="999999999999999@lid",
+        created_at=None,
+        size=0,
+        parent_community="120363000000000001@g.us",
+        participants=[],
+    )
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_data=payload)), "http://addon"
+    )
+
+    assert (
+        await client.async_get_group_info(
+            {"clientId": "default", "to": FICTIONAL_GROUP_JID}
+        )
+        == payload
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        "not a dict",
+        {},
+        _group_info(jid="120363000000000009@g.us"),
+        _group_info(subject=None),
+        _group_info(description=42),
+        _group_info(owner="not-a-jid"),
+        _group_info(owner="120363000000000000@g.us"),
+        _group_info(created_at=1681809164),
+        _group_info(created_at="2023-04-18 09:12:44"),
+        _group_info(size=-1),
+        _group_info(size="2"),
+        _group_info(size=True),
+        _group_info(announce_only="false"),
+        _group_info(admins_only_settings=None),
+        _group_info(is_community=1),
+        _group_info(parent_community="12025550123@s.whatsapp.net"),
+        _group_info(participants=None),
+        _group_info(participants=[None]),
+        _group_info(participants=[{"jid": None, "lid": None}]),
+        _group_info(
+            participants=[{"jid": "999999999999999@lid", "lid": None, "admin": None}]
+        ),
+        _group_info(
+            participants=[
+                {"jid": None, "lid": "12025550123@s.whatsapp.net", "admin": None}
+            ]
+        ),
+        _group_info(participants=[{"jid": None, "lid": None, "admin": "owner"}]),
+        {key: value for key, value in _group_info().items() if key != "participants"},
+    ],
+)
+async def test_get_group_info_rejects_malformed_response(payload) -> None:
+    """Test malformed add-on group data cannot leak into automations."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_data=payload)), "http://addon"
+    )
+
+    with pytest.raises(WhatsappApiError, match="invalid response") as exc_info:
+        await client.async_get_group_info(
+            {"clientId": "default", "to": FICTIONAL_GROUP_JID}
+        )
+    assert exc_info.value.status == 200
+    assert exc_info.value.code == "invalid_response"
+
+
+async def test_get_group_info_rejects_invalid_target_before_request() -> None:
+    """Test a non-group target never reaches the add-on."""
+    session = FakeSession(FakeResponse(json_data=_group_info()))
+    client = WhatsappClient(session, "http://addon")
+
+    with pytest.raises(ValueError):
+        await client.async_get_group_info(
+            {"clientId": "default", "to": "12025550123@s.whatsapp.net"}
+        )
+    assert session.calls == []
+
+
+async def test_get_group_info_rejects_missing_advertised_capability() -> None:
+    """Test a versioned add-on without group lookup support fails before the POST."""
+    session = FakeSession(
+        FakeResponse(json_data=_modern_health(capabilities=["check_number"]))
+    )
+    client = WhatsappClient(session, "http://addon")
+    await client.async_health()
+
+    with pytest.raises(WhatsappUnsupportedCapability):
+        await client.async_get_group_info(
+            {"clientId": "default", "to": FICTIONAL_GROUP_JID}
+        )
+    assert len(session.calls) == 1
+
+
+async def test_get_group_info_legacy_endpoint_missing() -> None:
+    """Test an old add-on's missing route becomes an upgrade error."""
+    response = FakeResponse(
+        status=404,
+        json_error=ContentTypeError(Mock(), (), message="text/html"),
+        text_data="Cannot POST /groupMetadata",
+    )
+    client = WhatsappClient(FakeSession(response), "http://addon")
+
+    with pytest.raises(WhatsappUnsupportedCapability) as exc_info:
+        await client.async_get_group_info(
+            {"clientId": "default", "to": FICTIONAL_GROUP_JID}
+        )
+    assert exc_info.value.status == 404
+    assert exc_info.value.code == "unsupported_capability"
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (400, "invalid_request"),
+        (401, "unauthorized"),
+        (404, "client_not_found"),
+        (429, "rate_limited"),
+        (502, "upstream_error"),
+        (503, "client_disconnected"),
+    ],
+)
+async def test_get_group_info_preserves_structured_api_error(status, code) -> None:
+    """Test structured add-on status and codes survive client translation."""
+    response = FakeResponse(
+        status=status,
+        json_data={"error": {"code": code, "message": "Request failed."}},
+    )
+    client = WhatsappClient(FakeSession(response), "http://addon")
+
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await client.async_get_group_info(
+            {"clientId": "default", "to": FICTIONAL_GROUP_JID}
+        )
+    assert exc_info.value.status == status
+    assert exc_info.value.code == code
+    assert "Request failed" not in str(exc_info.value)

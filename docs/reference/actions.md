@@ -10,6 +10,8 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
 - `whatsapp.read_messages`: mark received messages as read.
 - `whatsapp.check_number`: check whether a phone number is registered with
   WhatsApp and return its normalized phone JID and LID when available.
+- `whatsapp.get_group_info`: look up a group by its `@g.us` JID and return its
+  name, description, owner, settings, and participants.
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event

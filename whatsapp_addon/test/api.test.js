@@ -11,6 +11,24 @@ const {
 const FICTIONAL_NUMBER = "12025550123";
 const FICTIONAL_JID = `${FICTIONAL_NUMBER}@s.whatsapp.net`;
 const FICTIONAL_LID = "999999999999999@lid";
+const FICTIONAL_GROUP_JID = "120363000000000000@g.us";
+
+const fictionalGroupInfo = () => ({
+  jid: FICTIONAL_GROUP_JID,
+  subject: "Fictional Family",
+  description: "Weekend plans",
+  owner: FICTIONAL_JID,
+  created_at: "2023-04-18T09:12:44.000Z",
+  size: 2,
+  announce_only: false,
+  admins_only_settings: true,
+  is_community: false,
+  parent_community: null,
+  participants: [
+    { jid: FICTIONAL_JID, lid: FICTIONAL_LID, admin: "superadmin" },
+    { jid: null, lid: "888888888888888@lid", admin: null },
+  ],
+});
 
 const listen = (app) =>
   new Promise((resolve, reject) => {
@@ -60,6 +78,7 @@ const createClient = (overrides = {}) => ({
     exists: true,
     lid: FICTIONAL_LID,
   }),
+  getGroupInfo: async () => fictionalGroupInfo(),
   presenceSubscribe: async () => {},
   readMessages: async () => {},
   sendMessage: async () => ({ key: { id: "fictional-message-id" } }),
@@ -467,4 +486,165 @@ test("malformed JSON and unexpected failures do not leak raw errors to logs", as
   const serializedLogs = JSON.stringify(logEntries);
   assert.ok(!serializedLogs.includes(sensitiveText));
   assert.ok(!serializedLogs.includes(FICTIONAL_NUMBER));
+});
+
+test("groupMetadata returns only the documented group fields", async () => {
+  const client = createClient({
+    getGroupInfo: async (jid) => ({
+      ...fictionalGroupInfo(),
+      jid,
+      addressingMode: "lid",
+      participants: [
+        ...fictionalGroupInfo().participants.map((participant) => ({
+          ...participant,
+          id: "upstream extension",
+        })),
+      ],
+    }),
+  });
+
+  await withApp({ clients: { default: client } }, async (baseUrl) => {
+    const response = await request(baseUrl, "/groupMetadata", {
+      body: { clientId: "default", to: FICTIONAL_GROUP_JID },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.payload, fictionalGroupInfo());
+  });
+});
+
+test("groupMetadata rejects non-group targets before calling Baileys", async () => {
+  let calls = 0;
+  const client = createClient({
+    getGroupInfo: async () => {
+      calls += 1;
+    },
+  });
+
+  await withApp({ clients: { default: client } }, async (baseUrl) => {
+    for (const to of [
+      FICTIONAL_JID,
+      `+${FICTIONAL_NUMBER}`,
+      FICTIONAL_LID,
+      "status@broadcast",
+      "120363000000000000",
+      ` ${FICTIONAL_GROUP_JID}`,
+      "",
+      42,
+    ]) {
+      const response = await request(baseUrl, "/groupMetadata", {
+        body: { clientId: "default", to },
+      });
+      assert.equal(response.status, 400);
+      assert.equal(response.payload.error.code, "invalid_request");
+    }
+    const missing = await request(baseUrl, "/groupMetadata", {
+      body: { clientId: "missing", to: FICTIONAL_GROUP_JID },
+    });
+    assert.equal(missing.status, 404);
+    assert.equal(missing.payload.error.code, "client_not_found");
+    assert.equal(calls, 0);
+  });
+});
+
+test("groupMetadata maps client failures to the shared error contract", async () => {
+  const cases = [
+    [new WhatsappDisconnectedError(), 503, "client_disconnected"],
+    [new WhatsappUpstreamError("group lookup", 403), 502, "upstream_error"],
+    [new WhatsappProtocolError(), 502, "upstream_error"],
+    [new Error("unexpected"), 500, "internal_error"],
+  ];
+
+  for (const [error, status, code] of cases) {
+    await withApp(
+      {
+        clients: {
+          default: createClient({
+            getGroupInfo: async () => {
+              throw error;
+            },
+          }),
+        },
+      },
+      async (baseUrl) => {
+        const response = await request(baseUrl, "/groupMetadata", {
+          body: { clientId: "default", to: FICTIONAL_GROUP_JID },
+        });
+        assert.equal(response.status, status);
+        assert.equal(response.payload.error.code, code);
+        assert.ok(!JSON.stringify(response.payload).includes("unexpected"));
+      }
+    );
+  }
+});
+
+test("malformed group results become upstream errors", async () => {
+  const valid = fictionalGroupInfo();
+  for (const result of [
+    undefined,
+    null,
+    {},
+    { ...valid, jid: "120363000000000009@g.us" },
+    { ...valid, subject: null },
+    { ...valid, description: 42 },
+    { ...valid, owner: "not-a-jid" },
+    { ...valid, created_at: 1681809164 },
+    { ...valid, size: -1 },
+    { ...valid, size: "2" },
+    { ...valid, announce_only: "false" },
+    { ...valid, admins_only_settings: null },
+    { ...valid, is_community: undefined },
+    { ...valid, parent_community: FICTIONAL_JID },
+    { ...valid, participants: null },
+    { ...valid, participants: [null] },
+    { ...valid, participants: [{ jid: FICTIONAL_LID, lid: null, admin: null }] },
+    { ...valid, participants: [{ jid: null, lid: FICTIONAL_JID, admin: null }] },
+    { ...valid, participants: [{ jid: null, lid: null, admin: "owner" }] },
+    { ...valid, participants: [{ jid: null, lid: null }] },
+  ]) {
+    await withApp(
+      {
+        clients: {
+          default: createClient({ getGroupInfo: async () => result }),
+        },
+      },
+      async (baseUrl) => {
+        const response = await request(baseUrl, "/groupMetadata", {
+          body: { clientId: "default", to: FICTIONAL_GROUP_JID },
+        });
+        assert.equal(response.status, 502);
+        assert.equal(response.payload.error.code, "upstream_error");
+      }
+    );
+  }
+});
+
+test("group and number lookups share one per-client rate limit", async () => {
+  await withApp(
+    {
+      clients: { default: createClient(), backup: createClient() },
+      lookupRateLimit: { limit: 2, windowMs: 60_000 },
+    },
+    async (baseUrl) => {
+      let response = await request(baseUrl, "/onWhatsApp", {
+        body: { clientId: "default", to: FICTIONAL_NUMBER },
+      });
+      assert.equal(response.status, 200);
+      response = await request(baseUrl, "/groupMetadata", {
+        body: { clientId: "default", to: FICTIONAL_GROUP_JID },
+      });
+      assert.equal(response.status, 200);
+
+      response = await request(baseUrl, "/groupMetadata", {
+        body: { clientId: "default", to: FICTIONAL_GROUP_JID },
+      });
+      assert.equal(response.status, 429);
+      assert.equal(response.payload.error.code, "rate_limited");
+      assert.ok(Number(response.headers.get("retry-after")) >= 1);
+
+      response = await request(baseUrl, "/groupMetadata", {
+        body: { clientId: "backup", to: FICTIONAL_GROUP_JID },
+      });
+      assert.equal(response.status, 200);
+    }
+  );
 });

@@ -25,6 +25,7 @@ from .client import (
     WhatsappCannotConnect,
     WhatsappClient,
     WhatsappUnsupportedCapability,
+    normalize_group_target,
     normalize_phone_target,
 )
 from .const import (
@@ -40,6 +41,7 @@ from .const import (
     DOMAIN,
     PRESENCE_TYPES,
     SERVICE_CHECK_NUMBER,
+    SERVICE_GET_GROUP_INFO,
     SERVICE_PRESENCE_SUBSCRIBE,
     SERVICE_READ_MESSAGES,
     SERVICE_SEND_INFINITY_PRESENCE_UPDATE,
@@ -67,6 +69,13 @@ SEND_MESSAGE_SCHEMA = vol.Schema(
 )
 
 CHECK_NUMBER_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CLIENT_ID): cv.string,
+        vol.Required(ATTR_TO): cv.string,
+    }
+)
+
+GET_GROUP_INFO_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CLIENT_ID): cv.string,
         vol.Required(ATTR_TO): cv.string,
@@ -168,6 +177,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             lambda client, data: client.async_check_number(data),
         )
 
+    async def async_get_group_info(call: ServiceCall) -> dict[str, Any]:
+        try:
+            jid = normalize_group_target(call.data[ATTR_TO])
+        except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_group_target",
+            ) from err
+
+        return await _async_call_api(
+            hass,
+            SERVICE_GET_GROUP_INFO,
+            {**call.data, ATTR_TO: jid},
+            lambda client, data: client.async_get_group_info(data),
+        )
+
     async def async_set_status(call: ServiceCall) -> None:
         await _async_call_api(
             hass,
@@ -220,6 +245,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_CHECK_NUMBER,
         async_check_number,
         schema=CHECK_NUMBER_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_GROUP_INFO,
+        async_get_group_info,
+        schema=GET_GROUP_INFO_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(

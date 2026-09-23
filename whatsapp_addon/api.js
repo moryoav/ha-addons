@@ -10,6 +10,7 @@ const {
 const {
   RequestValidationError,
   normalizeClientId,
+  normalizeGroupJid,
   normalizePhoneJid,
   requirePlainObject,
   requireString,
@@ -24,6 +25,7 @@ const API_CAPABILITIES = Object.freeze([
   "send_infinity_presence_update",
   "read_messages",
   "check_number",
+  "get_group_info",
 ]);
 const PRESENCE_TYPES = new Set([
   "available",
@@ -172,6 +174,71 @@ const validateCheckResult = (result, expectedJid) => {
     jid: result.jid,
     exists: result.exists,
     lid: result.lid,
+  };
+};
+
+const USER_JID_PATTERN = /^[1-9]\d{4,14}@s\.whatsapp\.net$/;
+const LID_JID_PATTERN = /^[1-9]\d{4,30}@lid$/;
+const GROUP_JID_PATTERN = /^\d[\d-]{3,62}\d@g\.us$/;
+const ISO_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const GROUP_ADMIN_ROLES = new Set(["admin", "superadmin"]);
+
+const isNullOr = (value, predicate) => value === null || predicate(value);
+const matches = (pattern) => (value) =>
+  typeof value === "string" && pattern.test(value);
+const isString = (value) => typeof value === "string";
+const isUserOrLidJid = (value) =>
+  matches(USER_JID_PATTERN)(value) || matches(LID_JID_PATTERN)(value);
+
+const isValidGroupParticipant = (participant) =>
+  !!participant &&
+  typeof participant === "object" &&
+  !Array.isArray(participant) &&
+  isNullOr(participant.jid, matches(USER_JID_PATTERN)) &&
+  isNullOr(participant.lid, matches(LID_JID_PATTERN)) &&
+  (participant.admin === null || GROUP_ADMIN_ROLES.has(participant.admin));
+
+// The client already reduces Baileys metadata to this shape; re-check it here
+// so only the documented fields, in their documented types, leave the API.
+const validateGroupInfoResult = (result, expectedJid) => {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    Array.isArray(result) ||
+    result.jid !== expectedJid ||
+    !isString(result.subject) ||
+    !isNullOr(result.description, isString) ||
+    !isNullOr(result.owner, isUserOrLidJid) ||
+    !isNullOr(result.created_at, matches(ISO_TIMESTAMP_PATTERN)) ||
+    !Number.isInteger(result.size) ||
+    result.size < 0 ||
+    typeof result.announce_only !== "boolean" ||
+    typeof result.admins_only_settings !== "boolean" ||
+    typeof result.is_community !== "boolean" ||
+    !isNullOr(result.parent_community, matches(GROUP_JID_PATTERN)) ||
+    !Array.isArray(result.participants) ||
+    !result.participants.every(isValidGroupParticipant)
+  ) {
+    throw new WhatsappProtocolError();
+  }
+
+  return {
+    jid: result.jid,
+    subject: result.subject,
+    description: result.description,
+    owner: result.owner,
+    created_at: result.created_at,
+    size: result.size,
+    announce_only: result.announce_only,
+    admins_only_settings: result.admins_only_settings,
+    is_community: result.is_community,
+    parent_community: result.parent_community,
+    participants: result.participants.map((participant) => ({
+      jid: participant.jid,
+      lid: participant.lid,
+      admin: participant.admin,
+    })),
   };
 };
 
@@ -370,6 +437,28 @@ const createApiApp = ({
     })
   );
 
+  app.post(
+    "/groupMetadata",
+    asyncRoute(async (req, res) => {
+      const body = requirePlainObject(req.body);
+      const { client, clientId } = requireClient(clients, body, clientStates);
+      const jid = normalizeGroupJid(body.to);
+      // Group and number lookups share one per-client budget.
+      const limit = checkLookupLimit(clientId);
+      if (!limit.allowed) {
+        res.set("Retry-After", String(limit.retryAfterSeconds));
+        throw new ApiError(
+          429,
+          "rate_limited",
+          "Too many lookups. Try again later."
+        );
+      }
+
+      const result = await client.getGroupInfo(jid);
+      res.json(validateGroupInfoResult(result, jid));
+    })
+  );
+
   app.use((req, res) => {
     res.status(404).json({
       error: { code: "not_found", message: "The API route was not found." },
@@ -414,4 +503,5 @@ module.exports = {
   createHealthSnapshot,
   safeTokenMatches,
   validateCheckResult,
+  validateGroupInfoResult,
 };

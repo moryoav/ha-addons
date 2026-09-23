@@ -208,6 +208,8 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
 - `whatsapp.read_messages`: mark received messages as read.
 - `whatsapp.check_number`: check whether a phone number is registered with
   WhatsApp and return its normalized phone JID and LID when available.
+- `whatsapp.get_group_info`: look up a group by its `@g.us` JID and return its
+  name, description, owner, settings, and participants.
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event
@@ -369,6 +371,8 @@ updates the existing alert instead of accumulating duplicates.
   than during setup.
 - `whatsapp.check_number` requires add-on and integration version 1.4.31 or
   newer. An endpoint/version error usually means only one half was updated.
+- `whatsapp.get_group_info` requires add-on and integration version 2.1.0 or
+  newer. Older add-ons report that the action is unsupported.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If the add-on reports that its clients are paused, open its Web UI. Try Retry
   connection first. If the same failure returns, use Reset and re-pair for the
