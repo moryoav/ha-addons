@@ -161,8 +161,9 @@ participants:
 
 `subject` is the group name shown in WhatsApp. `description`, `owner`,
 `created_at`, and `parent_community` are `null` when WhatsApp does not report
-them. `owner` and each participant `jid` can be a LID or `null` in groups that
-use LID addressing, so keep the `lid` field as the fallback identifier.
+them. `owner` can be a LID or `null`. Each participant `jid` is a phone JID or
+`null` in groups that use LID addressing, so keep the `lid` field as the
+fallback identifier.
 `announce_only` means only admins can send; `admins_only_settings` means only
 admins can change the group settings. `admin` is `superadmin`, `admin`, or
 `null` for ordinary members.
