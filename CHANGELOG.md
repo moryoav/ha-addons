@@ -2,6 +2,25 @@
 
 All notable changes to this repository are documented here.
 
+## 2.1.0
+
+### Group name lookup
+
+- Added the `whatsapp.get_group_info` action. It takes a group `@g.us` JID,
+  such as the `key.remoteJid` of a received group message, and returns the
+  group name (`subject`), description, owner, creation time, size, admin-only
+  settings, community links, and the participant list with admin roles.
+- Added the add-on `groupMetadata` endpoint and the `get_group_info`
+  capability. The integration reports an upgrade error when the add-on is
+  older than 2.1.0. Group and number lookups share the per-client rate limit.
+- Documented that `new_whatsapp_message` already carries the sender's
+  `pushName`, with an automation example that combines it with the group name.
+- Generalized the add-on-too-old and rate-limit action error messages, which
+  previously mentioned only number checks.
+
+**Update both the add-on and HACS integration to 2.1.0** to use the new action.
+Existing actions, events, and payloads are unchanged.
+
 ## 2.0.0
 
 ### Decrypted incoming media for Home Assistant automations

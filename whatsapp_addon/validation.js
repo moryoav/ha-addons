@@ -3,6 +3,7 @@ const path = require("path");
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const PHONE_PATTERN = /^\+?([1-9]\d{4,14})$/;
 const PHONE_JID_PATTERN = /^([1-9]\d{4,14})@s\.whatsapp\.net$/;
+const GROUP_JID_PATTERN = /^(\d[\d-]{3,62}\d)@g\.us$/;
 
 class RequestValidationError extends Error {
   constructor(message = "Invalid request.") {
@@ -99,13 +100,28 @@ const normalizePhoneJid = (value) => {
   );
 };
 
+const normalizeGroupJid = (value) => {
+  const target = requireString(value, "to", { maxLength: 128 });
+  if (target !== value) {
+    throw new RequestValidationError("to must not contain surrounding whitespace.");
+  }
+  const match = target.match(GROUP_JID_PATTERN);
+  if (match) {
+    return `${match[1]}@g.us`;
+  }
+
+  throw new RequestValidationError("to must be a WhatsApp group @g.us JID.");
+};
+
 module.exports = {
   CLIENT_ID_PATTERN,
+  GROUP_JID_PATTERN,
   PHONE_JID_PATTERN,
   PHONE_PATTERN,
   RequestValidationError,
   normalizeClientId,
   normalizeConfiguredClientIds,
+  normalizeGroupJid,
   normalizePhoneJid,
   requirePlainObject,
   requireString,

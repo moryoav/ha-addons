@@ -41,6 +41,50 @@ also appear in `key.participant`; preserve the entire key for reactions and
 read markers. Keep reply triggers on `new_whatsapp_message` so outgoing
 `whatsapp_message_sent` events do not trigger another reply.
 
+## Show the sender and group name
+
+Every `new_whatsapp_message` event carries `pushName`, the display name the
+sender set on their own WhatsApp profile. It is present for direct chats and
+for each member of a group. It is not your saved contact name, and a few
+protocol messages omit it, so keep a fallback.
+
+The group itself is only identified by `key.remoteJid`. Use
+[`whatsapp.get_group_info`](recipients.md#look-up-a-group-name) to turn that
+JID into the group name when the automation needs it:
+
+```yaml
+- alias: Forward WhatsApp group messages with names
+  triggers:
+    - trigger: event
+      event_type: new_whatsapp_message
+      event_data:
+        clientId: default
+        key:
+          remoteJid: 120363000000000000@g.us
+  actions:
+    - variables:
+        message_text: >-
+          {% set message = trigger.event.data.get('message', {}) %}
+          {{ message.get('conversation') or
+             message.get('extendedTextMessage', {}).get('text', '') }}
+        sender: "{{ trigger.event.data.get('pushName', 'Group member') }}"
+    - condition: template
+      value_template: "{{ message_text | string | trim != '' }}"
+    - action: whatsapp.get_group_info
+      data:
+        clientId: "{{ trigger.event.data.clientId }}"
+        to: "{{ trigger.event.data.key.remoteJid }}"
+      response_variable: group
+    - action: notify.mobile_app_phone
+      data:
+        title: "{{ group.subject }}"
+        message: "{{ sender }}: {{ message_text }}"
+  mode: queued
+```
+
+`whatsapp.get_group_info` queries WhatsApp on every call. For a busy group,
+store the name in a helper instead of looking it up for each message.
+
 ## Reply with a conversation agent
 
 This requires a configured [Home Assistant conversation agent](https://www.home-assistant.io/integrations/conversation/).

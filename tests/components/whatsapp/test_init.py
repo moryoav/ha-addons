@@ -218,6 +218,121 @@ async def test_send_message_without_response_still_fires_result_event(
     assert events[0].data["sent_message"] == {"key": {"id": "abc"}}
 
 
+async def test_get_group_info_action_success(hass, enable_custom_integrations) -> None:
+    """Test the group lookup action returns the client result unchanged."""
+    group_info = {
+        "jid": "120363000000000000@g.us",
+        "subject": "Fictional Family",
+        "description": None,
+        "owner": "12025550123@s.whatsapp.net",
+        "created_at": "2023-04-18T09:12:44.000Z",
+        "size": 1,
+        "announce_only": False,
+        "admins_only_settings": False,
+        "is_community": False,
+        "parent_community": None,
+        "participants": [
+            {
+                "jid": "12025550123@s.whatsapp.net",
+                "lid": "123456789@lid",
+                "admin": "superadmin",
+            }
+        ],
+    }
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_get_group_info.return_value = group_info
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        "get_group_info",
+        {"clientId": "default", "to": "120363000000000000@g.us"},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response == group_info
+    client.async_get_group_info.assert_awaited_once_with(
+        {"clientId": "default", "to": "120363000000000000@g.us"}
+    )
+
+
+async def test_get_group_info_requires_response(
+    hass,
+    enable_custom_integrations,
+) -> None:
+    """Test group lookups cannot silently discard their only useful result."""
+    client = AsyncMock(spec=WhatsappClient)
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "get_group_info",
+            {"clientId": "default", "to": "120363000000000000@g.us"},
+            blocking=True,
+        )
+    client.async_get_group_info.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "120363000000000000",
+        "12025550123@s.whatsapp.net",
+        "+12025550123",
+        "12025550123@lid",
+        "status@broadcast",
+        " 120363000000000000@g.us",
+    ],
+)
+async def test_get_group_info_rejects_invalid_target(
+    hass,
+    enable_custom_integrations,
+    target,
+) -> None:
+    """Test the action rejects every non-group target."""
+    client = AsyncMock(spec=WhatsappClient)
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await hass.services.async_call(
+            DOMAIN,
+            "get_group_info",
+            {"clientId": "default", "to": target},
+            blocking=True,
+            return_response=True,
+        )
+    assert exc_info.value.translation_key == "invalid_group_target"
+    client.async_get_group_info.assert_not_awaited()
+
+
+async def test_get_group_info_translates_unsupported_addon(
+    hass,
+    enable_custom_integrations,
+) -> None:
+    """Test an add-on without the group endpoint reports an upgrade error."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_get_group_info.side_effect = WhatsappUnsupportedCapability(
+        code="unsupported_capability"
+    )
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await hass.services.async_call(
+            DOMAIN,
+            "get_group_info",
+            {"clientId": "default", "to": "120363000000000000@g.us"},
+            blocking=True,
+            return_response=True,
+        )
+    assert exc_info.value.translation_key == "addon_too_old"
+
+
 async def test_check_number_requires_response(hass, enable_custom_integrations) -> None:
     """Test number checks cannot silently discard their only useful result."""
     client = AsyncMock(spec=WhatsappClient)

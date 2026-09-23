@@ -38,6 +38,21 @@ check_number:
       selector:
         text:
 
+get_group_info:
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:
+    to:
+      required: true
+      example: 120363000000000000@g.us
+      selector:
+        text:
+
 set_status:
   fields:
     clientId:

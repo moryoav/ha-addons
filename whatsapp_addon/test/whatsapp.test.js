@@ -16,9 +16,11 @@ const { createAddonRuntime } = require("../runtime");
 const FICTIONAL_NUMBER = "12025550123";
 const FICTIONAL_JID = `${FICTIONAL_NUMBER}@s.whatsapp.net`;
 const FICTIONAL_LID = "999999999999999@lid";
+const FICTIONAL_GROUP_JID = "120363000000000000@g.us";
 
 const createHarness = async ({
   onWhatsApp,
+  groupMetadata,
   sendMessage,
   decryptionDiagnostics = false,
   downloadMediaMessage,
@@ -27,6 +29,7 @@ const createHarness = async ({
   const ws = new EventEmitter();
   const calls = {
     end: 0,
+    groupMetadata: [],
     onWhatsApp: [],
     presenceSubscribe: [],
     sendMessage: [],
@@ -42,6 +45,11 @@ const createHarness = async ({
     async onWhatsApp(jid) {
       calls.onWhatsApp.push(jid);
       return onWhatsApp ? onWhatsApp(jid) : [];
+    },
+    async groupMetadata(jid) {
+      calls.groupMetadata.push(jid);
+      if (!groupMetadata) throw new Error("groupMetadata is not configured");
+      return groupMetadata(jid);
     },
     async presenceSubscribe(jid) {
       calls.presenceSubscribe.push(jid);
@@ -762,5 +770,164 @@ test("diagnostic failures do not interrupt retry retrieval or normal messages", 
   assert.equal(
     (await calls.socketOptions[0].getMessage(key)).conversation,
     "Fictional text"
+  );
+});
+
+const fictionalGroupMetadata = () => ({
+  id: FICTIONAL_GROUP_JID,
+  addressingMode: "lid",
+  subject: "Fictional Family",
+  subjectOwner: FICTIONAL_LID,
+  subjectOwnerJid: FICTIONAL_JID,
+  subjectTime: 1700000000,
+  size: 3,
+  creation: 1681809164,
+  owner: FICTIONAL_LID,
+  ownerJid: FICTIONAL_JID,
+  desc: "Weekend plans",
+  descId: "fictional-desc-id",
+  linkedParent: "120363000000000001@g.us",
+  restrict: true,
+  announce: false,
+  isCommunity: false,
+  isCommunityAnnounce: false,
+  joinApprovalMode: false,
+  memberAddMode: true,
+  participants: [
+    { id: FICTIONAL_LID, jid: FICTIONAL_JID, lid: FICTIONAL_LID, admin: "superadmin" },
+    { id: "888888888888888@lid", jid: "12025550199@s.whatsapp.net", lid: "888888888888888@lid", admin: "admin" },
+    { id: "777777777777777@lid", jid: "12025550177@s.whatsapp.net", lid: "777777777777777@lid", admin: null },
+  ],
+  ephemeralDuration: 604800,
+});
+
+test("getGroupInfo reduces Baileys group metadata to the stable response", async () => {
+  const { calls, client } = await createHarness({
+    groupMetadata: async () => fictionalGroupMetadata(),
+  });
+
+  assert.deepEqual(await client.getGroupInfo(FICTIONAL_GROUP_JID), {
+    jid: FICTIONAL_GROUP_JID,
+    subject: "Fictional Family",
+    description: "Weekend plans",
+    owner: FICTIONAL_JID,
+    created_at: "2023-04-18T09:12:44.000Z",
+    size: 3,
+    announce_only: false,
+    admins_only_settings: true,
+    is_community: false,
+    parent_community: "120363000000000001@g.us",
+    participants: [
+      { jid: FICTIONAL_JID, lid: FICTIONAL_LID, admin: "superadmin" },
+      { jid: "12025550199@s.whatsapp.net", lid: "888888888888888@lid", admin: "admin" },
+      { jid: "12025550177@s.whatsapp.net", lid: "777777777777777@lid", admin: null },
+    ],
+  });
+  assert.deepEqual(calls.groupMetadata, [FICTIONAL_GROUP_JID]);
+  await client.disconnect();
+});
+
+test("getGroupInfo degrades missing or unexpected optional metadata to null", async () => {
+  const { client } = await createHarness({
+    groupMetadata: async () => ({
+      id: FICTIONAL_GROUP_JID,
+      subject: "",
+      owner: FICTIONAL_LID,
+      creation: Number.NaN,
+      size: "3",
+      participants: [
+        // Baileys yields "" when WhatsApp omits phone_number for a LID member.
+        { id: FICTIONAL_LID, jid: "", lid: FICTIONAL_LID, admin: "owner" },
+        { id: "12025550199@s.whatsapp.net", jid: "12025550199@s.whatsapp.net" },
+        { id: "123@hosted", jid: "", lid: undefined, admin: undefined },
+      ],
+    }),
+  });
+
+  assert.deepEqual(await client.getGroupInfo(FICTIONAL_GROUP_JID), {
+    jid: FICTIONAL_GROUP_JID,
+    subject: "",
+    description: null,
+    owner: FICTIONAL_LID,
+    created_at: null,
+    size: 3,
+    announce_only: false,
+    admins_only_settings: false,
+    is_community: false,
+    parent_community: null,
+    participants: [
+      { jid: null, lid: FICTIONAL_LID, admin: null },
+      { jid: "12025550199@s.whatsapp.net", lid: null, admin: null },
+      { jid: null, lid: null, admin: null },
+    ],
+  });
+  await client.disconnect();
+});
+
+test("getGroupInfo treats malformed upstream metadata as a protocol error", async () => {
+  for (const metadata of [
+    undefined,
+    null,
+    [],
+    {},
+    { ...fictionalGroupMetadata(), id: "120363000000000009@g.us" },
+    { ...fictionalGroupMetadata(), subject: undefined },
+    { ...fictionalGroupMetadata(), subject: 42 },
+    { ...fictionalGroupMetadata(), desc: 42 },
+    { ...fictionalGroupMetadata(), participants: {} },
+    { ...fictionalGroupMetadata(), participants: ["participant"] },
+  ]) {
+    const { client } = await createHarness({
+      groupMetadata: async () => metadata,
+    });
+    await assert.rejects(
+      client.getGroupInfo(FICTIONAL_GROUP_JID),
+      WhatsappProtocolError
+    );
+    await client.disconnect();
+  }
+});
+
+test("getGroupInfo rejects non-group targets before calling Baileys", async () => {
+  const { calls, client } = await createHarness({
+    groupMetadata: async () => fictionalGroupMetadata(),
+  });
+
+  for (const target of [
+    FICTIONAL_JID,
+    FICTIONAL_NUMBER,
+    FICTIONAL_LID,
+    "120363000000000000",
+    "status@broadcast",
+    ` ${FICTIONAL_GROUP_JID}`,
+    "",
+    undefined,
+  ]) {
+    await assert.rejects(client.getGroupInfo(target), RequestValidationError);
+  }
+  assert.deepEqual(calls.groupMetadata, []);
+  await client.disconnect();
+});
+
+test("getGroupInfo maps upstream failures and disconnected sessions", async () => {
+  const { client } = await createHarness({
+    groupMetadata: async () => {
+      const error = new Error("forbidden");
+      error.output = { statusCode: 403 };
+      throw error;
+    },
+  });
+
+  await assert.rejects(client.getGroupInfo(FICTIONAL_GROUP_JID), (error) => {
+    assert.ok(error instanceof WhatsappUpstreamError);
+    assert.equal(error.upstreamCode, 403);
+    assert.ok(!error.message.includes("forbidden"));
+    return true;
+  });
+
+  await client.disconnect();
+  await assert.rejects(
+    client.getGroupInfo(FICTIONAL_GROUP_JID),
+    WhatsappDisconnectedError
   );
 });

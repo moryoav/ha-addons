@@ -11,6 +11,7 @@ const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const {
   RequestValidationError,
+  normalizeGroupJid,
   normalizePhoneJid,
   requireString,
 } = require("./validation");
@@ -34,6 +35,82 @@ const DIRECT_JID_PATTERNS = [
 
 const isPlainObject = (value) =>
   !!value && typeof value === "object" && !Array.isArray(value);
+
+const USER_JID_PATTERN = /^[1-9]\d{4,14}@s\.whatsapp\.net$/;
+const LID_JID_PATTERN = /^[1-9]\d{4,30}@lid$/;
+const GROUP_JID_PATTERN = /^\d[\d-]{3,62}\d@g\.us$/;
+const GROUP_ADMIN_ROLES = new Set(["admin", "superadmin"]);
+// Seconds; rejects zero, negatives, NaN and values past the year 2100.
+const MAX_UNIX_SECONDS = 4_102_444_800;
+
+// Identifiers WhatsApp omits, or reports in an unexpected form, become null so
+// one unusual participant cannot fail the whole group lookup.
+const optionalIdentifier = (value, pattern) =>
+  typeof value === "string" && pattern.test(value) ? value : null;
+
+const optionalText = (value) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new WhatsappProtocolError();
+  return value;
+};
+
+const optionalIsoTimestamp = (value) => {
+  if (value === undefined || value === null) return null;
+  const seconds = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(seconds) || seconds <= 0 || seconds > MAX_UNIX_SECONDS) {
+    return null;
+  }
+  return new Date(seconds * 1000).toISOString();
+};
+
+// Reduce a Baileys GroupMetadata object to the stable action response shape.
+// Only the identifier and subject are mandatory; everything else degrades to
+// null or a default so partial upstream data still yields the group name.
+const normalizeGroupMetadata = (metadata, jid) => {
+  if (
+    !isPlainObject(metadata) ||
+    metadata.id !== jid ||
+    typeof metadata.subject !== "string"
+  ) {
+    throw new WhatsappProtocolError();
+  }
+
+  const participants =
+    metadata.participants === undefined ? [] : metadata.participants;
+  if (!Array.isArray(participants)) {
+    throw new WhatsappProtocolError();
+  }
+  const members = participants.map((participant) => {
+    if (!isPlainObject(participant)) {
+      throw new WhatsappProtocolError();
+    }
+    return {
+      jid: optionalIdentifier(participant.jid, USER_JID_PATTERN),
+      lid: optionalIdentifier(participant.lid, LID_JID_PATTERN),
+      admin: GROUP_ADMIN_ROLES.has(participant.admin) ? participant.admin : null,
+    };
+  });
+
+  return {
+    jid,
+    subject: metadata.subject,
+    description: optionalText(metadata.desc),
+    owner:
+      optionalIdentifier(metadata.ownerJid, USER_JID_PATTERN) ??
+      optionalIdentifier(metadata.owner, USER_JID_PATTERN) ??
+      optionalIdentifier(metadata.owner, LID_JID_PATTERN),
+    created_at: optionalIsoTimestamp(metadata.creation),
+    size:
+      Number.isInteger(metadata.size) && metadata.size >= 0
+        ? metadata.size
+        : members.length,
+    announce_only: metadata.announce === true,
+    admins_only_settings: metadata.restrict === true,
+    is_community: metadata.isCommunity === true,
+    parent_community: optionalIdentifier(metadata.linkedParent, GROUP_JID_PATTERN),
+    participants: members,
+  };
+};
 
 const normalizeRecipientJid = (value) => {
   const recipient = requireString(value, "recipient", { maxLength: 128 });
@@ -670,6 +747,19 @@ class WhatsappClient extends EventEmitter {
     return this.#lookupNumber(jid);
   };
 
+  #lookupGroup = async (jid) => {
+    const metadata = await this.#runUpstream("group lookup", () =>
+      this.#conn.groupMetadata(jid)
+    );
+    return normalizeGroupMetadata(metadata, jid);
+  };
+
+  getGroupInfo = async (to) => {
+    this.#assertConnected();
+    const jid = normalizeGroupJid(to);
+    return this.#lookupGroup(jid);
+  };
+
   setSendPresenceUpdateInterval = async (status, recipient) => {
     clearInterval(this.#sendPresenceUpdateInterval);
     this.#sendPresenceUpdateInterval = undefined;
@@ -772,6 +862,7 @@ module.exports = {
   WhatsappProtocolError,
   WhatsappUpstreamError,
   isDirectJid,
+  normalizeGroupMetadata,
   normalizeRecipientJid,
   safeUpstreamCode,
 };

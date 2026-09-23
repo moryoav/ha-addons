@@ -18,12 +18,18 @@ from .const import (
     ADDON_SERVICE,
     ATTR_TO,
     CAPABILITY_CHECK_NUMBER,
+    CAPABILITY_GET_GROUP_INFO,
     DEFAULT_TIMEOUT,
 )
 
 _PHONE_NUMBER_PATTERN = re.compile(r"^\+?([1-9][0-9]{4,14})$")
 _PHONE_JID_PATTERN = re.compile(r"^([1-9][0-9]{4,14})@s\.whatsapp\.net$")
 _LID_PATTERN = re.compile(r"^[1-9][0-9]{4,30}@lid$")
+_GROUP_JID_PATTERN = re.compile(r"^[0-9][0-9-]{3,62}[0-9]@g\.us$")
+_ISO_TIMESTAMP_PATTERN = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?Z$"
+)
+_GROUP_ADMIN_ROLES = frozenset({"admin", "superadmin"})
 _API_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~+/-]+=*$")
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
@@ -59,6 +65,106 @@ def normalize_phone_target(value: str) -> str:
     if _PHONE_JID_PATTERN.fullmatch(value):
         return value
     raise ValueError("target is not a valid phone number or phone-number JID")
+
+
+def normalize_group_target(value: str) -> str:
+    """Validate a WhatsApp group JID and return it unchanged."""
+    if _GROUP_JID_PATTERN.fullmatch(value):
+        return value
+    raise ValueError("target is not a valid WhatsApp group JID")
+
+
+def _is_none_or(value: Any, predicate: Any) -> bool:
+    """Return True when value is None or satisfies the predicate."""
+    return value is None or predicate(value)
+
+
+def _matches(pattern: re.Pattern[str]) -> Any:
+    """Return a predicate that checks a string against a pattern."""
+    return lambda value: isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def _is_user_or_lid_jid(value: Any) -> bool:
+    """Return True for a phone-number JID or a LID."""
+    return _matches(_PHONE_JID_PATTERN)(value) or _matches(_LID_PATTERN)(value)
+
+
+def _validate_group_participant(participant: Any) -> dict[str, Any] | None:
+    """Return the documented participant fields, or None when malformed."""
+    if (
+        not isinstance(participant, dict)
+        or not {"jid", "lid", "admin"}.issubset(participant)
+        or not _is_none_or(participant["jid"], _matches(_PHONE_JID_PATTERN))
+        or not _is_none_or(participant["lid"], _matches(_LID_PATTERN))
+        or not (
+            participant["admin"] is None or participant["admin"] in _GROUP_ADMIN_ROLES
+        )
+    ):
+        return None
+    return {
+        "jid": participant["jid"],
+        "lid": participant["lid"],
+        "admin": participant["admin"],
+    }
+
+
+_GROUP_INFO_KEYS = frozenset(
+    {
+        "jid",
+        "subject",
+        "description",
+        "owner",
+        "created_at",
+        "size",
+        "announce_only",
+        "admins_only_settings",
+        "is_community",
+        "parent_community",
+        "participants",
+    }
+)
+
+
+def _validate_group_info(payload: Any, jid: str) -> dict[str, Any] | None:
+    """Return the documented group fields, or None when the payload is malformed."""
+    if (
+        not isinstance(payload, dict)
+        or not _GROUP_INFO_KEYS.issubset(payload)
+        or payload["jid"] != jid
+        or not isinstance(payload["subject"], str)
+        or not _is_none_or(payload["description"], lambda v: isinstance(v, str))
+        or not _is_none_or(payload["owner"], _is_user_or_lid_jid)
+        or not _is_none_or(payload["created_at"], _matches(_ISO_TIMESTAMP_PATTERN))
+        or type(payload["size"]) is not int
+        or payload["size"] < 0
+        or type(payload["announce_only"]) is not bool
+        or type(payload["admins_only_settings"]) is not bool
+        or type(payload["is_community"]) is not bool
+        or not _is_none_or(payload["parent_community"], _matches(_GROUP_JID_PATTERN))
+        or not isinstance(payload["participants"], list)
+    ):
+        return None
+
+    participants = [
+        _validate_group_participant(participant)
+        for participant in payload["participants"]
+    ]
+    if any(participant is None for participant in participants):
+        return None
+
+    return {
+        "jid": payload["jid"],
+        "subject": payload["subject"],
+        "description": payload["description"],
+        "owner": payload["owner"],
+        "created_at": payload["created_at"],
+        "size": payload["size"],
+        "announce_only": payload["announce_only"],
+        "admins_only_settings": payload["admins_only_settings"],
+        "is_community": payload["is_community"],
+        "parent_community": payload["parent_community"],
+        "participants": participants,
+    }
 
 
 def normalize_api_token(value: Any) -> str | None:
@@ -214,6 +320,46 @@ class WhatsappClient:
             )
 
         return {"jid": result_jid, "exists": exists, "lid": lid}
+
+    async def async_get_group_info(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Return the name and metadata of a WhatsApp group the account belongs to."""
+        jid = normalize_group_target(data[ATTR_TO])
+
+        if (
+            self._capabilities is not None
+            and CAPABILITY_GET_GROUP_INFO not in self._capabilities
+        ):
+            raise WhatsappUnsupportedCapability(
+                "the add-on does not advertise group lookup support",
+                code="unsupported_capability",
+            )
+
+        response = await self._request(
+            "POST",
+            "groupMetadata",
+            json={**data, ATTR_TO: jid},
+        )
+        if response.status >= 400:
+            try:
+                await self._raise_for_error(response, "get group info")
+            except WhatsappApiError as err:
+                if err.status == 404 and err.code != "client_not_found":
+                    raise WhatsappUnsupportedCapability(
+                        "the add-on does not provide the group lookup endpoint",
+                        status=err.status,
+                        code="unsupported_capability",
+                    ) from err
+                raise
+
+        payload = await self._read_json(response, "get group info", WhatsappApiError)
+        result = _validate_group_info(payload, jid)
+        if result is None:
+            raise WhatsappApiError(
+                "get group info returned an invalid response",
+                status=response.status,
+                code="invalid_response",
+            )
+        return result
 
     async def async_send_message(self, data: dict[str, Any]) -> dict[str, Any]:
         """Send a WhatsApp message."""

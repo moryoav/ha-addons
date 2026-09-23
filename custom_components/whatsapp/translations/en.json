@@ -49,6 +49,16 @@
         }
       }
     },
+    "get_group_info": {
+      "name": "Get group info",
+      "description": "Returns the name, description, owner, settings, and participants of a WhatsApp group the linked account belongs to.",
+      "fields": {
+        "to": {
+          "name": "Group",
+          "description": "The WhatsApp group @g.us JID, for example the key.remoteJid of a received group message."
+        }
+      }
+    },
     "set_status": {
       "name": "Set status",
       "description": "Sets the WhatsApp account status message.",
@@ -104,7 +114,7 @@
   },
   "exceptions": {
     "addon_too_old": {
-      "message": "The installed WhatsApp add-on does not support number checks. Update the add-on and try again."
+      "message": "The installed WhatsApp add-on does not support this action. Update the add-on and try again."
     },
     "api_request_failed": {
       "message": "The WhatsApp add-on could not complete {action} (error: {error_code})."
@@ -117,6 +127,9 @@
     },
     "client_not_found": {
       "message": "The selected WhatsApp client ID does not exist."
+    },
+    "invalid_group_target": {
+      "message": "Enter a WhatsApp group JID ending in @g.us, such as the key.remoteJid of a received group message. Phone numbers, LIDs, and broadcasts are not groups."
     },
     "invalid_phone_target": {
       "message": "Enter an international phone number using 5 to 15 digits, optionally prefixed with +, or its @s.whatsapp.net JID. Groups, broadcasts, LIDs, and device JIDs are not supported."
@@ -134,7 +147,7 @@
       "message": "The recipient phone number is not registered with WhatsApp."
     },
     "rate_limited": {
-      "message": "Too many WhatsApp number checks were requested. Wait before trying again."
+      "message": "Too many WhatsApp lookups were requested. Wait before trying again."
     },
     "unauthorized": {
       "message": "WhatsApp add-on API authorization failed while running {action}. Reload add-on discovery after checking its API token configuration."

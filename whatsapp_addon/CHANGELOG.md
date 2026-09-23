@@ -1,3 +1,16 @@
+## 2.1.0
+
+### Group name lookup
+
+- Added the `groupMetadata` API endpoint behind the new `get_group_info`
+  capability. It accepts a group `@g.us` JID and returns the group name,
+  description, owner, creation time, size, admin-only settings, community
+  links, and participant identifiers with admin roles, reduced to a stable,
+  validated shape. Requires integration 2.1.0 or newer for the
+  `whatsapp.get_group_info` action.
+- Group lookups share the existing per-client lookup rate limit with number
+  checks.
+
 ## 2.0.0
 
 ### Decrypted incoming media for Home Assistant automations
