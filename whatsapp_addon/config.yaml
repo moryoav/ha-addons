@@ -1,8 +1,9 @@
 name: WhatsappV2
-version: "2.1.0"
+version: "2.1.1"
 slug: whatsapp_addon
 description: WhatsApp Web bridge for Home Assistant actions and events
 url: "https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon"
+image: ghcr.io/moryoav/whatsapp-addon
 homeassistant_api: true
 hassio_api: true
 ingress: true

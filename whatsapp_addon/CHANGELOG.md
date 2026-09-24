@@ -1,3 +1,14 @@
+## 2.1.1
+
+### Prebuilt add-on image
+
+- The add-on now installs a prebuilt container image from
+  `ghcr.io/moryoav/whatsapp-addon` instead of building the image on the
+  Home Assistant host. Installs and updates are faster and no longer depend on
+  a local Docker build. No runtime behavior, options, actions, or events
+  changed.
+- No integration update is needed.
+
 ## 2.1.0
 
 ### Group name lookup

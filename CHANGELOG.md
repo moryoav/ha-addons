@@ -2,6 +2,18 @@
 
 All notable changes to this repository are documented here.
 
+## 2.1.1
+
+### Prebuilt add-on image
+
+- The `WhatsappV2` add-on is now published as a prebuilt multi-arch container
+  image at `ghcr.io/moryoav/whatsapp-addon`. Home Assistant pulls the image
+  instead of building it on the host, so installs and updates are faster.
+- Added the `Build add-on image` workflow, which builds and pushes the image
+  for `amd64` and `aarch64` when a GitHub release is published.
+- Add-on runtime behavior, options, actions, and events are unchanged. The
+  HACS integration stays at 2.1.0 and needs no update.
+
 ## 2.1.0
 
 ### Group name lookup

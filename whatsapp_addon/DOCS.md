@@ -67,6 +67,8 @@ Use the default repository URL for stable releases:
 https://github.com/moryoav/ha-addons
 ```
 
+Since add-on 2.1.1, Home Assistant installs a prebuilt image from `ghcr.io/moryoav/whatsapp-addon` instead of building the add-on on the host. Each add-on version corresponds to an image tag built from the matching GitHub release.
+
 This repository does not currently publish a separate canary or `next` branch. If a canary channel is introduced later, it will be documented with its `#branch` repository URL and a distinct add-on name.
 
 ## Security and network access

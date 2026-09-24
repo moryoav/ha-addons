@@ -1,0 +1,119 @@
+---
+name: Build add-on image
+
+# yamllint disable-line rule:truthy
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+env:
+  ADDON_PATH: whatsapp_addon
+  ARCHITECTURES: '["amd64", "aarch64"]'
+  IMAGE_NAME: whatsapp-addon
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Read add-on version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image_tags: ${{ steps.version.outputs.image_tags }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Read version from config.yaml
+        id: version
+        shell: bash
+        run: |
+          version="$(grep -E '^version:' "${ADDON_PATH}/config.yaml" \
+            | head -n 1 \
+            | sed -E 's/^version:[[:space:]]*"?([^"]+)"?/\1/')"
+          if [ -z "${version}" ]; then
+            echo "Could not read version from ${ADDON_PATH}/config.yaml" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "image_tags<<EOF"
+            echo "${version}"
+            if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+              echo "latest"
+            else
+              echo "${GITHUB_REF_NAME}"
+            fi
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+  init:
+    name: Initialize build matrix
+    needs: version
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Get build matrix
+        id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.03.2
+        with:
+          architectures: ${{ env.ARCHITECTURES }}
+          image-name: ${{ env.IMAGE_NAME }}
+
+  build:
+    name: Build ${{ matrix.arch }} image
+    needs:
+      - version
+      - init
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.init.outputs.matrix) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build and push image
+        uses: home-assistant/builder/actions/build-image@2026.03.2
+        with:
+          arch: ${{ matrix.arch }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: ${{ env.ADDON_PATH }}
+          image: ${{ matrix.image }}
+          image-tags: |
+            ${{ needs.version.outputs.image_tags }}
+          labels: |
+            io.hass.type=app
+          push: "true"
+          version: ${{ needs.version.outputs.version }}
+
+  manifest:
+    name: Publish multi-arch manifest
+    needs:
+      - version
+      - init
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - name: Publish multi-arch manifest
+        uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.03.2
+        with:
+          architectures: ${{ env.ARCHITECTURES }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tags: |
+            ${{ needs.version.outputs.image_tags }}
