@@ -2,6 +2,24 @@
 
 All notable changes to this repository are documented here.
 
+## 2.1.2
+
+### Fix for replayed messages after a restart (issue #7)
+
+- Fixed messages received while the add-on was offline not reaching Home
+  Assistant. Baileys 6.7.23 held them until WhatsApp finished sending the whole
+  backlog, and sometimes that never happened. The add-on now releases held
+  events after about one second.
+- This also lets `experimental_lid_sender_receipts` confirm those messages, so
+  WhatsApp no longer sends them again after the next reconnect, where they
+  failed and could pause the add-on.
+- With `experimental_lid_sender_receipts` on, a message the add-on already
+  decrypted is now answered directly if WhatsApp sends it again. It no longer
+  fails, asks the phone to resend it, or counts toward the recovery pause.
+- The add-on now logs how many offline messages WhatsApp announced and sent
+  after each connection, and warns if WhatsApp does not finish within a minute.
+- The HACS integration is unchanged and needs no update.
+
 ## 2.1.1
 
 ### Prebuilt add-on image

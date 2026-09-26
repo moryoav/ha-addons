@@ -24,6 +24,7 @@ const createHarness = async ({
   sendMessage,
   decryptionDiagnostics = false,
   downloadMediaMessage,
+  configureSocket,
 } = {}) => {
   const ev = new EventEmitter();
   const ws = new EventEmitter();
@@ -87,6 +88,7 @@ const createHarness = async ({
     offline: false,
     decryptionDiagnostics,
   });
+  configureSocket?.(socket);
   await client.connect();
   ev.emit("connection.update", { connection: "open" });
 
@@ -930,4 +932,63 @@ test("getGroupInfo maps upstream failures and disconnected sessions", async () =
     client.getGroupInfo(FICTIONAL_GROUP_JID),
     WhatsappDisconnectedError
   );
+});
+
+// Issue #7, 23 Sep: Baileys 6.7.23 held every messages.upsert of a backlog that
+// WhatsApp never finished, so nothing reached Home Assistant for 50 minutes.
+test("events held by Baileys reach Home Assistant once the connection is open", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  let buffering = true;
+  const held = [];
+  const { client } = await createHarness({
+    configureSocket: (socket) => {
+      socket.ev.isBuffering = () => buffering;
+      socket.ev.flush = () => {
+        if (!buffering) return false;
+        buffering = false;
+        for (const upsert of held.splice(0)) socket.ev.emit("messages.upsert", upsert);
+        return true;
+      };
+    },
+  });
+  t.after(() => client.disconnect());
+  const received = [];
+  const released = [];
+  client.on("msg", (message) => received.push(message));
+  client.on("events_released", () => released.push(true));
+  held.push({ type: "append", messages: [{
+    key: { id: "fictional-held-id", remoteJid: FICTIONAL_LID, fromMe: false },
+    message: { conversation: "Fictional held message" },
+  }] });
+
+  t.mock.timers.tick(1000);
+  assert.deepEqual(received, []);
+  t.mock.timers.tick(1000);
+  assert.equal(received.length, 1);
+  assert.equal(received[0].message.conversation, "Fictional held message");
+  assert.equal(released.length, 1);
+
+  // Stopping the client also stops the watchdog.
+  await client.disconnect();
+  buffering = true;
+  t.mock.timers.tick(5000);
+  assert.equal(released.length, 1);
+});
+
+test("offline backlog reports come from the current socket until it stops", async () => {
+  const { client, ws } = await createHarness();
+  const reports = [];
+  client.on("offline_sync", (report) => reports.push(report));
+  ws.emit("frame", { tag: "message", attrs: { id: "fictional-id", offline: "0" } });
+  ws.emit("frame", { tag: "ib", attrs: {}, content: [{ tag: "offline", attrs: { count: "1" } }] });
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].phase, "finished");
+  assert.equal(reports[0].count, 1);
+  assert.equal(reports[0].received.message, 1);
+  assert.doesNotMatch(JSON.stringify(reports), /fictional/);
+
+  await client.disconnect();
+  assert.equal(ws.listenerCount("frame"), 0);
+  ws.emit("frame", { tag: "ib", attrs: {}, content: [{ tag: "offline", attrs: { count: "1" } }] });
+  assert.equal(reports.length, 1);
 });

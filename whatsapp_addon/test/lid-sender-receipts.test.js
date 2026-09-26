@@ -1,7 +1,10 @@
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const test = require("node:test");
-const { attachLidSenderReceipts } = require("../lid-sender-receipts");
+const {
+  attachLidSenderReceipts,
+  createDeliveredMessages,
+} = require("../lid-sender-receipts");
 
 const OWN = "999999999999991";
 const PEER = "999999999999992@lid";
@@ -439,4 +442,152 @@ test("unsupported sockets fail closed, and malformed events never throw", async 
   await tick();
   assert.deepEqual(h.sends, []);
   h.helper.close();
+});
+
+// Issue #7, 23 Sep: messages decrypted on one socket were replayed after the
+// reconnect. Their keys were already used, so every copy failed and the add-on
+// paused. The sockets of one client share `delivered`, as WhatsappClient does.
+const decryptedOnce = async (delivered) => {
+  const first = harness({ delivered });
+  first.receive(); first.upsert(); await tick();
+  assert.equal(first.sends.length, 1);
+  first.helper.close();
+};
+const watchBaileys = (h) => {
+  const seen = [];
+  h.socket.ws.on("CB:message", (node) => seen.push(node));
+  return seen;
+};
+
+test("a copy of an own message this client already decrypted is answered and never reaches Baileys", async () => {
+  const delivered = createDeliveredMessages();
+  await decryptedOnce(delivered);
+  const next = harness({ delivered });
+  const baileys = watchBaileys(next);
+  next.receive(raw({ offline: "1" }, "msg"));
+  await tick();
+  assert.deepEqual(baileys, []);
+  assert.deepEqual(next.sends, [{ tag: "receipt", attrs: {
+    id: "fictional-message", type: "sender", to: `${OWN}:22@lid`, recipient: PEER,
+  } }]);
+  assert.deepEqual(next.diagnostics.map((d) => d.outcome), ["copy_answered", "sent"]);
+  // An answered copy leaves no tracking behind for a stray upsert to use.
+  next.upsert(); await tick();
+  assert.equal(next.sends.length, 1);
+  // Later copies, such as a phone's answer to an old retry request, are answered too.
+  next.receive(raw({ t: String(TIME + 60) }, "pkmsg"));
+  await tick();
+  assert.deepEqual(baileys, []);
+  assert.equal(next.sends.length, 2);
+  next.helper.close();
+});
+
+test("only the same account, chat, message ID and origin device count as a copy", async () => {
+  const delivered = createDeliveredMessages();
+  await decryptedOnce(delivered);
+  for (const attrs of [{ from: `${OWN}:23@lid` }, { from: `${OWN}@lid` },
+    { recipient: "999999999999993@lid" }, { id: "other-message" }]) {
+    const h = harness({ delivered });
+    const baileys = watchBaileys(h);
+    h.receive(raw(attrs));
+    await tick();
+    assert.equal(baileys.length, 1);
+    assert.deepEqual(h.sends, []);
+    h.helper.close();
+  }
+  const otherAccount = harness({ delivered });
+  otherAccount.socket.user.lid = "999999999999993:9@lid";
+  const baileys = watchBaileys(otherAccount);
+  otherAccount.receive(raw({ from: "999999999999993:22@lid" }));
+  assert.equal(baileys.length, 1);
+  otherAccount.helper.close();
+});
+
+test("a message is remembered only once it decrypted", async () => {
+  const delivered = createDeliveredMessages();
+  const first = harness({ delivered });
+  first.receive(); first.upsert(message({ message: undefined, messageStubType: 2 }));
+  first.receive(raw({ id: "ambiguous" })); first.receive(raw({ id: "ambiguous", from: `${OWN}:23@lid` }));
+  first.upsert(message({ key: { id: "ambiguous", remoteJid: PEER, fromMe: true } }));
+  await tick();
+  first.helper.close();
+  assert.equal(delivered.size, 0);
+  const next = harness({ delivered });
+  const baileys = watchBaileys(next);
+  next.receive();
+  assert.equal(baileys.length, 1); // Baileys gets its normal chance to decrypt it.
+  next.helper.close();
+});
+
+test("a copy goes to Baileys as usual when no receipt can be queued", async () => {
+  const delivered = createDeliveredMessages();
+  await decryptedOnce(delivered);
+
+  const closedTransport = harness({ delivered });
+  closedTransport.socket.ws.isOpen = false;
+  const seen = watchBaileys(closedTransport);
+  closedTransport.receive();
+  assert.equal(seen.length, 1);
+  closedTransport.helper.close();
+
+  const full = harness({ delivered, maxPending: 1 });
+  let release;
+  full.socket.sendNode = (node) => {
+    full.sends.push(node);
+    return new Promise((resolve) => { release = resolve; });
+  };
+  const seenFull = watchBaileys(full);
+  full.receive(); await tick(); // Its write is now in flight.
+  full.receive(); // Queued behind it.
+  full.receive(); // Nothing left to queue it in.
+  assert.equal(seenFull.length, 1);
+  assert.ok(full.diagnostics.some((d) => d.outcome === "queue_full"));
+  full.helper.close();
+  release(); await tick();
+});
+
+test("closing restores the socket's emit, and without a store nothing is wrapped", () => {
+  const plain = harness();
+  assert.equal(Object.hasOwn(plain.socket.ws, "emit"), false);
+  plain.helper.close();
+
+  const delivered = createDeliveredMessages();
+  const h = harness({ delivered });
+  assert.equal(Object.hasOwn(h.socket.ws, "emit"), true);
+  h.helper.close();
+  assert.equal(Object.hasOwn(h.socket.ws, "emit"), false);
+  assert.equal(h.socket.ws.emit, EventEmitter.prototype.emit);
+
+  const ws = new EventEmitter();
+  ws.isOpen = true;
+  const custom = function (...args) { return EventEmitter.prototype.emit.apply(this, args); };
+  ws.emit = custom;
+  const helper = attachLidSenderReceipts({ delivered, socket: {
+    ws, ev: new EventEmitter(), user: { id: "12025550123:9@s.whatsapp.net", lid: `${OWN}:9@lid` },
+    async sendNode() {},
+  } });
+  assert.notEqual(ws.emit, custom);
+  helper.close();
+  assert.equal(ws.emit, custom);
+});
+
+test("remembered messages are bounded, expire, and need a valid store", () => {
+  let now = 0;
+  const delivered = createDeliveredMessages({ now: () => now, maxEntries: 2, ttlMs: 100 });
+  delivered.add("a", "x"); delivered.add("b", "x"); delivered.add("c", "x");
+  assert.equal(delivered.size, 2);
+  assert.equal(delivered.has("a", "x"), false);
+  assert.equal(delivered.has("b", "y"), false);
+  now = 50; delivered.add("b", "x"); // Refreshed: now expires after "c".
+  now = 120;
+  assert.equal(delivered.has("c", "x"), false);
+  assert.equal(delivered.has("b", "x"), true);
+  now = 150;
+  assert.equal(delivered.size, 0);
+  for (const limits of [{ maxEntries: 0 }, { ttlMs: -1 }, { maxEntries: 1.5 }]) {
+    assert.throws(() => createDeliveredMessages(limits), TypeError);
+  }
+  for (const store of [null, {}, { has() {} }]) {
+    assert.throws(() => harness({ delivered: store }), TypeError);
+  }
 });

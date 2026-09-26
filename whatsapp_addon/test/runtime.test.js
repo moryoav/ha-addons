@@ -1132,3 +1132,53 @@ test("partial startup closes the API listener and clients if ingress fails", asy
   assert.equal(disconnects, 1);
   assert.deepEqual(closed, [apiServer]);
 });
+
+test("offline backlog progress is logged with safe counts only", () => {
+  const key = Buffer.alloc(32, 7);
+  for (const logLevel of ["info", "debug"]) {
+    const client = new FakeClient();
+    const logs = [];
+    const record = (level) => (...args) => logs.push([level, ...args]);
+    createAddonRuntime({
+      clientIds: ["default"],
+      clientFactory: () => client,
+      fingerprintKey: key,
+      logLevel,
+      runId: "0123456789abcdef",
+      logger: { info: record("info"), warn: record("warn"), debug: record("debug") },
+      httpClient: { post: async () => {} },
+    });
+    logs.length = 0;
+    client.emit("offline_sync", {
+      phase: "unfinished",
+      announced: { count: 150, "Bad key": 1, message: -1, receipt: 2.5 },
+      received: { message: 104, receipt: "41", note: `private-${FICTIONAL_NUMBER}` },
+      waitedMs: 60_000,
+    });
+    client.emit("offline_sync", {
+      phase: "finished", announced: { count: 150 }, received: { message: 150 },
+      count: 150, durationMs: 1.5,
+    });
+    client.emit("offline_sync", { phase: "private-phase", received: { message: 1 } });
+    client.emit("offline_sync", null);
+    client.emit("offline_sync");
+    client.emit("events_released");
+
+    const clientRef = fingerprint("default", key);
+    const expected = [
+      ["warn",
+        "WhatsApp did not finish sending offline messages; new messages may wait until the next reconnect.",
+        { runId: "0123456789abcdef", clientRef, announced: { count: 150 },
+          received: { message: 104 }, waitedMs: 60_000 }],
+      ["info", "WhatsApp offline messages received.",
+        { runId: "0123456789abcdef", clientRef, announced: { count: 150 },
+          received: { message: 150 }, count: 150, durationMs: undefined }],
+    ];
+    if (logLevel === "debug") {
+      expected.push(["debug", "WhatsApp events held by Baileys were released.",
+        { runId: "0123456789abcdef", clientRef }]);
+    }
+    assert.deepEqual(logs, expected);
+    assert.ok(!JSON.stringify(logs).includes(FICTIONAL_NUMBER));
+  }
+});

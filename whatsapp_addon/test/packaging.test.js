@@ -96,4 +96,8 @@ test("Docker packages the diagnostic health probe with a longer wrapper timeout"
   assert.match(dockerignore, /^!message-retry-cache\.js\r?$/m);
   assert.match(dockerfile, /media-store\.js/);
   assert.match(dockerignore, /^!media-store\.js\r?$/m);
+  for (const file of ["event-buffer-flush.js", "offline-sync.js"]) {
+    assert.match(dockerfile, new RegExp(` ${file.replace(".", "\\.")} `));
+    assert.match(dockerignore, new RegExp(`^!${file.replace(".", "\\.")}\\r?$`, "m"));
+  }
 });

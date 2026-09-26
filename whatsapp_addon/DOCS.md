@@ -135,6 +135,12 @@ structure when available, and encrypted payload sizes and SHA-256
 fingerprints. It remains enabled until the option is switched off and the
 add-on is restarted. A failed encrypted message has no decoded body to record.
 
+After each connection the add-on logs how many offline messages WhatsApp
+announced and delivered. If WhatsApp has not finished sending them one minute
+after the connection opened, a warning is logged instead. Until WhatsApp
+finishes, new messages can wait on the server until the next reconnect. These
+lines contain counts only.
+
 Failed native health checks are recorded in a small persistent history even at
 the default `info` level. If Supervisor replaces an unhealthy container, the
 next run replays the retained probe result and surrounding runtime state into
@@ -202,13 +208,19 @@ leaves any of them pending for replay. A redelivered copy, or the fresh copy a
 device sends in answer to a retry request, is acknowledged once that copy
 decrypts, so a message that was already stuck can still leave the server queue.
 
+A message the add-on already decrypted can never be decrypted again, because
+its keys are used. If WhatsApp sends it again, for example after a reconnect,
+the add-on answers the copy with the same receipt and does not pass it to
+Baileys. Before 2.1.2 such a copy failed, Baileys asked the phone to resend it,
+and a few of them together could trigger the recovery pause.
+
 The experiment excludes groups, broadcasts, newsletters, peer synchronization
 traffic, other people's incoming messages, failed or partial decryptions, and
 local sends without a matching incoming stanza. If two of the account's devices
 ever present the same message ID, the match is skipped rather than guessing a
-device. It never acknowledges a copy that failed to decrypt, discards messages,
-resets sessions, changes encryption state, or weakens the protective recovery
-pause.
+device. It never acknowledges a message the add-on could not decrypt at least
+once, resets sessions, changes encryption state, or weakens the protective
+recovery pause.
 
 Tracking is in-memory and per socket: at most 1,024 metadata records with a
 five-minute expiry, at most 1,024 queued receipts, and one network write at a
@@ -216,12 +228,17 @@ time. No plaintext or ciphertext is read or retained by this tracking cache.
 Disconnect, logout, reset, or socket replacement discards the tracking state.
 Write errors are contained; there is no additional automatic receipt-retry loop.
 
+The list of own messages already decrypted is also kept in memory. It holds only
+account, chat and message IDs and the sending device, at most 2,048 entries for
+24 hours. It survives reconnects. Stopping or restarting the add-on, logout,
+recovery and reset clear it.
+
 Decryption Diagnostics is independent of this switch. When enabled separately,
 it also records sanitized `lid_sender_receipts` outcomes such as `sent`,
-`send_failed`, `ambiguous`, and `queue_full`. `sent` means the socket write
-completed, not that WhatsApp has confirmed acceptance. Decryption Diagnostics
-also records private message data as described above; redact captures before
-sharing them.
+`send_failed`, `ambiguous`, `queue_full`, and `copy_answered`. `sent` means the
+socket write completed, not that WhatsApp has confirmed acceptance. Decryption
+Diagnostics also records private message data as described above; redact
+captures before sharing them.
 
 For validation, repeat a send that requires session setup, continue ordinary
 phone/desktop messaging, and observe multiple reconnects. Check whether

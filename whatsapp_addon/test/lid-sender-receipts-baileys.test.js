@@ -1,7 +1,11 @@
 const assert = require("node:assert/strict");
 const { createRequire } = require("node:module");
 const test = require("node:test");
-const { attachLidSenderReceipts } = require("../lid-sender-receipts");
+const { attachEventBufferFlush } = require("../event-buffer-flush");
+const {
+  attachLidSenderReceipts,
+  createDeliveredMessages,
+} = require("../lid-sender-receipts");
 
 // Drives the installed Baileys receive path with real Signal sessions. The only
 // transport is a silent loopback WebSocket server: no WhatsApp host is contacted
@@ -122,7 +126,15 @@ const start = async (t, { justPaired = false } = {}) => {
     await new Promise((resolve) => setTimeout(resolve, 50)); // Surface any stray extra write.
     return wire.slice(from);
   };
-  return { socket, ownMessage, deliver };
+  // The desktop sends pkmsg until it hears back from the add-on, then plain msg.
+  const hearFromAddon = async () => {
+    const { type, ciphertext } = await socket.signalRepository.encryptMessage({
+      jid: DESKTOP, data: Buffer.from(encodeWAMessage({ conversation: "Fictional reply" })),
+    });
+    assert.equal(type, "msg");
+    await cipher.decryptWhisperMessage(ciphertext);
+  };
+  return { socket, ownMessage, deliver, hearFromAddon, wire };
 };
 
 const misrouted = (id) => ({ id, to: PEER, type: "sender" });
@@ -171,4 +183,44 @@ test("the first connection after a pairing is covered although its LID only arri
   const text = await h.ownMessage("fictional-first-connection", { conversation: "Fictional message" });
   assert.deepEqual(await h.deliver(text, 2),
     [misrouted("fictional-first-connection"), corrected("fictional-first-connection")]);
+});
+
+// Issue #7, 23 Sep: after a restart WhatsApp sent part of the offline backlog and
+// then nothing more. Baileys 6.7.23 held every messages.upsert until the backlog
+// ended, so the corrected receipts were never sent and the messages replayed.
+test("an own message from the offline backlog is held by Baileys until the flush releases it", async (t) => {
+  const h = await start(t);
+  const helper = attachLidSenderReceipts({ socket: h.socket });
+  t.after(() => helper.close());
+
+  const text = await h.ownMessage("fictional-backlog", { conversation: "Fictional message" });
+  assert.deepEqual(await h.deliver(text, 1, true), [misrouted("fictional-backlog")]);
+  assert.equal(h.socket.ev.isBuffering(), true,
+    "Baileys no longer holds backlog events: the flush may be obsolete.");
+
+  const before = h.wire.length;
+  const flush = attachEventBufferFlush({ socket: h.socket, intervalMs: 20 });
+  t.after(() => flush.close());
+  await waitFor(() => h.wire.length > before, "the corrected receipt");
+  assert.deepEqual(h.wire.slice(before), [corrected("fictional-backlog")]);
+  assert.equal(h.socket.ev.isBuffering(), false);
+});
+
+test("a replayed copy of a decrypted own message is answered once and never reaches Baileys", async (t) => {
+  const h = await start(t);
+  const helper = attachLidSenderReceipts({ socket: h.socket, delivered: createDeliveredMessages() });
+  t.after(() => helper.close());
+
+  // A pkmsg copy: without the store Baileys answers it with a 487 NACK (see above).
+  const setup = await h.ownMessage("fictional-setup", { conversation: "Fictional setup" });
+  assert.deepEqual(await h.deliver(setup, 2), [misrouted("fictional-setup"), corrected("fictional-setup")]);
+  assert.deepEqual(await h.deliver(setup, 1, true), [corrected("fictional-setup")]);
+
+  // A msg copy, the kind that paused the add-on: Baileys would fail on every session,
+  // count the errors toward the recovery pause and ask the desktop to resend.
+  await h.hearFromAddon();
+  const text = await h.ownMessage("fictional-text", { conversation: "Fictional message" });
+  assert.equal(text.content[0].attrs.type, "msg");
+  assert.deepEqual(await h.deliver(text, 2), [misrouted("fictional-text"), corrected("fictional-text")]);
+  assert.deepEqual(await h.deliver(text, 1, true), [corrected("fictional-text")]);
 });

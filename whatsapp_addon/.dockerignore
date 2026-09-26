@@ -3,6 +3,7 @@
 !api.js
 !decryption-diagnostics.js
 !diagnostics.js
+!event-buffer-flush.js
 !healthcheck.sh
 !index.js
 !libsignal-log-filter.js
@@ -11,6 +12,7 @@
 !media-store.js
 !message-dedupe.js
 !message-retry-cache.js
+!offline-sync.js
 !package.json
 !package-lock.json
 !recovery.js

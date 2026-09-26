@@ -226,6 +226,27 @@ const safeDiagnosticTimestamp = (value) => {
   return undefined;
 };
 
+const MAX_LOGGED_COUNT = 1_000_000_000;
+
+const safeCount = (value) =>
+  Number.isSafeInteger(value) && value >= 0 && value <= MAX_LOGGED_COUNT
+    ? value
+    : undefined;
+
+// Offline sync counts are logged only as small named numbers.
+const safeCounts = (value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const result = {};
+  for (const [key, count] of Object.entries(value).slice(0, 16)) {
+    if (/^[a-z_]{1,32}$/.test(key) && safeCount(count) !== undefined) {
+      result[key] = count;
+    }
+  }
+  return result;
+};
+
 const normalizeCallString = (value, maxLength) =>
   typeof value === "string" && value.length > 0 && value.length <= maxLength
     ? value
@@ -771,6 +792,33 @@ const createAddonRuntime = ({
           details.delayMs <= 86_400_000
             ? details.delayMs
             : undefined,
+      });
+    });
+    client.on("offline_sync", (report = {}) => {
+      const details = {
+        runId,
+        clientRef: logRef(clientId),
+        announced: safeCounts(report?.announced),
+        received: safeCounts(report?.received),
+      };
+      if (report?.phase === "unfinished") {
+        logger.warn?.(
+          "WhatsApp did not finish sending offline messages; new messages may wait until the next reconnect.",
+          { ...details, waitedMs: safeCount(report.waitedMs) }
+        );
+      } else if (report?.phase === "finished") {
+        logger.info?.("WhatsApp offline messages received.", {
+          ...details,
+          count: safeCount(report.count),
+          durationMs: safeCount(report.durationMs),
+        });
+      }
+    });
+    client.on("events_released", () => {
+      if (!debugEnabled) return;
+      logger.debug?.("WhatsApp events held by Baileys were released.", {
+        runId,
+        clientRef: logRef(clientId),
       });
     });
     client.on("qr", (qr) => onQr(qr, clientId));

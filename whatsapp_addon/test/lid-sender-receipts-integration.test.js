@@ -186,3 +186,46 @@ test("Supervisor settings default off and Docker explicitly includes the helper"
   assert.match(fs.readFileSync(path.join(root, "Dockerfile"), "utf8"), /lid-sender-receipts\.js/);
   assert.match(fs.readFileSync(path.join(root, ".dockerignore"), "utf8"), /^!lid-sender-receipts\.js$/m);
 });
+
+// Issue #7, 23 Sep: what one socket decrypted was replayed to the next one.
+test("a copy decrypted on the previous socket is answered after a reconnect", async () => {
+  const h = await harness({ experimentalLidSenderReceipts: true });
+  const sent = [];
+  h.client.on("msg_sent", (message) => sent.push(message));
+  const old = h.sockets[0];
+  old.ws.emit("CB:message", incoming());
+  old.ev.emit("messages.upsert", upsert());
+  await tick();
+  assert.equal(old.receipts.length, 1);
+
+  await h.client.disconnect(true);
+  await h.client.connect();
+  const current = h.sockets[1];
+  current.ev.emit("connection.update", { connection: "open" });
+  const baileys = [];
+  current.ws.on("CB:message", (node) => baileys.push(node));
+  current.ws.emit("CB:message", { ...incoming(), attrs: { ...incoming().attrs, offline: "0" } });
+  await tick();
+  assert.deepEqual(baileys, []);
+  assert.equal(current.receipts.length, 1);
+  assert.equal(sent.length, 1); // Home Assistant got the message once, from the first socket.
+  await h.client.disconnect();
+  assert.equal(Object.hasOwn(current.ws, "emit"), false);
+});
+
+test("stopping the client forgets which messages it decrypted", async () => {
+  const h = await harness({ experimentalLidSenderReceipts: true });
+  const first = h.sockets[0];
+  first.ws.emit("CB:message", incoming());
+  first.ev.emit("messages.upsert", upsert());
+  await tick();
+  await h.client.disconnect();
+  await h.client.connect();
+  const next = h.sockets[1];
+  next.ev.emit("connection.update", { connection: "open" });
+  const baileys = [];
+  next.ws.on("CB:message", (node) => baileys.push(node));
+  next.ws.emit("CB:message", incoming());
+  assert.equal(baileys.length, 1);
+  await h.client.disconnect();
+});

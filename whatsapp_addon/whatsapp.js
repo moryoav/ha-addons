@@ -7,8 +7,10 @@ const {
   createRawMessageDiagnostic,
   createReceiptDiagnostic,
 } = require("./decryption-diagnostics");
+const { attachEventBufferFlush } = require("./event-buffer-flush");
 const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
+const { attachOfflineSyncMonitor } = require("./offline-sync");
 const {
   RequestValidationError,
   normalizeGroupJid,
@@ -196,6 +198,9 @@ class WhatsappClient extends EventEmitter {
   #decryptionDiagnostics;
   #experimentalLidSenderReceipts;
   #lidSenderReceipts;
+  #lidDelivered;
+  #eventBufferFlush;
+  #offlineSync;
 
   #status = {
     attempt: 0,
@@ -325,12 +330,26 @@ class WhatsappClient extends EventEmitter {
     if (!this.#conn?.ev || typeof this.#conn.ev.on !== "function") {
       throw new WhatsappProtocolError();
     }
+    this.#closeSocketWatchers();
+    this.#offlineSync = attachOfflineSyncMonitor({
+      socket,
+      onReport: (report) => {
+        if (this.#conn === socket) this.emit("offline_sync", report);
+      },
+    });
     if (this.#experimentalLidSenderReceipts) {
       // No helper load, extra handlers or metadata cache in the default-off path.
-      const { attachLidSenderReceipts } = require("./lid-sender-receipts");
+      const {
+        attachLidSenderReceipts,
+        createDeliveredMessages,
+      } = require("./lid-sender-receipts");
+      // Kept across reconnects: a copy of a message decrypted on the previous
+      // socket is exactly what WhatsApp replays after the reconnect.
+      this.#lidDelivered ||= createDeliveredMessages();
       this.#closeLidSenderReceipts();
       this.#lidSenderReceipts = attachLidSenderReceipts({
         socket,
+        delivered: this.#lidDelivered,
         isCurrent: () => this.#conn === socket && !this.#status.disconnected,
         onDiagnostic: (diagnostic) => this.#emitDecryptionDiagnostic(() => diagnostic),
       });
@@ -391,6 +410,7 @@ class WhatsappClient extends EventEmitter {
 
   disconnect = async (reconnect = false) => {
     this.#closeLidSenderReceipts();
+    this.#closeSocketWatchers();
     clearInterval(this.#refreshInterval);
     clearInterval(this.#sendPresenceUpdateInterval);
     clearTimeout(this.#reconnectTimer);
@@ -398,7 +418,10 @@ class WhatsappClient extends EventEmitter {
     this.#status.connected = false;
     this.#status.disconnected = !reconnect;
     this.#status.reconnecting = !!reconnect;
-    if (!reconnect) this.#clearRetryCache();
+    if (!reconnect) {
+      this.#clearRetryCache();
+      this.#lidDelivered = undefined;
+    }
 
     if (this.#conn && typeof this.#conn.end === "function") {
       await this.#conn.end();
@@ -545,6 +568,13 @@ class WhatsappClient extends EventEmitter {
     this.#lidSenderReceipts = undefined;
   };
 
+  #closeSocketWatchers = () => {
+    this.#eventBufferFlush?.close();
+    this.#eventBufferFlush = undefined;
+    this.#offlineSync?.close();
+    this.#offlineSync = undefined;
+  };
+
   #clearRetryCache = () => {
     this.#retryCache?.close();
     this.#retryCache = undefined;
@@ -668,11 +698,23 @@ class WhatsappClient extends EventEmitter {
       for (const call of calls) this.emit("call_update", call);
     });
 
+    // Started only now, after the listeners above exist, so released events
+    // always reach Home Assistant.
+    const socket = this.#conn;
+    this.#eventBufferFlush?.close();
+    this.#eventBufferFlush = attachEventBufferFlush({
+      socket,
+      onFlush: () => {
+        if (this.#conn === socket) this.emit("events_released");
+      },
+    });
+
     this.emit("ready");
   };
 
   #onDisconnected = ({ lastDisconnect } = {}) => {
     this.#status.connected = false;
+    this.#closeSocketWatchers();
     clearInterval(this.#refreshInterval);
     clearInterval(this.#sendPresenceUpdateInterval);
 
@@ -680,6 +722,7 @@ class WhatsappClient extends EventEmitter {
     const statusCode = Number.isInteger(upstreamCode) ? upstreamCode : null;
     if (statusCode === this.#baileys.DisconnectReason?.loggedOut) {
       this.#clearRetryCache();
+      this.#lidDelivered = undefined;
       this.#status.reconnecting = false;
       this.#status.disconnected = true;
       this.emit("logout");

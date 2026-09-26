@@ -326,6 +326,12 @@ codes, session data, or API tokens. Identifier-related entries use run-scoped
 one-way references for correlation. Return the option to `info` after collecting
 the relevant logs.
 
+After each connection the add-on logs how many offline messages WhatsApp
+announced and delivered. If WhatsApp has not finished sending them one minute
+after the connection opened, a warning is logged instead. Until WhatsApp
+finishes, new messages can wait on the server until the next reconnect. These
+lines contain counts only.
+
 The separate Decryption Diagnostics toggle is intended for investigating
 message decryption failures. When enabled, it records raw message-stanza
 attributes, exact message and participant identifiers, sender names,
