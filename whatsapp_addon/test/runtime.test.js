@@ -905,7 +905,8 @@ test("session deletion awaits one validated child path", async () => {
   assert.equal(calls.length, 1);
 });
 
-test("logout waits for deletion before creating a replacement client", async () => {
+test("logout drains the client's pending cache writes before deleting and replacing the session", async () => {
+  let finishDisconnect;
   let finishRemoval;
   const removals = [];
   const clientsCreated = [];
@@ -924,6 +925,7 @@ test("logout waits for deletion before creating a replacement client", async () 
     fsPromises,
     clientFactory: ({ path: sessionPath }) => {
       const client = new FakeClient();
+      client.disconnect = () => new Promise((resolve) => { finishDisconnect = resolve; });
       clientsCreated.push({ client, sessionPath });
       return client;
     },
@@ -934,6 +936,9 @@ test("logout waits for deletion before creating a replacement client", async () 
   await Promise.resolve();
   assert.equal(Object.hasOwn(runtime.clients, "default"), false);
   assert.equal(clientsCreated.length, 1);
+  assert.equal(removals.length, 0);
+  finishDisconnect();
+  await Promise.resolve();
   assert.equal(removals.length, 1);
   assert.equal(removals[0].sessionPath, path.join(dataRoot, "default"));
 

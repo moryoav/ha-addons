@@ -48,6 +48,48 @@ thumbnails, CDN paths, scan sidecars, and media key timestamp representation
 because WhatsApp can vary those between phone-number and LID deliveries of the
 same message.
 
+## Chat archive state
+
+Starting with add-on 2.2.0, every `new_whatsapp_message` event includes
+`chat_archived`:
+
+| Value | Meaning |
+| --- | --- |
+| `true` | The latest known chat state is archived. |
+| `false` | The latest known chat state is unarchived. |
+| `null` | The add-on does not know this chat's archive state yet. |
+
+The add-on listens to WhatsApp chat history and archive updates and looks up
+the message's `key.remoteJid` in a local cache. There is no additional network
+request or wait for chat synchronization when a message arrives. Changes on
+the phone or another linked device take effect after WhatsApp synchronizes
+them. If WhatsApp automatically unarchives a chat on a new message, the flag
+follows that update; it does not describe the chat before the message arrived.
+
+The cache stores only chat identifiers and archive flags alongside the account's
+session data. Known flags survive restarts, remain separate between accounts,
+and are cleared when the session is reset or logged out. Deleted chats are
+removed. Up to 50,000 chat flags are retained; an evicted chat becomes unknown
+until its state is received again.
+
+After upgrading an existing session, unchanged chats can remain `null` until
+WhatsApp supplies their state. The add-on does not force a full resync.
+An absent archive flag is never treated as `false`. Chat identifiers are matched
+exactly, so a phone-number JID does not imply a matching LID. A later state update
+does not change an event that was already delivered. For media, the flag is
+captured when the message is received, before the download finishes.
+
+I use this condition to act only when the chat is known to be unarchived:
+
+```yaml
+conditions:
+  - condition: template
+    value_template: "{{ trigger.event.data.get('chat_archived') is sameas false }}"
+```
+
+This condition also skips unknown states. `whatsapp_message_sent` is unchanged.
+Only the add-on needs updating; no HACS integration update is required.
+
 ## Capture a send-result event
 
 The integration fires `whatsapp_send_message_result` after a successful

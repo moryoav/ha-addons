@@ -8,6 +8,7 @@ const {
   createReceiptDiagnostic,
 } = require("./decryption-diagnostics");
 const { attachEventBufferFlush } = require("./event-buffer-flush");
+const { ChatArchiveStore } = require("./chat-archive-store");
 const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
@@ -201,6 +202,8 @@ class WhatsappClient extends EventEmitter {
   #lidDelivered;
   #eventBufferFlush;
   #offlineSync;
+  #archiveStore;
+  #archiveListeners;
 
   #status = {
     attempt: 0,
@@ -247,6 +250,11 @@ class WhatsappClient extends EventEmitter {
               this.emit("decryption_diagnostic", diagnostic),
           })
         : require("pino")({ level: "silent" }));
+
+    this.#archiveStore = new ChatArchiveStore({
+      directory: path,
+      onError: () => this.#socketLogger.warn?.("Chat archive cache could not be loaded or saved."),
+    });
 
     if (autoConnect) {
       void this.connect().catch((error) => this.#handleConnectFailure(error));
@@ -305,6 +313,7 @@ class WhatsappClient extends EventEmitter {
     const retryCache = (this.#retryCache ||= new MessageRetryCache({
       codec: proto?.Message,
     }));
+    await this.#archiveStore.load(authResult.state.creds?.me?.id);
     const socket = (this.#conn = makeWASocket({
       version: versionResult.version,
       auth: authResult.state,
@@ -331,6 +340,21 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
     this.#closeSocketWatchers();
+    const updateArchives = (chats) => {
+      if (this.#conn === socket && !this.#status.disconnected) this.#archiveStore.update(chats);
+    };
+    const archiveListeners = {
+      "messaging-history.set": (history) => updateArchives(history?.chats),
+      "chats.upsert": updateArchives,
+      "chats.update": updateArchives,
+      "chats.delete": (ids) => {
+        if (this.#conn === socket && !this.#status.disconnected) this.#archiveStore.delete(ids);
+      },
+    };
+    for (const [event, listener] of Object.entries(archiveListeners)) socket.ev.on(event, listener);
+    this.#archiveListeners = () => {
+      for (const [event, listener] of Object.entries(archiveListeners)) socket.ev.off(event, listener);
+    };
     this.#offlineSync = attachOfflineSyncMonitor({
       socket,
       onReport: (report) => {
@@ -375,6 +399,7 @@ class WhatsappClient extends EventEmitter {
 
     this.#conn.ev.on("creds.update", (state) => {
       if (state?.me?.id) {
+        if (this.#conn === socket) this.#archiveStore.setOwner(state.me.id);
         this.emit("pair", {
           phone: state.me.id.split(":")[0],
           name: state.me.name,
@@ -426,6 +451,7 @@ class WhatsappClient extends EventEmitter {
     if (this.#conn && typeof this.#conn.end === "function") {
       await this.#conn.end();
     }
+    await this.#archiveStore.flush();
   };
 
   restart = async () => {
@@ -569,6 +595,8 @@ class WhatsappClient extends EventEmitter {
   };
 
   #closeSocketWatchers = () => {
+    this.#archiveListeners?.();
+    this.#archiveListeners = undefined;
     this.#eventBufferFlush?.close();
     this.#eventBufferFlush = undefined;
     this.#offlineSync?.close();
@@ -685,6 +713,9 @@ class WhatsappClient extends EventEmitter {
         this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
           type: messageType,
           ...message,
+          ...(message.key?.fromMe ? {} : {
+            chat_archived: this.#archiveStore.get(message.key?.remoteJid),
+          }),
         });
       }
     });
@@ -721,6 +752,7 @@ class WhatsappClient extends EventEmitter {
     const upstreamCode = safeUpstreamCode(lastDisconnect?.error);
     const statusCode = Number.isInteger(upstreamCode) ? upstreamCode : null;
     if (statusCode === this.#baileys.DisconnectReason?.loggedOut) {
+      this.#archiveStore.clear();
       this.#clearRetryCache();
       this.#lidDelivered = undefined;
       this.#status.reconnecting = false;

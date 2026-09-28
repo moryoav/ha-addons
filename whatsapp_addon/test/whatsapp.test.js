@@ -25,8 +25,11 @@ const createHarness = async ({
   decryptionDiagnostics = false,
   downloadMediaMessage,
   configureSocket,
+  eventEmitter,
+  sessionPath = "session-test",
+  account,
 } = {}) => {
-  const ev = new EventEmitter();
+  const ev = eventEmitter || new EventEmitter();
   const ws = new EventEmitter();
   const calls = {
     end: 0,
@@ -77,12 +80,12 @@ const createHarness = async ({
     },
     fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
     useMultiFileAuthState: async () => ({
-      state: { creds: {}, keys: {} },
+      state: { creds: account ? { me: { id: account } } : {}, keys: {} },
       saveCreds: async () => {},
     }),
   };
   const client = new WhatsappClient({
-    path: "session-test",
+    path: sessionPath,
     baileys,
     autoConnect: false,
     offline: false,
@@ -94,6 +97,130 @@ const createHarness = async ({
 
   return { baileys, calls, client, ev, socket, ws };
 };
+
+test("incoming Home Assistant events use cached archive state with no extra socket calls", async (t) => {
+  const { client, ev, calls } = await createHarness();
+  t.after(() => client.disconnect());
+  const requests = [];
+  createAddonRuntime({ clientIds: ["default"], clientFactory: () => client,
+    logger: {}, httpClient: { post: async (...args) => requests.push(args) } });
+  const before = JSON.stringify(calls);
+  let sequence = 0;
+  const send = (jid = FICTIONAL_JID, fromMe = false) => ev.emit("messages.upsert", {
+    type: "notify", messages: [{ key: { id: `archive-${sequence++}`, remoteJid: jid, fromMe },
+      message: { conversation: "Fictional text" } }],
+  });
+  send();
+  ev.emit("messaging-history.set", { chats: [{ id: FICTIONAL_JID, archived: true }] });
+  send();
+  ev.emit("chats.update", [{ id: FICTIONAL_JID, unreadCount: 2 }]);
+  send();
+  ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: false }]);
+  send();
+  ev.emit("chats.upsert", [{ id: FICTIONAL_GROUP_JID, archived: true }]);
+  send(FICTIONAL_GROUP_JID);
+  send(FICTIONAL_LID);
+  ev.emit("chats.delete", [FICTIONAL_JID]);
+  send();
+  send(FICTIONAL_JID, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(requests.slice(0, -1).map(([, body]) => body.chat_archived),
+    [null, true, true, false, true, null, null]);
+  assert.ok(requests.slice(0, -1).every(([url]) => url.endsWith("/new_whatsapp_message")));
+  assert.equal(Object.hasOwn(requests.at(-1)[1], "chat_archived"), false);
+  assert.equal(JSON.stringify(calls), before);
+});
+
+test("real Baileys buffered chat state is applied before incoming messages", async (t) => {
+  const { makeEventBuffer, processSyncAction } = await import("@whiskeysockets/baileys");
+  const logger = { trace() {}, debug() {}, info() {}, warn() {}, error() {} };
+  const { client, ev } = await createHarness({ eventEmitter: makeEventBuffer(logger) });
+  t.after(() => client.disconnect());
+  const received = [];
+  client.on("msg", (message) => received.push(message));
+  for (const [index, archived] of [true, false].entries()) {
+    ev.buffer();
+    // Baileys queues the message before its chat update, but flushes chats first.
+    ev.emit("messages.upsert", { type: "notify", messages: [{
+      key: { id: `buffered-${index}`, remoteJid: FICTIONAL_JID, fromMe: false },
+      message: { conversation: "Fictional text" },
+    }] });
+    if (index === 0) ev.emit("messaging-history.set", {
+      chats: [{ id: FICTIONAL_JID, archived: false }], contacts: [], messages: [], isLatest: true,
+    });
+    processSyncAction({ index: ["archive", FICTIONAL_JID],
+      syncAction: { value: { archiveChatAction: { archived } } } }, ev, undefined,
+    index === 0 ? { accountSettings: { unarchiveChats: false } } : undefined, logger);
+    ev.flush();
+  }
+  assert.deepEqual(received.map((message) => message.chat_archived), [true, false]);
+});
+
+test("incoming messages follow WhatsApp's keep-chats-archived setting", async (t) => {
+  const { makeEventBuffer } = await import("@whiskeysockets/baileys");
+  const { default: processMessage } = await import("@whiskeysockets/baileys/lib/Utils/process-message.js");
+  const logger = { trace() {}, debug() {}, info() {}, warn() {}, error() {} };
+  for (const unarchiveChats of [false, true]) {
+    const { client, ev } = await createHarness({ eventEmitter: makeEventBuffer(logger) });
+    t.after(() => client.disconnect());
+    const received = [];
+    client.on("msg", (message) => received.push(message));
+    ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: true }]);
+    const message = { key: { id: "auto-unarchive", remoteJid: FICTIONAL_JID, fromMe: false },
+      messageTimestamp: 1788696000, message: { conversation: "Fictional text" } };
+    ev.buffer();
+    ev.emit("messages.upsert", { type: "notify", messages: [message] });
+    await processMessage(message, { ev, logger,
+      creds: { me: { id: "12025550125@s.whatsapp.net" }, accountSettings: { unarchiveChats } } });
+    ev.flush();
+    assert.equal(received[0].chat_archived, !unarchiveChats);
+  }
+});
+
+test("archive cache survives client recreation and is cleared on logout", async (t) => {
+  const fs = require("node:fs/promises");
+  const os = require("node:os");
+  const sessionPath = await fs.mkdtemp(path.join(os.tmpdir(), "whatsapp-archive-client-"));
+  t.after(() => fs.rm(sessionPath, { recursive: true, force: true }));
+  const settings = { sessionPath, account: "12025550125:1@s.whatsapp.net" };
+  const first = await createHarness(settings);
+  first.ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: true }]);
+  await first.client.disconnect();
+  // Retired sockets cannot repopulate the saved state.
+  first.ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: false }]);
+  const second = await createHarness(settings);
+  const received = [];
+  second.client.on("msg", (message) => received.push(message));
+  const send = (ev) => ev.emit("messages.upsert", { type: "notify", messages: [{
+    key: { id: "after-restart", remoteJid: FICTIONAL_JID, fromMe: false },
+    message: { conversation: "Fictional text" },
+  }] });
+  send(second.ev);
+  assert.equal(received[0].chat_archived, true);
+  second.ev.emit("connection.update", { connection: "close",
+    lastDisconnect: { error: { output: { statusCode: 401 } } } });
+  second.ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: true }]);
+  await second.client.disconnect();
+  const third = await createHarness(settings);
+  third.client.on("msg", (message) => received.push(message));
+  send(third.ev);
+  assert.equal(received[1].chat_archived, null);
+  await third.client.disconnect();
+});
+
+test("archive flags stay separate between accounts", async (t) => {
+  const first = await createHarness();
+  const second = await createHarness();
+  t.after(async () => { await first.client.disconnect(); await second.client.disconnect(); });
+  first.ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: true }]);
+  const received = [];
+  second.client.on("msg", (message) => received.push(message));
+  second.ev.emit("messages.upsert", { type: "notify", messages: [{
+    key: { id: "other-account", remoteJid: FICTIONAL_JID, fromMe: false },
+    message: { conversation: "Fictional text" },
+  }] });
+  assert.equal(received[0].chat_archived, null);
+});
 
 test("the installed runtime Baileys dependency is exactly 6.7.23", async () => {
   assert.equal(
@@ -206,6 +333,7 @@ test("media messages are deduplicated before enrichment and emitted once after r
   });
   const incoming = { key: { id: "fictional-media", remoteJid: FICTIONAL_JID, fromMe: false },
     message: { imageMessage: { caption: "Fictional caption" } } };
+  ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: true }]);
   ev.emit("messages.upsert", { type: "notify", messages: [incoming, incoming, {
     key: { id: "fictional-text", remoteJid: FICTIONAL_JID, fromMe: false },
     message: { conversation: "Fictional text" },
@@ -215,10 +343,11 @@ test("media messages are deduplicated before enrichment and emitted once after r
   assert.equal(requests.length, 1);
   assert.equal(requests[0][1].type, "conversation");
   const media = { status: "ready", local_path: "/media/whatsapp/fictional/file.jpg", url: "/api/whatsapp/media/fictional" };
+  ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: false }]);
   ready(media);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.length, 2);
-  assert.deepEqual(requests[1][1], { clientId: "default", type: "imageMessage", ...incoming, media });
+  assert.deepEqual(requests[1][1], { clientId: "default", type: "imageMessage", ...incoming, chat_archived: true, media });
   assert.equal(incoming.media, undefined);
 });
 
@@ -346,6 +475,7 @@ test("mixed message batches reach separate Home Assistant events", async (t) => 
       clientId: "default",
       type: index === 2 ? "imageMessage" : "conversation",
       ...message,
+      ...(message.key.fromMe ? {} : { chat_archived: null }),
     });
   }
 });

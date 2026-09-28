@@ -1,6 +1,7 @@
 **
 !Dockerfile
 !api.js
+!chat-archive-store.js
 !decryption-diagnostics.js
 !diagnostics.js
 !event-buffer-flush.js

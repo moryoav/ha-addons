@@ -237,6 +237,14 @@ The add-on fires these Home Assistant events:
 `message` payload. Other fields, such as `messageTimestamp`, are passed through
 when present.
 
+Starting with add-on 2.2.0, `new_whatsapp_message` also includes
+`chat_archived`: `true` for an archived chat, `false` for an unarchived chat,
+or `null` if its state is not known. The value comes from the latest locally
+cached WhatsApp chat state, with no extra network request per message. Known
+flags survive add-on restarts and are updated by WhatsApp synchronization.
+No HACS integration update is needed. See the
+[archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
+
 Starting with add-on 1.4.39, `whatsapp_message_sent` fires for messages with
 `key.fromMe: true`, including messages sent from the phone, other linked
 devices, and the add-on itself when reported by WhatsApp. For this event,

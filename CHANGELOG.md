@@ -2,6 +2,17 @@
 
 All notable changes to this repository are documented here.
 
+## 2.2.0
+
+- Added `chat_archived` to `new_whatsapp_message`: `true`, `false`, or `null`
+  when the chat's archive state is unknown. Uses synchronized local state
+  without extra network requests per message.
+- Preserved known archive flags across add-on restarts, with separate caches
+  per account and cleanup on chat deletion, logout, or session reset.
+- Added archive-state documentation and an automation condition that skips
+  archived and unknown chats.
+- The HACS integration is unchanged and needs no update.
+
 ## 2.1.2
 
 ### Fix for replayed messages after a restart (issue #7)

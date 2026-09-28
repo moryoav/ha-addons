@@ -282,6 +282,14 @@ I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/h
 | whatsapp_send_message_result    | Result event fired after sending a message              |
 | whatsapp_addon_health_failure   | Sanitized details after the prior run ended unhealthy   |
 
+Starting with add-on 2.2.0, `new_whatsapp_message` includes `chat_archived`:
+`true` (archived), `false` (unarchived), or `null` (unknown). It uses the latest
+locally cached chat state, with no extra network request per message. Known
+flags survive restarts and are updated by WhatsApp synchronization. Existing
+chats can remain unknown after upgrading until their state is received.
+No HACS integration update is needed. See the
+[archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
+
 `new_whatsapp_message` and `whatsapp_message_sent` event data includes the
 configured `clientId`, the detected message `type`, the Baileys `key`, and the
 `message` payload. Other fields, such as `messageTimestamp`, are passed through

@@ -866,6 +866,7 @@ const createAddonRuntime = ({
         const oldClient = clients[clientId];
         oldClient?.removeAllListeners?.();
         delete clients[clientId];
+        await oldClient?.disconnect?.(false);
         await removeSessionDirectory({ dataRoot, clientId, fsPromises });
         initClient(clientId);
       })()
