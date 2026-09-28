@@ -51,7 +51,8 @@ same message.
 ## Chat archive state
 
 Starting with add-on 2.2.0, every `new_whatsapp_message` event includes
-`chat_archived`:
+`chat_archived`. Starting with add-on 2.2.1, `whatsapp_message_sent` includes
+the same field for the destination chat:
 
 | Value | Meaning |
 | --- | --- |
@@ -87,7 +88,7 @@ conditions:
     value_template: "{{ trigger.event.data.get('chat_archived') is sameas false }}"
 ```
 
-This condition also skips unknown states. `whatsapp_message_sent` is unchanged.
+This condition also skips unknown states and works with either message event.
 Only the add-on needs updating; no HACS integration update is required.
 
 ## Capture a send-result event

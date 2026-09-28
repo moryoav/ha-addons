@@ -1,3 +1,10 @@
+## 2.2.1
+
+- Added `chat_archived` to `whatsapp_message_sent` using the destination
+  chat's cached archive state: `true`, `false`, or `null` when unknown.
+  No extra network requests are made per message.
+- No HACS integration update is needed.
+
 ## 2.2.0
 
 - Added `chat_archived` to `new_whatsapp_message`: `true`, `false`, or `null`

@@ -98,63 +98,64 @@ const createHarness = async ({
   return { baileys, calls, client, ev, socket, ws };
 };
 
-test("incoming Home Assistant events use cached archive state with no extra socket calls", async (t) => {
-  const { client, ev, calls } = await createHarness();
-  t.after(() => client.disconnect());
-  const requests = [];
-  createAddonRuntime({ clientIds: ["default"], clientFactory: () => client,
-    logger: {}, httpClient: { post: async (...args) => requests.push(args) } });
-  const before = JSON.stringify(calls);
-  let sequence = 0;
-  const send = (jid = FICTIONAL_JID, fromMe = false) => ev.emit("messages.upsert", {
-    type: "notify", messages: [{ key: { id: `archive-${sequence++}`, remoteJid: jid, fromMe },
-      message: { conversation: "Fictional text" } }],
-  });
-  send();
-  ev.emit("messaging-history.set", { chats: [{ id: FICTIONAL_JID, archived: true }] });
-  send();
-  ev.emit("chats.update", [{ id: FICTIONAL_JID, unreadCount: 2 }]);
-  send();
-  ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: false }]);
-  send();
-  ev.emit("chats.upsert", [{ id: FICTIONAL_GROUP_JID, archived: true }]);
-  send(FICTIONAL_GROUP_JID);
-  send(FICTIONAL_LID);
-  ev.emit("chats.delete", [FICTIONAL_JID]);
-  send();
-  send(FICTIONAL_JID, true);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(requests.slice(0, -1).map(([, body]) => body.chat_archived),
-    [null, true, true, false, true, null, null]);
-  assert.ok(requests.slice(0, -1).every(([url]) => url.endsWith("/new_whatsapp_message")));
-  assert.equal(Object.hasOwn(requests.at(-1)[1], "chat_archived"), false);
-  assert.equal(JSON.stringify(calls), before);
-});
-
-test("real Baileys buffered chat state is applied before incoming messages", async (t) => {
-  const { makeEventBuffer, processSyncAction } = await import("@whiskeysockets/baileys");
-  const logger = { trace() {}, debug() {}, info() {}, warn() {}, error() {} };
-  const { client, ev } = await createHarness({ eventEmitter: makeEventBuffer(logger) });
-  t.after(() => client.disconnect());
-  const received = [];
-  client.on("msg", (message) => received.push(message));
-  for (const [index, archived] of [true, false].entries()) {
-    ev.buffer();
-    // Baileys queues the message before its chat update, but flushes chats first.
-    ev.emit("messages.upsert", { type: "notify", messages: [{
-      key: { id: `buffered-${index}`, remoteJid: FICTIONAL_JID, fromMe: false },
-      message: { conversation: "Fictional text" },
-    }] });
-    if (index === 0) ev.emit("messaging-history.set", {
-      chats: [{ id: FICTIONAL_JID, archived: false }], contacts: [], messages: [], isLatest: true,
+for (const fromMe of [false, true]) {
+  test(`${fromMe ? "sent" : "incoming"} Home Assistant events use cached archive state with no extra socket calls`, async (t) => {
+    const { client, ev, calls } = await createHarness();
+    t.after(() => client.disconnect());
+    const requests = [];
+    createAddonRuntime({ clientIds: ["default"], clientFactory: () => client,
+      logger: {}, httpClient: { post: async (...args) => requests.push(args) } });
+    const before = JSON.stringify(calls);
+    let sequence = 0;
+    const send = (jid = FICTIONAL_JID) => ev.emit("messages.upsert", {
+      type: "notify", messages: [{ key: { id: `archive-${sequence++}`, remoteJid: jid, fromMe },
+        message: { conversation: "Fictional text" } }],
     });
-    processSyncAction({ index: ["archive", FICTIONAL_JID],
-      syncAction: { value: { archiveChatAction: { archived } } } }, ev, undefined,
-    index === 0 ? { accountSettings: { unarchiveChats: false } } : undefined, logger);
-    ev.flush();
-  }
-  assert.deepEqual(received.map((message) => message.chat_archived), [true, false]);
-});
+    send();
+    ev.emit("messaging-history.set", { chats: [{ id: FICTIONAL_JID, archived: true }] });
+    send();
+    ev.emit("chats.update", [{ id: FICTIONAL_JID, unreadCount: 2 }]);
+    send();
+    ev.emit("chats.update", [{ id: FICTIONAL_JID, archived: false }]);
+    send();
+    ev.emit("chats.upsert", [{ id: FICTIONAL_GROUP_JID, archived: true }]);
+    send(FICTIONAL_GROUP_JID);
+    send(FICTIONAL_LID);
+    ev.emit("chats.delete", [FICTIONAL_JID]);
+    send();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(requests.map(([, body]) => body.chat_archived),
+      [null, true, true, false, true, null, null]);
+    const event = fromMe ? "whatsapp_message_sent" : "new_whatsapp_message";
+    assert.ok(requests.every(([url]) => url.endsWith(`/${event}`)));
+    assert.equal(JSON.stringify(calls), before);
+  });
+
+  test(`real Baileys buffered chat state is applied before ${fromMe ? "sent" : "incoming"} messages`, async (t) => {
+    const { makeEventBuffer, processSyncAction } = await import("@whiskeysockets/baileys");
+    const logger = { trace() {}, debug() {}, info() {}, warn() {}, error() {} };
+    const { client, ev } = await createHarness({ eventEmitter: makeEventBuffer(logger) });
+    t.after(() => client.disconnect());
+    const received = [];
+    client.on(fromMe ? "msg_sent" : "msg", (message) => received.push(message));
+    for (const [index, archived] of [true, false].entries()) {
+      ev.buffer();
+      // Baileys queues the message before its chat update, but flushes chats first.
+      ev.emit("messages.upsert", { type: "notify", messages: [{
+        key: { id: `buffered-${index}`, remoteJid: FICTIONAL_JID, fromMe },
+        message: { conversation: "Fictional text" },
+      }] });
+      if (index === 0) ev.emit("messaging-history.set", {
+        chats: [{ id: FICTIONAL_JID, archived: false }], contacts: [], messages: [], isLatest: true,
+      });
+      processSyncAction({ index: ["archive", FICTIONAL_JID],
+        syncAction: { value: { archiveChatAction: { archived } } } }, ev, undefined,
+      index === 0 ? { accountSettings: { unarchiveChats: false } } : undefined, logger);
+      ev.flush();
+    }
+    assert.deepEqual(received.map((message) => message.chat_archived), [true, false]);
+  });
+}
 
 test("incoming messages follow WhatsApp's keep-chats-archived setting", async (t) => {
   const { makeEventBuffer } = await import("@whiskeysockets/baileys");
@@ -475,7 +476,7 @@ test("mixed message batches reach separate Home Assistant events", async (t) => 
       clientId: "default",
       type: index === 2 ? "imageMessage" : "conversation",
       ...message,
-      ...(message.key.fromMe ? {} : { chat_archived: null }),
+      chat_archived: null,
     });
   }
 });

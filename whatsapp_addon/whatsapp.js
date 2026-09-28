@@ -713,9 +713,7 @@ class WhatsappClient extends EventEmitter {
         this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
           type: messageType,
           ...message,
-          ...(message.key?.fromMe ? {} : {
-            chat_archived: this.#archiveStore.get(message.key?.remoteJid),
-          }),
+          chat_archived: this.#archiveStore.get(message.key?.remoteJid),
         });
       }
     });

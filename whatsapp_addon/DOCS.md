@@ -287,6 +287,8 @@ Starting with add-on 2.2.0, `new_whatsapp_message` includes `chat_archived`:
 locally cached chat state, with no extra network request per message. Known
 flags survive restarts and are updated by WhatsApp synchronization. Existing
 chats can remain unknown after upgrading until their state is received.
+Starting with add-on 2.2.1, `whatsapp_message_sent` includes the same field for
+the destination chat, using the same cache and values.
 No HACS integration update is needed. See the
 [archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
 
