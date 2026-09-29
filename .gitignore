@@ -8,3 +8,6 @@ __pycache__/
 
 # Generated documentation
 /site/
+
+# Local remote attachments
+/.codex-remote-attachments/
