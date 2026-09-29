@@ -1,3 +1,8 @@
+## 2.2.2
+
+- Aligned the add-on version with the GitHub release and HACS integration.
+  Add-on runtime behavior is unchanged.
+
 ## 2.2.1
 
 - Added `chat_archived` to `whatsapp_message_sent` using the destination

@@ -2,6 +2,16 @@
 
 All notable changes to this repository are documented here.
 
+## 2.2.2
+
+- Added an automatically packaged `whatsapp.zip` to GitHub releases for HACS
+  installs and updates.
+- Kept the add-on image build in the release sequence and aligned the add-on,
+  package, and integration versions with the release tag.
+- Standardized HACS and Hassfest validation triggers and README badges and
+  support buttons.
+- Add-on and integration runtime behavior is unchanged.
+
 ## 2.2.1
 
 - Added `chat_archived` to `whatsapp_message_sent` using the destination
