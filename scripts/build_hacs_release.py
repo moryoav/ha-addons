@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import re
 import subprocess
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -49,17 +51,32 @@ def build(tag: str, output_dir: Path) -> Path:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_path = output_dir / ASSET_NAME
-    subprocess.run(
+    source = subprocess.run(
         [
             "git",
             "archive",
-            "--format=zip",
-            f"--output={archive_path}",
+            "--format=tar",
             f"HEAD:custom_components/{DOMAIN}",
         ],
         cwd=ROOT,
         check=True,
+        stdout=subprocess.PIPE,
     )
+    with tarfile.open(fileobj=io.BytesIO(source.stdout), mode="r:") as source_archive:
+        with zipfile.ZipFile(archive_path, mode="w") as archive:
+            for member in sorted(source_archive.getmembers(), key=lambda item: item.name):
+                if member.isdir():
+                    continue
+                if not member.isfile():
+                    raise ValueError(f"Unsupported integration entry: {member.name}")
+                contents = source_archive.extractfile(member)
+                if contents is None:
+                    raise ValueError(f"Could not read integration entry: {member.name}")
+                entry = zipfile.ZipInfo(member.name, date_time=(1980, 1, 1, 0, 0, 0))
+                entry.create_system = 3
+                entry.external_attr = 0o100644 << 16
+                entry.compress_type = zipfile.ZIP_STORED
+                archive.writestr(entry, contents.read())
 
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
@@ -81,7 +98,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         print(build(args.tag, args.output_dir))
-    except (OSError, ValueError, KeyError, subprocess.CalledProcessError, zipfile.BadZipFile) as exc:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tarfile.TarError, zipfile.BadZipFile) as exc:
         print(f"HACS release build failed: {exc}", file=sys.stderr)
         return 1
     return 0
