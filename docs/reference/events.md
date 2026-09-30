@@ -147,6 +147,12 @@ Assistant Core is unavailable. Baileys lifecycle updates can still be missing
 or arrive after a reconnect, so automations should filter the status they need
 without assuming that every call produces every status.
 
+Starting with version 2.3.0, `whatsapp.reject_call` declines an incoming call.
+Pass the `callId` and `from` values of its `offer` event, as in the
+[night-time example](../examples/automations.md#decline-calls-at-night-and-reply-with-a-message).
+WhatsApp does not let a linked device start calls, and it does not report calls
+made from the phone as call events.
+
 ## Health events
 
 `whatsapp_addon_health_failure` fires on the next successful startup when the

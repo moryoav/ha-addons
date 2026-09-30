@@ -1,6 +1,7 @@
 **
 !Dockerfile
 !api.js
+!app-state-sync.js
 !chat-archive-store.js
 !decryption-diagnostics.js
 !diagnostics.js

@@ -110,6 +110,16 @@
           "description": "An object containing the Baileys message key under keys."
         }
       }
+    },
+    "reject_call": {
+      "name": "Reject call",
+      "description": "Declines an incoming WhatsApp call reported by a whatsapp_call_update event.",
+      "fields": {
+        "from": {
+          "name": "Caller",
+          "description": "The from value of the whatsapp_call_update event: the caller's phone JID or LID."
+        }
+      }
     }
   },
   "exceptions": {
@@ -127,6 +137,9 @@
     },
     "client_not_found": {
       "message": "The selected WhatsApp client ID does not exist."
+    },
+    "invalid_call_reference": {
+      "message": "Enter the callId and from values of a whatsapp_call_update event. from must be the caller's phone JID or LID, not a phone number or group."
     },
     "invalid_group_target": {
       "message": "Enter a WhatsApp group JID ending in @g.us, such as the key.remoteJid of a received group message. Phone numbers, LIDs, and broadcasts are not groups."

@@ -152,3 +152,25 @@ read_messages:
         {"keys": {"id": "EXAMPLE_MESSAGE_ID", "remoteJid": "12025550123@s.whatsapp.net", "fromMe": false}}
       selector:
         object:
+
+reject_call:
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session that received the call.
+      required: true
+      example: default
+      selector:
+        text:
+    callId:
+      name: Call ID
+      description: The callId of the whatsapp_call_update event.
+      required: true
+      example: "{{ trigger.event.data.callId }}"
+      selector:
+        text:
+    from:
+      required: true
+      example: "{{ trigger.event.data.from }}"
+      selector:
+        text:

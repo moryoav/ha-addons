@@ -15,6 +15,7 @@ from custom_components.whatsapp.client import (
     normalize_api_token,
     normalize_group_target,
     normalize_phone_target,
+    validate_call_reference,
 )
 
 pytestmark = pytest.mark.enable_socket
@@ -739,3 +740,120 @@ async def test_get_group_info_preserves_structured_api_error(status, code) -> No
     assert exc_info.value.status == status
     assert exc_info.value.code == code
     assert "Request failed" not in str(exc_info.value)
+
+
+FICTIONAL_CALL_ID = "0123456789ABCDEF0123456789ABCDEF"
+
+
+def _reject_call_data(**overrides) -> dict:
+    """Return reject_call action data built from a fictional call event."""
+    return {
+        "clientId": "default",
+        "callId": FICTIONAL_CALL_ID,
+        "from": "999999999999999@lid",
+        **overrides,
+    }
+
+
+@pytest.mark.parametrize(
+    "caller",
+    [
+        "999999999999999@lid",
+        "999999999999999:7@lid",
+        "12025550123@s.whatsapp.net",
+        "12025550123:3@s.whatsapp.net",
+    ],
+)
+def test_validate_call_reference_accepts_call_event_values(caller) -> None:
+    """Test caller JIDs and LIDs from call events are accepted."""
+    validate_call_reference(FICTIONAL_CALL_ID, caller)
+
+
+@pytest.mark.parametrize(
+    ("call_id", "caller"),
+    [
+        ("", "999999999999999@lid"),
+        ("has space", "999999999999999@lid"),
+        ("x" * 129, "999999999999999@lid"),
+        (FICTIONAL_CALL_ID, "12025550123"),
+        (FICTIONAL_CALL_ID, "120363000000000000@g.us"),
+        (FICTIONAL_CALL_ID, "status@broadcast"),
+        (FICTIONAL_CALL_ID, "999999999999999@lid "),
+    ],
+)
+def test_validate_call_reference_rejects_other_values(call_id, caller) -> None:
+    """Test values that cannot come from a call event are rejected."""
+    with pytest.raises(ValueError):
+        validate_call_reference(call_id, caller)
+
+
+async def test_reject_call_success() -> None:
+    """Test a call rejection posts the event fields and requires an OK body."""
+    session = FakeSession(FakeResponse(text_data="OK"))
+    client = WhatsappClient(session, "http://addon")
+
+    await client.async_reject_call(_reject_call_data())
+
+    method, url, kwargs = session.calls[0]
+    assert (method, url) == ("POST", "http://addon/rejectCall")
+    assert kwargs["json"] == _reject_call_data()
+
+
+async def test_reject_call_rejects_invalid_reference_before_request() -> None:
+    """Test an invalid caller never reaches the add-on."""
+    session = FakeSession(FakeResponse(text_data="OK"))
+    client = WhatsappClient(session, "http://addon")
+
+    with pytest.raises(ValueError):
+        await client.async_reject_call(_reject_call_data(**{"from": "12025550123"}))
+    assert session.calls == []
+
+
+async def test_reject_call_rejects_missing_advertised_capability() -> None:
+    """Test a versioned add-on without call rejection fails before the POST."""
+    session = FakeSession(FakeResponse(json_data=_modern_health()))
+    client = WhatsappClient(session, "http://addon")
+    await client.async_health()
+
+    with pytest.raises(WhatsappUnsupportedCapability):
+        await client.async_reject_call(_reject_call_data())
+    assert len(session.calls) == 1
+
+
+async def test_reject_call_legacy_endpoint_missing() -> None:
+    """Test an old add-on's missing route becomes an upgrade error."""
+    response = FakeResponse(
+        status=404,
+        json_error=ContentTypeError(Mock(), (), message="text/html"),
+        text_data="Cannot POST /rejectCall",
+    )
+    client = WhatsappClient(FakeSession(response), "http://addon")
+
+    with pytest.raises(WhatsappUnsupportedCapability) as exc_info:
+        await client.async_reject_call(_reject_call_data())
+    assert exc_info.value.status == 404
+    assert exc_info.value.code == "unsupported_capability"
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (400, "invalid_request"),
+        (404, "client_not_found"),
+        (502, "upstream_error"),
+        (503, "client_disconnected"),
+    ],
+)
+async def test_reject_call_preserves_structured_api_error(status, code) -> None:
+    """Test structured add-on errors survive client translation."""
+    response = FakeResponse(
+        status=status,
+        json_data={"error": {"code": code, "message": "Request failed."}},
+    )
+    client = WhatsappClient(FakeSession(response), "http://addon")
+
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await client.async_reject_call(_reject_call_data())
+    assert not isinstance(exc_info.value, WhatsappUnsupportedCapability)
+    assert exc_info.value.status == status
+    assert exc_info.value.code == code

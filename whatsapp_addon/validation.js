@@ -4,6 +4,11 @@ const CLIENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const PHONE_PATTERN = /^\+?([1-9]\d{4,14})$/;
 const PHONE_JID_PATTERN = /^([1-9]\d{4,14})@s\.whatsapp\.net$/;
 const GROUP_JID_PATTERN = /^(\d[\d-]{3,62}\d)@g\.us$/;
+const CALL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+// The caller of a whatsapp_call_update: a phone JID or LID, sometimes with a
+// device suffix. Groups and broadcasts cannot start a call.
+const CALLER_JID_PATTERN =
+  /^(?:[1-9]\d{4,14}(?::\d{1,4})?@s\.whatsapp\.net|[1-9]\d{4,30}(?::\d{1,4})?@lid)$/;
 
 class RequestValidationError extends Error {
   constructor(message = "Invalid request.") {
@@ -113,12 +118,43 @@ const normalizeGroupJid = (value) => {
   throw new RequestValidationError("to must be a WhatsApp group @g.us JID.");
 };
 
+const requireExactToken = (value, field, pattern, message) => {
+  const token = requireString(value, field, { maxLength: 128 });
+  if (token !== value) {
+    throw new RequestValidationError(
+      `${field} must not contain surrounding whitespace.`
+    );
+  }
+  if (!pattern.test(token)) throw new RequestValidationError(message);
+  return token;
+};
+
+const normalizeCallId = (value) =>
+  requireExactToken(
+    value,
+    "callId",
+    CALL_ID_PATTERN,
+    "callId must be the callId of a whatsapp_call_update event."
+  );
+
+const normalizeCallerJid = (value) =>
+  requireExactToken(
+    value,
+    "from",
+    CALLER_JID_PATTERN,
+    "from must be the phone JID or LID of the caller, as in a whatsapp_call_update event."
+  );
+
 module.exports = {
+  CALLER_JID_PATTERN,
+  CALL_ID_PATTERN,
   CLIENT_ID_PATTERN,
   GROUP_JID_PATTERN,
   PHONE_JID_PATTERN,
   PHONE_PATTERN,
   RequestValidationError,
+  normalizeCallId,
+  normalizeCallerJid,
   normalizeClientId,
   normalizeConfiguredClientIds,
   normalizeGroupJid,

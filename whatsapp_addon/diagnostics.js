@@ -523,7 +523,9 @@ const createSystemMetricsSampler = ({
 const emptyCounters = () => ({
   apiRequests: 0,
   apiSlow: 0,
+  appStateNotifications: 0,
   callAccepted: 0,
+  callHistoryEntries: 0,
   callOffers: 0,
   callRejected: 0,
   callRinging: 0,
@@ -921,6 +923,12 @@ const createRuntimeDiagnostics = ({
     },
     recordCallIgnored() {
       increment(counters, "callUpdatesIgnored");
+    },
+    recordAppStateNotification() {
+      increment(counters, "appStateNotifications");
+    },
+    recordCallHistoryEntry() {
+      increment(counters, "callHistoryEntries");
     },
     recordMessageBatch(count) {
       increment(counters, "messageBatches");
