@@ -115,10 +115,6 @@
       "name": "Reject call",
       "description": "Declines an incoming WhatsApp call reported by a whatsapp_call_update event.",
       "fields": {
-        "callId": {
-          "name": "Call ID",
-          "description": "The callId of the whatsapp_call_update event."
-        },
         "from": {
           "name": "Caller",
           "description": "The from value of the whatsapp_call_update event: the caller's phone JID or LID."

@@ -163,6 +163,8 @@ reject_call:
       selector:
         text:
     callId:
+      name: Call ID
+      description: The callId of the whatsapp_call_update event.
       required: true
       example: "{{ trigger.event.data.callId }}"
       selector:

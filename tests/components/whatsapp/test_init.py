@@ -506,7 +506,7 @@ def test_service_descriptions_are_complete() -> None:
             else:
                 assert field["name"]
                 assert field["description"]
-                assert field_name in {"clientId", "userId"}
+                assert field_name in {"clientId", "userId", "callId"}
 
 
 FICTIONAL_CALL_ID = "0123456789ABCDEF0123456789ABCDEF"
