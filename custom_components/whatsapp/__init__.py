@@ -27,10 +27,13 @@ from .client import (
     WhatsappUnsupportedCapability,
     normalize_group_target,
     normalize_phone_target,
+    validate_call_reference,
 )
 from .const import (
     ATTR_BODY,
+    ATTR_CALL_ID,
     ATTR_CLIENT_ID,
+    ATTR_FROM,
     ATTR_OPTIONS,
     ATTR_STATUS,
     ATTR_TO,
@@ -44,6 +47,7 @@ from .const import (
     SERVICE_GET_GROUP_INFO,
     SERVICE_PRESENCE_SUBSCRIBE,
     SERVICE_READ_MESSAGES,
+    SERVICE_REJECT_CALL,
     SERVICE_SEND_INFINITY_PRESENCE_UPDATE,
     SERVICE_SEND_MESSAGE,
     SERVICE_SEND_PRESENCE_UPDATE,
@@ -108,6 +112,14 @@ READ_MESSAGES_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CLIENT_ID): cv.string,
         vol.Required(ATTR_BODY): dict,
+    }
+)
+
+REJECT_CALL_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CLIENT_ID): cv.string,
+        vol.Required(ATTR_CALL_ID): cv.string,
+        vol.Required(ATTR_FROM): cv.string,
     }
 )
 
@@ -233,6 +245,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             lambda client, data: client.async_read_messages(data),
         )
 
+    async def async_reject_call(call: ServiceCall) -> None:
+        try:
+            validate_call_reference(call.data[ATTR_CALL_ID], call.data[ATTR_FROM])
+        except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_call_reference",
+            ) from err
+
+        await _async_call_api(
+            hass,
+            SERVICE_REJECT_CALL,
+            call.data,
+            lambda client, data: client.async_reject_call(data),
+        )
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_SEND_MESSAGE,
@@ -283,6 +311,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_READ_MESSAGES,
         async_read_messages,
         schema=READ_MESSAGES_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REJECT_CALL,
+        async_reject_call,
+        schema=REJECT_CALL_SCHEMA,
     )
 
     return True

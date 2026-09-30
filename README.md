@@ -217,6 +217,8 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   WhatsApp and return its normalized phone JID and LID when available.
 - `whatsapp.get_group_info`: look up a group by its `@g.us` JID and return its
   name, description, owner, settings, and participants.
+- `whatsapp.reject_call`: decline an incoming call using the `callId` and
+  `from` values of its `whatsapp_call_update` event.
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event
@@ -276,6 +278,12 @@ retries transient delivery failures across a 33-second backoff window when Home
 Assistant Core is unavailable. Baileys lifecycle updates can still be missing
 or arrive after a reconnect, so automations should filter the status they need
 without assuming that every call produces every status.
+
+Starting with version 2.3.0, `whatsapp.reject_call` declines an incoming call.
+Pass the `callId` and `from` values of its `offer` event, as in the
+[night-time example](https://moryoav.github.io/ha-addons/examples/automations/#decline-calls-at-night-and-reply-with-a-message).
+WhatsApp does not let a linked device start calls, and it does not report calls
+made from the phone as call events.
 
 `whatsapp_addon_health_failure` fires on the next successful startup when the
 saved history ends with three consecutive failed native health checks. Its
@@ -341,6 +349,11 @@ codes, session data, or API tokens. Identifier-related entries use run-scoped
 one-way references for correlation. Return the option to `info` after collecting
 the relevant logs.
 
+Starting with version 2.3.0, debug mode also logs WhatsApp app-state sync:
+`server_sync` collection names, resync progress, the kind of each synced
+change, and a summary of any call-history entry the phone shares, with
+identifiers replaced by one-way references.
+
 After each connection the add-on logs how many offline messages WhatsApp
 announced and delivered. If WhatsApp has not finished sending them one minute
 after the connection opened, a warning is logged instead. Until WhatsApp
@@ -395,6 +408,8 @@ updates the existing alert instead of accumulating duplicates.
 - `whatsapp.check_number` requires add-on and integration version 1.4.31 or
   newer. An endpoint/version error usually means only one half was updated.
 - `whatsapp.get_group_info` requires add-on and integration version 2.1.0 or
+  newer. Older add-ons report that the action is unsupported.
+- `whatsapp.reject_call` requires add-on and integration version 2.3.0 or
   newer. Older add-ons report that the action is unsupported.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If the add-on reports that its clients are paused, open its Web UI. Try Retry

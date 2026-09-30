@@ -507,3 +507,103 @@ def test_service_descriptions_are_complete() -> None:
                 assert field["name"]
                 assert field["description"]
                 assert field_name in {"clientId", "userId"}
+
+
+FICTIONAL_CALL_ID = "0123456789ABCDEF0123456789ABCDEF"
+
+
+async def test_reject_call_action_success(hass, enable_custom_integrations) -> None:
+    """Test reject_call forwards the call event fields to the add-on."""
+    client = AsyncMock(spec=WhatsappClient)
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    data = {
+        "clientId": "default",
+        "callId": FICTIONAL_CALL_ID,
+        "from": "999999999999999@lid",
+    }
+    await hass.services.async_call(DOMAIN, "reject_call", data, blocking=True)
+
+    client.async_reject_call.assert_awaited_once_with(data)
+
+
+@pytest.mark.parametrize(
+    ("call_id", "caller"),
+    [
+        (FICTIONAL_CALL_ID, "12025550123"),
+        (FICTIONAL_CALL_ID, "+12025550123"),
+        (FICTIONAL_CALL_ID, "120363000000000000@g.us"),
+        (FICTIONAL_CALL_ID, "status@broadcast"),
+        (FICTIONAL_CALL_ID, " 999999999999999@lid"),
+        ("not a call id", "999999999999999@lid"),
+        ("", "999999999999999@lid"),
+    ],
+)
+async def test_reject_call_rejects_invalid_call_reference(
+    hass,
+    enable_custom_integrations,
+    call_id,
+    caller,
+) -> None:
+    """Test the action rejects values that cannot come from a call event."""
+    client = AsyncMock(spec=WhatsappClient)
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await hass.services.async_call(
+            DOMAIN,
+            "reject_call",
+            {"clientId": "default", "callId": call_id, "from": caller},
+            blocking=True,
+        )
+    assert exc_info.value.translation_key == "invalid_call_reference"
+    client.async_reject_call.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("side_effect", "error_type", "translation_key"),
+    [
+        (
+            WhatsappUnsupportedCapability(code="unsupported_capability"),
+            ServiceValidationError,
+            "addon_too_old",
+        ),
+        (
+            WhatsappApiError(status=503, code="client_disconnected"),
+            HomeAssistantError,
+            "client_disconnected",
+        ),
+        (
+            WhatsappApiError(status=502, code="upstream_error"),
+            HomeAssistantError,
+            "upstream_error",
+        ),
+    ],
+)
+async def test_reject_call_translates_failures(
+    hass,
+    enable_custom_integrations,
+    side_effect,
+    error_type,
+    translation_key,
+) -> None:
+    """Test add-on failures surface as translated action errors."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_reject_call.side_effect = side_effect
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    with pytest.raises(error_type) as exc_info:
+        await hass.services.async_call(
+            DOMAIN,
+            "reject_call",
+            {
+                "clientId": "default",
+                "callId": FICTIONAL_CALL_ID,
+                "from": "12025550123@s.whatsapp.net",
+            },
+            blocking=True,
+        )
+    assert exc_info.value.translation_key == translation_key

@@ -2,6 +2,62 @@
 
 All notable changes to this repository are documented here.
 
+## 2.3.0
+
+### Decline incoming calls
+
+- Added the `whatsapp.reject_call` action. It declines an incoming WhatsApp call
+  using the `callId` and `from` values of its `whatsapp_call_update` event.
+  Both the add-on and the HACS integration must be updated to 2.3.0.
+- Added an example automation that declines direct calls at night and replies
+  to the caller that you are not available:
+
+  ```yaml
+  - alias: Decline WhatsApp calls at night
+    trigger:
+      - platform: event
+        event_type: whatsapp_call_update
+        event_data:
+          status: offer
+    condition:
+      - condition: time
+        after: "23:00:00"
+        before: "07:00:00"
+      - condition: template
+        value_template: >-
+          {{ not trigger.event.data.isGroup
+             and trigger.event.data.callId is not none
+             and trigger.event.data.from is not none }}
+    action:
+      - action: whatsapp.reject_call
+        data:
+          clientId: "{{ trigger.event.data.clientId }}"
+          callId: "{{ trigger.event.data.callId }}"
+          from: "{{ trigger.event.data.from }}"
+      - action: whatsapp.send_message
+        data:
+          clientId: "{{ trigger.event.data.clientId }}"
+          to: "{{ trigger.event.data.from | regex_replace(':[0-9]+@', '@') }}"
+          body:
+            text: >-
+              I'm not available right now. I'll get back to you in the morning.
+    mode: queued
+  ```
+
+  Swap the time condition for a sleep helper, such as
+  `input_boolean.sleeping`, to decline calls only while you sleep.
+
+### Call history diagnostics
+
+- With `log_level: debug`, the add-on now logs WhatsApp app-state sync: the
+  collection names in each `server_sync` notification, resync progress, the
+  kind of each synced change, and a summary of any call-history entry shared by
+  the phone. Identifiers appear only as one-way references.
+- This shows how calls made from the phone reach the add-on, which WhatsApp
+  does not report as call events. Nothing new is sent to Home Assistant yet.
+- Debug runtime summaries now count app-state sync notifications and
+  call-history entries.
+
 ## 2.2.2
 
 - Added an automatically packaged `whatsapp.zip` to GitHub releases for HACS

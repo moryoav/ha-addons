@@ -22,6 +22,52 @@ recipients and entity IDs with your own values.
   mode: queued
 ```
 
+## Decline calls at night and reply with a message
+
+This automation declines direct WhatsApp calls between 23:00 and 07:00 and
+tells the caller you are not available. It needs add-on and integration version
+2.3.0 or newer.
+
+```yaml
+- alias: Decline WhatsApp calls at night
+  trigger:
+    - platform: event
+      event_type: whatsapp_call_update
+      event_data:
+        status: offer
+  condition:
+    - condition: time
+      after: "23:00:00"
+      before: "07:00:00"
+    - condition: template
+      value_template: >-
+        {{ not trigger.event.data.isGroup
+           and trigger.event.data.callId is not none
+           and trigger.event.data.from is not none }}
+  action:
+    - action: whatsapp.reject_call
+      data:
+        clientId: "{{ trigger.event.data.clientId }}"
+        callId: "{{ trigger.event.data.callId }}"
+        from: "{{ trigger.event.data.from }}"
+    - action: whatsapp.send_message
+      data:
+        clientId: "{{ trigger.event.data.clientId }}"
+        to: "{{ trigger.event.data.from | regex_replace(':[0-9]+@', '@') }}"
+        body:
+          text: >-
+            I'm not available right now. I'll get back to you in the morning.
+  mode: queued
+```
+
+To decline calls only while you sleep, replace the time condition with your
+sleep helper, for example
+`condition: state`, `entity_id: input_boolean.sleeping`, `state: "on"`.
+The template condition skips group calls, so a group call still rings.
+The caller's `from` value can be a LID; `whatsapp.send_message` accepts it
+directly. The `regex_replace` removes a device suffix such as `:12` if WhatsApp
+reports one.
+
 ## Log received and sent messages
 
 ```yaml

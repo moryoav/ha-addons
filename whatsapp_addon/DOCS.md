@@ -127,6 +127,14 @@ session data, or API tokens. Identifier-related entries use run-scoped one-way
 references for correlation. Return the option to `info` after collecting the
 relevant logs.
 
+Starting with version 2.3.0, debug mode also logs WhatsApp app-state sync: the
+collection names in each `server_sync` notification, resync progress, the kind
+of each synced change, and a summary of any call-history entry the phone
+shares. A call-history summary contains the call result, direction, video flag,
+duration, start time, and whether the caller and participants are the linked
+account, with identifiers replaced by one-way references. These entries show
+how calls made from the phone reach a linked device.
+
 The separate Decryption Diagnostics toggle is intended for investigating
 message decryption failures. When enabled, it records raw message-stanza
 attributes, exact message and participant identifiers, sender names,
@@ -323,6 +331,11 @@ preserves the observed update order and retries transient delivery failures for
 a 33-second backoff window when Home Assistant Core is unavailable. Baileys
 updates can still be missing or arrive after a reconnect, so automations should
 filter the desired status without assuming a complete lifecycle.
+
+Starting with version 2.3.0, the `whatsapp.reject_call` action declines an
+incoming call using the `callId` and `from` values of its `offer` event. See the
+[night-time example](https://moryoav.github.io/ha-addons/examples/automations/#decline-calls-at-night-and-reply-with-a-message).
+Calls made from the phone are not reported as call events.
 
 `whatsapp_addon_health_failure` includes its schema and service, a run id,
 first and last failure timestamps, failure count and streak, the bounded failure

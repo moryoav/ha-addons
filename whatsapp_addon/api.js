@@ -9,6 +9,8 @@ const {
 } = require("./whatsapp");
 const {
   RequestValidationError,
+  normalizeCallId,
+  normalizeCallerJid,
   normalizeClientId,
   normalizeGroupJid,
   normalizePhoneJid,
@@ -26,6 +28,7 @@ const API_CAPABILITIES = Object.freeze([
   "read_messages",
   "check_number",
   "get_group_info",
+  "reject_call",
 ]);
 const PRESENCE_TYPES = new Set([
   "available",
@@ -456,6 +459,19 @@ const createApiApp = ({
 
       const result = await client.getGroupInfo(jid);
       res.json(validateGroupInfoResult(result, jid));
+    })
+  );
+
+  app.post(
+    "/rejectCall",
+    asyncRoute(async (req, res) => {
+      const body = requirePlainObject(req.body);
+      const { client } = requireClient(clients, body, clientStates);
+      const callId = normalizeCallId(body.callId);
+      const from = normalizeCallerJid(body.from);
+
+      await client.rejectCall(callId, from);
+      res.type("text/plain").send("OK");
     })
   );
 

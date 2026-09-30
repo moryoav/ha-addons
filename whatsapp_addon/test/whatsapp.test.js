@@ -1123,3 +1123,116 @@ test("offline backlog reports come from the current socket until it stops", asyn
   ws.emit("frame", { tag: "ib", attrs: {}, content: [{ tag: "offline", attrs: { count: "1" } }] });
   assert.equal(reports.length, 1);
 });
+
+const FICTIONAL_CALL_ID = "0123456789ABCDEF0123456789ABCDEF";
+
+test("rejectCall forwards the call event fields to Baileys", async (t) => {
+  const rejected = [];
+  const { client } = await createHarness({
+    configureSocket: (socket) => {
+      socket.rejectCall = async (...args) => rejected.push(args);
+    },
+  });
+  t.after(() => client.disconnect());
+
+  await client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_LID);
+  await client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_JID);
+  assert.deepEqual(rejected, [
+    [FICTIONAL_CALL_ID, FICTIONAL_LID],
+    [FICTIONAL_CALL_ID, FICTIONAL_JID],
+  ]);
+
+  for (const [callId, from] of [
+    ["bad id", FICTIONAL_LID],
+    [FICTIONAL_CALL_ID, FICTIONAL_GROUP_JID],
+    [FICTIONAL_CALL_ID, FICTIONAL_NUMBER],
+  ]) {
+    await assert.rejects(client.rejectCall(callId, from), RequestValidationError);
+  }
+  assert.equal(rejected.length, 2);
+});
+
+test("rejectCall maps upstream failures, timeouts and disconnected sessions", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let behavior = "fail";
+  const { client } = await createHarness({
+    configureSocket: (socket) => {
+      socket.rejectCall = async () => {
+        if (behavior === "fail") {
+          const error = new Error("forbidden");
+          error.output = { statusCode: 403 };
+          throw error;
+        }
+        return new Promise(() => {});
+      };
+    },
+  });
+
+  await assert.rejects(client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_LID), (error) => {
+    assert.ok(error instanceof WhatsappUpstreamError);
+    assert.equal(error.upstreamCode, 403);
+    assert.ok(!error.message.includes("forbidden"));
+    return true;
+  });
+
+  behavior = "hang";
+  const pending = client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_LID);
+  t.mock.timers.tick(8_000);
+  await assert.rejects(pending, (error) => {
+    assert.ok(error instanceof WhatsappUpstreamError);
+    assert.equal(error.upstreamCode, 408);
+    return true;
+  });
+
+  await client.disconnect();
+  await assert.rejects(
+    client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_LID),
+    WhatsappDisconnectedError
+  );
+});
+
+test("rejectCall treats a socket without call support as a protocol error", async (t) => {
+  const { client } = await createHarness();
+  t.after(() => client.disconnect());
+  await assert.rejects(
+    client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_LID),
+    WhatsappProtocolError
+  );
+});
+
+test("app-state sync notifications and decoded changes are reported, then detached", async () => {
+  const events = [];
+  const { calls, client, ws } = await createHarness({
+    account: "999999999999991:4@s.whatsapp.net",
+  });
+  client.on("app_state_sync", (event) => events.push(event));
+  const { logger } = calls.socketOptions[0];
+
+  ws.emit("frame", {
+    tag: "notification",
+    attrs: { type: "server_sync", from: "s.whatsapp.net" },
+    content: [{ tag: "collection", attrs: { name: "regular_low", version: "9" } }],
+  });
+  const mutation = { index: ["call", FICTIONAL_CALL_ID], syncAction: { value: {} } };
+  logger.trace({ syncAction: mutation, initialSync: false }, "processing sync action");
+  logger.info("synced regular_low to v10");
+
+  assert.deepEqual(events, [
+    { type: "server_sync", collections: ["regular_low"] },
+    {
+      type: "action",
+      mutation,
+      initialSync: false,
+      self: { id: "999999999999991:4@s.whatsapp.net", lid: undefined },
+    },
+    { type: "resync", phase: "synced", collection: "regular_low", version: 10 },
+  ]);
+
+  await client.disconnect();
+  ws.emit("frame", {
+    tag: "notification",
+    attrs: { type: "server_sync" },
+    content: [{ tag: "collection", attrs: { name: "regular" } }],
+  });
+  assert.equal(events.length, 3);
+});

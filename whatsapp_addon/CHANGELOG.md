@@ -1,3 +1,53 @@
+## 2.3.0
+
+- Added the `/rejectCall` API and the `reject_call` capability behind the new
+  `whatsapp.reject_call` action. It declines an incoming call using the
+  `callId` and `from` values of its `whatsapp_call_update` event. Requires the
+  2.3.0 HACS integration.
+- Example: decline direct calls at night and tell the caller you are not
+  available:
+
+  ```yaml
+  - alias: Decline WhatsApp calls at night
+    trigger:
+      - platform: event
+        event_type: whatsapp_call_update
+        event_data:
+          status: offer
+    condition:
+      - condition: time
+        after: "23:00:00"
+        before: "07:00:00"
+      - condition: template
+        value_template: >-
+          {{ not trigger.event.data.isGroup
+             and trigger.event.data.callId is not none
+             and trigger.event.data.from is not none }}
+    action:
+      - action: whatsapp.reject_call
+        data:
+          clientId: "{{ trigger.event.data.clientId }}"
+          callId: "{{ trigger.event.data.callId }}"
+          from: "{{ trigger.event.data.from }}"
+      - action: whatsapp.send_message
+        data:
+          clientId: "{{ trigger.event.data.clientId }}"
+          to: "{{ trigger.event.data.from | regex_replace(':[0-9]+@', '@') }}"
+          body:
+            text: >-
+              I'm not available right now. I'll get back to you in the morning.
+    mode: queued
+  ```
+
+- With `log_level: debug`, the add-on logs WhatsApp app-state sync: the
+  collection names in each `server_sync` notification, resync progress, the
+  kind of each synced change, and a summary of any call-history entry shared by
+  the phone, with identifiers replaced by one-way references. This shows how
+  calls made from the phone reach the add-on. Nothing new is sent to Home
+  Assistant yet.
+- Debug runtime summaries count app-state sync notifications and call-history
+  entries.
+
 ## 2.2.2
 
 - Aligned the add-on version with the GitHub release and HACS integration.

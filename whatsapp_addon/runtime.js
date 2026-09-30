@@ -5,6 +5,7 @@ const axios = require("axios");
 const qrimage = require("qr-image");
 
 const { createApiApp } = require("./api");
+const { summarizeSyncAction } = require("./app-state-sync");
 const {
   DEFAULT_HEALTH_FAILURE_PATH,
   DEFAULT_HEARTBEAT_PATH,
@@ -743,6 +744,64 @@ const createAddonRuntime = ({
     );
   };
 
+  // Debug-only view of app-state sync, used to learn how the phone's call
+  // history reaches a linked device. Identifiers appear only as fingerprints.
+  const onAppStateSync = (event, clientId) => {
+    if (event?.type === "server_sync") {
+      diagnostics?.recordAppStateNotification?.();
+      if (!debugEnabled) return;
+      logger.debug?.("WhatsApp app-state sync notification.", {
+        runId,
+        clientRef: logRef(clientId),
+        collections: event.collections,
+      });
+      return;
+    }
+    if (event?.type === "resync") {
+      if (!debugEnabled) return;
+      logger.debug?.("WhatsApp app-state sync progress.", {
+        runId,
+        clientRef: logRef(clientId),
+        phase: event.phase,
+        collection: event.collection,
+        version: event.version,
+      });
+      return;
+    }
+    if (event?.type !== "action") return;
+
+    const summary = summarizeSyncAction(event.mutation, {
+      ref: logRef,
+      self: event.self,
+    });
+    if (summary.callLog) {
+      diagnostics?.recordCallHistoryEntry?.();
+      if (!debugEnabled) return;
+      logger.debug?.(
+        "WhatsApp call history entry received.",
+        JSON.stringify({
+          runId,
+          clientRef: logRef(clientId),
+          initialSync: event.initialSync,
+          index: summary.index,
+          callLog: summary.callLog,
+        })
+      );
+      return;
+    }
+    // A first sync after pairing replays every setting; only log live changes.
+    if (!debugEnabled || event.initialSync) return;
+    logger.debug?.(
+      "WhatsApp app-state change received.",
+      JSON.stringify({
+        runId,
+        clientRef: logRef(clientId),
+        indexType: summary.indexType,
+        actions: summary.actions,
+      })
+    );
+  };
+
   const onDecryptionDiagnostic = (diagnostic, clientId) => {
     if (!decryptionDiagnosticsEnabled) return;
     logger.info?.(
@@ -842,6 +901,7 @@ const createAddonRuntime = ({
       onDedupeCollision(collision, clientId)
     );
     client.on("call_update", (call) => onCallUpdate(call, clientId));
+    client.on("app_state_sync", (event) => onAppStateSync(event, clientId));
     client.on("presence_update", (presence) =>
       onPresenceUpdate(presence, clientId)
     );

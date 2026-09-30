@@ -4,6 +4,8 @@ const test = require("node:test");
 
 const {
   RequestValidationError,
+  normalizeCallId,
+  normalizeCallerJid,
   normalizeClientId,
   normalizeConfiguredClientIds,
   normalizeGroupJid,
@@ -105,5 +107,37 @@ test("group lookup accepts only @g.us group JIDs", () => {
     null,
   ]) {
     assert.throws(() => normalizeGroupJid(value), RequestValidationError);
+  }
+});
+
+test("call rejection accepts only call IDs and caller JIDs from call events", () => {
+  assert.equal(
+    normalizeCallId("0123456789ABCDEF0123456789ABCDEF"),
+    "0123456789ABCDEF0123456789ABCDEF"
+  );
+  assert.equal(normalizeCallId("call-id_1.2:3"), "call-id_1.2:3");
+  for (const from of [
+    FICTIONAL_JID,
+    "999999999999999@lid",
+    "999999999999999:7@lid",
+    `${FICTIONAL_NUMBER}:3@s.whatsapp.net`,
+  ]) {
+    assert.equal(normalizeCallerJid(from), from);
+  }
+
+  for (const value of ["", " id", "id ", "has space", "-leading", "x".repeat(129), 7, null]) {
+    assert.throws(() => normalizeCallId(value), RequestValidationError);
+  }
+  for (const value of [
+    FICTIONAL_NUMBER,
+    `+${FICTIONAL_NUMBER}`,
+    "120363000000000000@g.us",
+    "status@broadcast",
+    "0999999999@lid",
+    ` ${FICTIONAL_JID}`,
+    "999999999999999:12345@lid",
+    undefined,
+  ]) {
+    assert.throws(() => normalizeCallerJid(value), RequestValidationError);
   }
 });

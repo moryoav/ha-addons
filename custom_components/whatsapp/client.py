@@ -16,9 +16,12 @@ from aiohttp import (
 from .const import (
     ADDON_API_VERSION,
     ADDON_SERVICE,
+    ATTR_CALL_ID,
+    ATTR_FROM,
     ATTR_TO,
     CAPABILITY_CHECK_NUMBER,
     CAPABILITY_GET_GROUP_INFO,
+    CAPABILITY_REJECT_CALL,
     DEFAULT_TIMEOUT,
 )
 
@@ -26,6 +29,11 @@ _PHONE_NUMBER_PATTERN = re.compile(r"^\+?([1-9][0-9]{4,14})$")
 _PHONE_JID_PATTERN = re.compile(r"^([1-9][0-9]{4,14})@s\.whatsapp\.net$")
 _LID_PATTERN = re.compile(r"^[1-9][0-9]{4,30}@lid$")
 _GROUP_JID_PATTERN = re.compile(r"^[0-9][0-9-]{3,62}[0-9]@g\.us$")
+_CALL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_CALLER_JID_PATTERN = re.compile(
+    r"^(?:[1-9][0-9]{4,14}(?::[0-9]{1,4})?@s\.whatsapp\.net"
+    r"|[1-9][0-9]{4,30}(?::[0-9]{1,4})?@lid)$"
+)
 _ISO_TIMESTAMP_PATTERN = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?Z$"
 )
@@ -72,6 +80,14 @@ def normalize_group_target(value: str) -> str:
     if _GROUP_JID_PATTERN.fullmatch(value):
         return value
     raise ValueError("target is not a valid WhatsApp group JID")
+
+
+def validate_call_reference(call_id: str, caller: str) -> None:
+    """Validate the callId and from fields of a whatsapp_call_update event."""
+    if not _CALL_ID_PATTERN.fullmatch(call_id):
+        raise ValueError("call ID is not a valid WhatsApp call ID")
+    if not _CALLER_JID_PATTERN.fullmatch(caller):
+        raise ValueError("caller is not a valid WhatsApp phone JID or LID")
 
 
 def _is_none_or(value: Any, predicate: Any) -> bool:
@@ -398,6 +414,30 @@ class WhatsappClient:
     async def async_read_messages(self, data: dict[str, Any]) -> None:
         """Mark messages as read."""
         await self._post_ok("readMessages", data, "read messages")
+
+    async def async_reject_call(self, data: dict[str, Any]) -> None:
+        """Reject an incoming WhatsApp call."""
+        validate_call_reference(data[ATTR_CALL_ID], data[ATTR_FROM])
+
+        if (
+            self._capabilities is not None
+            and CAPABILITY_REJECT_CALL not in self._capabilities
+        ):
+            raise WhatsappUnsupportedCapability(
+                "the add-on does not advertise call rejection support",
+                code="unsupported_capability",
+            )
+
+        try:
+            await self._post_ok("rejectCall", data, "reject call")
+        except WhatsappApiError as err:
+            if err.status == 404 and err.code != "client_not_found":
+                raise WhatsappUnsupportedCapability(
+                    "the add-on does not provide the call rejection endpoint",
+                    status=err.status,
+                    code="unsupported_capability",
+                ) from err
+            raise
 
     async def _post_ok(
         self,

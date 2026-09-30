@@ -12,6 +12,8 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   WhatsApp and return its normalized phone JID and LID when available.
 - `whatsapp.get_group_info`: look up a group by its `@g.us` JID and return its
   name, description, owner, settings, and participants.
+- `whatsapp.reject_call`: decline an incoming call using the `callId` and
+  `from` values of its `whatsapp_call_update` event.
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event
@@ -24,6 +26,6 @@ the recipient read the message.
 - [Messages and media](../examples/messages.md)
 - [Recipients and number lookup](../examples/recipients.md)
 - [Presence](../examples/presence.md)
-- [Automations and read markers](../examples/automations.md)
+- [Automations, declining calls, and read markers](../examples/automations.md)
 - [Reusable notification scripts](../examples/scripts.md)
 - [Incoming messages and conversation agents](../examples/incoming-messages.md)

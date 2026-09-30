@@ -7,6 +7,10 @@ const {
   createRawMessageDiagnostic,
   createReceiptDiagnostic,
 } = require("./decryption-diagnostics");
+const {
+  attachServerSyncMonitor,
+  createAppStateLogger,
+} = require("./app-state-sync");
 const { attachEventBufferFlush } = require("./event-buffer-flush");
 const { ChatArchiveStore } = require("./chat-archive-store");
 const { MessageDedupe } = require("./message-dedupe");
@@ -14,6 +18,8 @@ const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
 const {
   RequestValidationError,
+  normalizeCallId,
+  normalizeCallerJid,
   normalizeGroupJid,
   normalizePhoneJid,
   requireString,
@@ -45,6 +51,9 @@ const GROUP_JID_PATTERN = /^\d[\d-]{3,62}\d@g\.us$/;
 const GROUP_ADMIN_ROLES = new Set(["admin", "superadmin"]);
 // Seconds; rejects zero, negatives, NaN and values past the year 2100.
 const MAX_UNIX_SECONDS = 4_102_444_800;
+// Baileys waits for WhatsApp's answer without a timeout of its own. Stay below
+// the integration's 10 second request timeout so a stuck call fails cleanly.
+const REJECT_CALL_TIMEOUT_MS = 8_000;
 
 // Identifiers WhatsApp omits, or reports in an unexpected form, become null so
 // one unusual participant cannot fail the whole group lookup.
@@ -202,6 +211,7 @@ class WhatsappClient extends EventEmitter {
   #lidDelivered;
   #eventBufferFlush;
   #offlineSync;
+  #serverSync;
   #archiveStore;
   #archiveListeners;
 
@@ -319,7 +329,9 @@ class WhatsappClient extends EventEmitter {
       auth: authResult.state,
       syncFullHistory: false,
       markOnlineOnConnect: !this.#offline,
-      logger: this.#socketLogger,
+      logger: createAppStateLogger(this.#socketLogger, (event) =>
+        this.#emitAppStateSync(event, authResult.state.creds?.me)
+      ),
       generateHighQualityLinkPreview: true,
       browser: ["Ubuntu", "Chrome", "20.0.04"],
       defaultQueryTimeoutMs: undefined,
@@ -359,6 +371,12 @@ class WhatsappClient extends EventEmitter {
       socket,
       onReport: (report) => {
         if (this.#conn === socket) this.emit("offline_sync", report);
+      },
+    });
+    this.#serverSync = attachServerSyncMonitor({
+      socket,
+      onReport: (report) => {
+        if (this.#conn === socket) this.emit("app_state_sync", report);
       },
     });
     if (this.#experimentalLidSenderReceipts) {
@@ -577,6 +595,19 @@ class WhatsappClient extends EventEmitter {
     }
   };
 
+  #emitAppStateSync = (event, me) => {
+    try {
+      this.emit(
+        "app_state_sync",
+        event.type === "action"
+          ? { ...event, self: { id: me?.id, lid: me?.lid } }
+          : event
+      );
+    } catch {
+      // Diagnostics must never interrupt Baileys' app-state processing.
+    }
+  };
+
   #cacheRetryMessage = (message) => {
     if (!this.#retryCache || message?.key?.fromMe !== true) return;
     const result = this.#retryCache.put(message);
@@ -601,6 +632,8 @@ class WhatsappClient extends EventEmitter {
     this.#eventBufferFlush = undefined;
     this.#offlineSync?.close();
     this.#offlineSync = undefined;
+    this.#serverSync?.close();
+    this.#serverSync = undefined;
   };
 
   #clearRetryCache = () => {
@@ -916,6 +949,32 @@ class WhatsappClient extends EventEmitter {
     await this.#runUpstream("read receipt", () =>
       this.#conn.readMessages(keys)
     );
+  };
+
+  rejectCall = async (callId, from) => {
+    this.#assertConnected();
+    const id = normalizeCallId(callId);
+    const caller = normalizeCallerJid(from);
+    const socket = this.#conn;
+    if (typeof socket.rejectCall !== "function") {
+      throw new WhatsappProtocolError();
+    }
+
+    await this.#runUpstream("call rejection", () => {
+      const rejection = socket.rejectCall(id, caller);
+      let timer;
+      const timeout = new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error("Call rejection timed out."), {
+            statusCode: 408,
+          }));
+        }, REJECT_CALL_TIMEOUT_MS);
+        timer.unref?.();
+      });
+      return Promise.race([rejection, timeout]).finally(() =>
+        clearTimeout(timer)
+      );
+    });
   };
 
   updateProfileStatus = async (status) => {

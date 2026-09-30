@@ -81,6 +81,7 @@ const createClient = (overrides = {}) => ({
   getGroupInfo: async () => fictionalGroupInfo(),
   presenceSubscribe: async () => {},
   readMessages: async () => {},
+  rejectCall: async () => {},
   sendMessage: async () => ({ key: { id: "fictional-message-id" } }),
   sendPresenceUpdate: async () => {},
   setSendPresenceUpdateInterval: async () => {},
@@ -647,4 +648,96 @@ test("group and number lookups share one per-client rate limit", async () => {
       assert.equal(response.status, 200);
     }
   );
+});
+
+const FICTIONAL_CALL_ID = "0123456789ABCDEF0123456789ABCDEF";
+
+test("rejectCall passes the call event fields to the client", async () => {
+  const calls = [];
+  const client = createClient({
+    rejectCall: async (...args) => calls.push(args),
+  });
+
+  await withApp({ clients: { default: client } }, async (baseUrl) => {
+    for (const from of [FICTIONAL_LID, FICTIONAL_JID, "999999999999999:12@lid"]) {
+      const response = await request(baseUrl, "/rejectCall", {
+        body: { clientId: "default", callId: FICTIONAL_CALL_ID, from },
+      });
+      assert.equal(response.status, 200);
+      assert.equal(response.payload, "OK");
+    }
+  });
+  assert.deepEqual(calls, [
+    [FICTIONAL_CALL_ID, FICTIONAL_LID],
+    [FICTIONAL_CALL_ID, FICTIONAL_JID],
+    [FICTIONAL_CALL_ID, "999999999999999:12@lid"],
+  ]);
+  assert.ok(API_CAPABILITIES.includes("reject_call"));
+});
+
+test("rejectCall rejects invalid call references before calling Baileys", async () => {
+  let calls = 0;
+  const client = createClient({
+    rejectCall: async () => {
+      calls += 1;
+    },
+  });
+
+  await withApp({ clients: { default: client } }, async (baseUrl) => {
+    for (const body of [
+      { callId: FICTIONAL_CALL_ID },
+      { from: FICTIONAL_LID },
+      { callId: ` ${FICTIONAL_CALL_ID}`, from: FICTIONAL_LID },
+      { callId: "bad id", from: FICTIONAL_LID },
+      { callId: "x".repeat(129), from: FICTIONAL_LID },
+      { callId: 42, from: FICTIONAL_LID },
+      { callId: FICTIONAL_CALL_ID, from: FICTIONAL_GROUP_JID },
+      { callId: FICTIONAL_CALL_ID, from: "status@broadcast" },
+      { callId: FICTIONAL_CALL_ID, from: FICTIONAL_NUMBER },
+      { callId: FICTIONAL_CALL_ID, from: `${FICTIONAL_LID} ` },
+    ]) {
+      const response = await request(baseUrl, "/rejectCall", {
+        body: { clientId: "default", ...body },
+      });
+      assert.equal(response.status, 400);
+      assert.equal(response.payload.error.code, "invalid_request");
+    }
+    const missing = await request(baseUrl, "/rejectCall", {
+      body: { clientId: "missing", callId: FICTIONAL_CALL_ID, from: FICTIONAL_LID },
+    });
+    assert.equal(missing.status, 404);
+    assert.equal(missing.payload.error.code, "client_not_found");
+  });
+  assert.equal(calls, 0);
+});
+
+test("rejectCall maps client failures to the shared error contract", async () => {
+  const cases = [
+    [new WhatsappDisconnectedError(), 503, "client_disconnected"],
+    [new WhatsappUpstreamError("call rejection", 408), 502, "upstream_error"],
+    [new WhatsappProtocolError(), 502, "upstream_error"],
+    [new Error("unexpected"), 500, "internal_error"],
+  ];
+
+  for (const [error, status, code] of cases) {
+    await withApp(
+      {
+        clients: {
+          default: createClient({
+            rejectCall: async () => {
+              throw error;
+            },
+          }),
+        },
+      },
+      async (baseUrl) => {
+        const response = await request(baseUrl, "/rejectCall", {
+          body: { clientId: "default", callId: FICTIONAL_CALL_ID, from: FICTIONAL_LID },
+        });
+        assert.equal(response.status, status);
+        assert.equal(response.payload.error.code, code);
+        assert.ok(!JSON.stringify(response.payload).includes("unexpected"));
+      }
+    );
+  }
 });

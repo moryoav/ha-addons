@@ -27,12 +27,16 @@ SERVICE_PRESENCE_SUBSCRIBE: Final = "presence_subscribe"
 SERVICE_SEND_PRESENCE_UPDATE: Final = "send_presence_update"
 SERVICE_SEND_INFINITY_PRESENCE_UPDATE: Final = "send_infinity_presence_update"
 SERVICE_READ_MESSAGES: Final = "read_messages"
+SERVICE_REJECT_CALL: Final = "reject_call"
 
 CAPABILITY_CHECK_NUMBER: Final = SERVICE_CHECK_NUMBER
 CAPABILITY_GET_GROUP_INFO: Final = SERVICE_GET_GROUP_INFO
+CAPABILITY_REJECT_CALL: Final = SERVICE_REJECT_CALL
 
 ATTR_BODY: Final = "body"
+ATTR_CALL_ID: Final = "callId"
 ATTR_CLIENT_ID: Final = "clientId"
+ATTR_FROM: Final = "from"
 ATTR_OPTIONS: Final = "options"
 ATTR_STATUS: Final = "status"
 ATTR_TO: Final = "to"

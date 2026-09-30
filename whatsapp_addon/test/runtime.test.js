@@ -1187,3 +1187,105 @@ test("offline backlog progress is logged with safe counts only", () => {
     assert.ok(!JSON.stringify(logs).includes(FICTIONAL_NUMBER));
   }
 });
+
+test("app-state sync and call history are logged in debug mode with fingerprints only", () => {
+  const key = Buffer.alloc(32, 9);
+  const callId = "0123456789ABCDEF0123456789ABCDEF";
+  const callLogMutation = {
+    index: ["call", FICTIONAL_LID, callId, "1"],
+    syncAction: {
+      value: {
+        timestamp: 1,
+        callLogAction: {
+          callLogRecord: {
+            callResult: 4,
+            isIncoming: true,
+            isVideo: false,
+            duration: 0,
+            startTime: 1790771550,
+            callId,
+            callCreatorJid: FICTIONAL_LID,
+            participants: [],
+          },
+        },
+      },
+    },
+  };
+  const archiveMutation = {
+    index: ["archive", FICTIONAL_JID],
+    syncAction: { value: { timestamp: 1, archiveChatAction: { archived: true } } },
+  };
+
+  for (const logLevel of ["info", "debug"]) {
+    const client = new FakeClient();
+    const logs = [];
+    const counters = { notifications: 0, callHistory: 0 };
+    const record = (level) => (...args) => logs.push([level, ...args]);
+    createAddonRuntime({
+      clientIds: ["default"],
+      clientFactory: () => client,
+      fingerprintKey: key,
+      logLevel,
+      runId: "0123456789abcdef",
+      logger: { info: record("info"), warn: record("warn"), debug: record("debug") },
+      httpClient: { post: async () => {} },
+      diagnostics: {
+        recordAppStateNotification: () => { counters.notifications += 1; },
+        recordCallHistoryEntry: () => { counters.callHistory += 1; },
+      },
+    });
+    logs.length = 0;
+    const self = { id: `${FICTIONAL_NUMBER}:3@s.whatsapp.net`, lid: undefined };
+    client.emit("app_state_sync", { type: "server_sync", collections: ["regular_low"] });
+    client.emit("app_state_sync", {
+      type: "resync", phase: "synced", collection: "regular_low", version: 12,
+    });
+    client.emit("app_state_sync", {
+      type: "action", mutation: callLogMutation, initialSync: false, self,
+    });
+    client.emit("app_state_sync", {
+      type: "action", mutation: archiveMutation, initialSync: false, self,
+    });
+    client.emit("app_state_sync", {
+      type: "action", mutation: archiveMutation, initialSync: true, self,
+    });
+    client.emit("app_state_sync", { type: "unknown" });
+    client.emit("app_state_sync", null);
+
+    assert.deepEqual(counters, { notifications: 1, callHistory: 1 });
+    if (logLevel === "info") {
+      assert.deepEqual(logs, []);
+      continue;
+    }
+
+    const clientRef = fingerprint("default", key);
+    const lidRef = fingerprint(FICTIONAL_LID, key);
+    assert.deepEqual(logs.map(([level, message]) => [level, message]), [
+      ["debug", "WhatsApp app-state sync notification."],
+      ["debug", "WhatsApp app-state sync progress."],
+      ["debug", "WhatsApp call history entry received."],
+      ["debug", "WhatsApp app-state change received."],
+    ]);
+    assert.deepEqual(logs[0][2], {
+      runId: "0123456789abcdef", clientRef, collections: ["regular_low"],
+    });
+    assert.deepEqual(logs[1][2], {
+      runId: "0123456789abcdef", clientRef, phase: "synced",
+      collection: "regular_low", version: 12,
+    });
+    const callEntry = JSON.parse(logs[2][2]);
+    assert.equal(callEntry.initialSync, false);
+    assert.equal(callEntry.callLog.result, "missed");
+    assert.equal(callEntry.callLog.isIncoming, true);
+    assert.deepEqual(callEntry.callLog.creator, { kind: "lid", self: false, ref: lidRef });
+    assert.equal(callEntry.callLog.callRef, fingerprint(callId, key));
+    assert.deepEqual(JSON.parse(logs[3][2]), {
+      runId: "0123456789abcdef", clientRef, indexType: "archive",
+      actions: ["archiveChatAction"],
+    });
+    const text = JSON.stringify(logs);
+    for (const secret of [FICTIONAL_NUMBER, "999999999999999", callId]) {
+      assert.ok(!text.includes(secret), secret);
+    }
+  }
+});
