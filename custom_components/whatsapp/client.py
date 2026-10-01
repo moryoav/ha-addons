@@ -21,6 +21,8 @@ from .const import (
     ATTR_TO,
     CAPABILITY_CHECK_NUMBER,
     CAPABILITY_GET_GROUP_INFO,
+    CAPABILITY_GET_PROFILE,
+    CAPABILITY_LIST_GROUPS,
     CAPABILITY_REJECT_CALL,
     DEFAULT_TIMEOUT,
 )
@@ -34,6 +36,7 @@ _CALLER_JID_PATTERN = re.compile(
     r"^(?:[1-9][0-9]{4,14}(?::[0-9]{1,4})?@s\.whatsapp\.net"
     r"|[1-9][0-9]{4,30}(?::[0-9]{1,4})?@lid)$"
 )
+_HTTPS_URL_PATTERN = re.compile(r"^https://\S{1,2048}$")
 _ISO_TIMESTAMP_PATTERN = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?Z$"
 )
@@ -80,6 +83,23 @@ def normalize_group_target(value: str) -> str:
     if _GROUP_JID_PATTERN.fullmatch(value):
         return value
     raise ValueError("target is not a valid WhatsApp group JID")
+
+
+def normalize_profile_target(value: str) -> str:
+    """Validate a profile target and return its canonical JID.
+
+    Phone numbers become phone JIDs; phone JIDs, LIDs, and group JIDs are
+    returned unchanged.
+    """
+    if match := _PHONE_NUMBER_PATTERN.fullmatch(value):
+        return f"{match.group(1)}@s.whatsapp.net"
+    if (
+        _PHONE_JID_PATTERN.fullmatch(value)
+        or _LID_PATTERN.fullmatch(value)
+        or _GROUP_JID_PATTERN.fullmatch(value)
+    ):
+        return value
+    raise ValueError("target is not a phone number, phone JID, LID, or group JID")
 
 
 def validate_call_reference(call_id: str, caller: str) -> None:
@@ -181,6 +201,67 @@ def _validate_group_info(payload: Any, jid: str) -> dict[str, Any] | None:
         "parent_community": payload["parent_community"],
         "participants": participants,
     }
+
+
+_PROFILE_KEYS = frozenset({"jid", "picture_url", "about", "about_set_at", "business"})
+_BUSINESS_KEYS = frozenset({"description", "category", "email", "website", "address"})
+
+
+def _validate_business(business: Any) -> dict[str, Any] | None | bool:
+    """Return the documented business fields, None, or False when malformed."""
+    if business is None:
+        return None
+    if (
+        not isinstance(business, dict)
+        or not _BUSINESS_KEYS.issubset(business)
+        or not all(
+            _is_none_or(business[key], lambda v: isinstance(v, str))
+            for key in ("description", "category", "email", "address")
+        )
+        or not isinstance(business["website"], list)
+        or not all(isinstance(site, str) for site in business["website"])
+    ):
+        return False
+    return {key: business[key] for key in sorted(_BUSINESS_KEYS)}
+
+
+def _validate_profile(payload: Any, jid: str) -> dict[str, Any] | None:
+    """Return the documented profile fields, or None when malformed."""
+    if (
+        not isinstance(payload, dict)
+        or not _PROFILE_KEYS.issubset(payload)
+        or payload["jid"] != jid
+        or not _is_none_or(payload["picture_url"], _matches(_HTTPS_URL_PATTERN))
+        or not _is_none_or(payload["about"], lambda v: isinstance(v, str))
+        or not _is_none_or(payload["about_set_at"], _matches(_ISO_TIMESTAMP_PATTERN))
+    ):
+        return None
+    business = _validate_business(payload["business"])
+    if business is False:
+        return None
+    return {
+        "jid": payload["jid"],
+        "picture_url": payload["picture_url"],
+        "about": payload["about"],
+        "about_set_at": payload["about_set_at"],
+        "business": business,
+    }
+
+
+def _validate_group_list(payload: Any) -> list[dict[str, Any]] | None:
+    """Return the documented group summaries, or None when malformed."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("groups"), list):
+        return None
+    groups = []
+    for group in payload["groups"]:
+        if not isinstance(group, dict):
+            return None
+        summary = _validate_group_info({**group, "participants": []}, group.get("jid"))
+        if summary is None:
+            return None
+        del summary["participants"]
+        groups.append(summary)
+    return groups
 
 
 def normalize_api_token(value: Any) -> str | None:
@@ -376,6 +457,64 @@ class WhatsappClient:
                 code="invalid_response",
             )
         return result
+
+    async def async_get_profile(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Return the picture, about text, and business profile of a contact or group."""
+        jid = normalize_profile_target(data[ATTR_TO])
+        payload = await self._post_lookup(
+            "profile",
+            {**data, ATTR_TO: jid},
+            "get profile",
+            CAPABILITY_GET_PROFILE,
+        )
+        result = _validate_profile(payload, jid)
+        if result is None:
+            raise WhatsappApiError(
+                "get profile returned an invalid response",
+                code="invalid_response",
+            )
+        return result
+
+    async def async_list_groups(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Return every group the linked account belongs to."""
+        payload = await self._post_lookup(
+            "groups", data, "list groups", CAPABILITY_LIST_GROUPS
+        )
+        groups = _validate_group_list(payload)
+        if groups is None:
+            raise WhatsappApiError(
+                "list groups returned an invalid response",
+                code="invalid_response",
+            )
+        return {"groups": groups}
+
+    async def _post_lookup(
+        self,
+        endpoint: str,
+        data: dict[str, Any],
+        action: str,
+        capability: str,
+    ) -> Any:
+        """Post a lookup that needs an add-on capability and return its JSON."""
+        if self._capabilities is not None and capability not in self._capabilities:
+            raise WhatsappUnsupportedCapability(
+                f"the add-on does not advertise {action} support",
+                code="unsupported_capability",
+            )
+
+        response = await self._request("POST", endpoint, json=data)
+        if response.status >= 400:
+            try:
+                await self._raise_for_error(response, action)
+            except WhatsappApiError as err:
+                if err.status == 404 and err.code != "client_not_found":
+                    raise WhatsappUnsupportedCapability(
+                        f"the add-on does not provide the {action} endpoint",
+                        status=err.status,
+                        code="unsupported_capability",
+                    ) from err
+                raise
+        return await self._read_json(response, action, WhatsappApiError)
 
     async def async_send_message(self, data: dict[str, Any]) -> dict[str, Any]:
         """Send a WhatsApp message."""

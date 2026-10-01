@@ -105,6 +105,26 @@ const normalizePhoneJid = (value) => {
   );
 };
 
+const LID_PATTERN = /^[1-9]\d{4,30}@lid$/;
+
+// A contact or group to look up: a phone number or phone JID, a LID, or a
+// group JID. Device JIDs are not profiles.
+const normalizeProfileJid = (value) => {
+  const target = requireString(value, "to", { maxLength: 128 });
+  if (target !== value) {
+    throw new RequestValidationError("to must not contain surrounding whitespace.");
+  }
+  const phone = target.match(PHONE_PATTERN) || target.match(PHONE_JID_PATTERN);
+  if (phone) return `${phone[1]}@s.whatsapp.net`;
+  const group = target.match(GROUP_JID_PATTERN);
+  if (group) return `${group[1]}@g.us`;
+  if (LID_PATTERN.test(target)) return target;
+
+  throw new RequestValidationError(
+    "to must be a phone number, a phone JID, a LID, or a group @g.us JID."
+  );
+};
+
 const normalizeGroupJid = (value) => {
   const target = requireString(value, "to", { maxLength: 128 });
   if (target !== value) {
@@ -159,6 +179,7 @@ module.exports = {
   normalizeConfiguredClientIds,
   normalizeGroupJid,
   normalizePhoneJid,
+  normalizeProfileJid,
   requirePlainObject,
   requireString,
   resolveSessionPath,

@@ -1242,3 +1242,197 @@ test("app-state sync notifications and decoded changes are reported, then detach
   });
   assert.equal(events.length, 3);
 });
+
+const upstreamError = (code) =>
+  Object.assign(new Error(`fictional ${code}`), { output: { statusCode: code } });
+
+test("getProfile combines picture, about text and business profile", async (t) => {
+  const queried = [];
+  const { client } = await createHarness({
+    configureSocket: (socket) => {
+      socket.profilePictureUrl = async (jid, type) => {
+        queried.push(["picture", jid, type]);
+        return "https://pps.whatsapp.net/fictional.jpg";
+      };
+      socket.fetchStatus = async (jid) => {
+        queried.push(["about", jid]);
+        return [{ id: jid, status: { status: "Busy", setAt: new Date("2026-09-01T10:00:00Z") } }];
+      };
+      socket.getBusinessProfile = async () => ({
+        wid: FICTIONAL_JID,
+        description: "Fictional bakery",
+        category: "Bakery",
+        email: undefined,
+        website: ["https://example.com", 42],
+        address: "1 Main St",
+        business_hours: {},
+      });
+    },
+  });
+  t.after(() => client.disconnect());
+
+  assert.deepEqual(await client.getProfile(`+${FICTIONAL_NUMBER}`), {
+    jid: FICTIONAL_JID,
+    picture_url: "https://pps.whatsapp.net/fictional.jpg",
+    about: "Busy",
+    about_set_at: "2026-09-01T10:00:00.000Z",
+    business: {
+      description: "Fictional bakery",
+      category: "Bakery",
+      email: null,
+      website: ["https://example.com"],
+      address: "1 Main St",
+    },
+  });
+  assert.deepEqual(queried, [
+    ["picture", FICTIONAL_JID, "image"],
+    ["about", FICTIONAL_JID],
+  ]);
+
+  queried.length = 0;
+  const group = await client.getProfile(FICTIONAL_GROUP_JID);
+  assert.deepEqual(group, {
+    jid: FICTIONAL_GROUP_JID,
+    picture_url: "https://pps.whatsapp.net/fictional.jpg",
+    about: null,
+    about_set_at: null,
+    business: null,
+  });
+  assert.deepEqual(queried, [["picture", FICTIONAL_GROUP_JID, "image"]]);
+
+  for (const target of ["status@broadcast", `${FICTIONAL_NUMBER}:3@s.whatsapp.net`, ""]) {
+    await assert.rejects(client.getProfile(target), RequestValidationError);
+  }
+});
+
+test("getProfile returns null for hidden data and fails on other errors", async (t) => {
+  let pictureError = 401;
+  const { client } = await createHarness({
+    configureSocket: (socket) => {
+      socket.profilePictureUrl = async () => {
+        throw upstreamError(pictureError);
+      };
+      socket.fetchStatus = async (jid) => [{ id: jid, status: { status: null, setAt: new Date(0) } }];
+      socket.getBusinessProfile = async () => {
+        throw upstreamError(404);
+      };
+    },
+  });
+
+  assert.deepEqual(await client.getProfile(FICTIONAL_LID), {
+    jid: FICTIONAL_LID,
+    picture_url: null,
+    about: null,
+    about_set_at: null,
+    business: null,
+  });
+
+  pictureError = 500;
+  await assert.rejects(client.getProfile(FICTIONAL_LID), (error) => {
+    assert.ok(error instanceof WhatsappUpstreamError);
+    assert.equal(error.upstreamCode, 500);
+    assert.ok(!error.message.includes("fictional"));
+    return true;
+  });
+
+  await client.disconnect();
+  await assert.rejects(client.getProfile(FICTIONAL_LID), WhatsappDisconnectedError);
+});
+
+test("listGroups returns every group without members, sorted by name", async (t) => {
+  const metadata = (id, subject, extra = {}) => ({
+    id,
+    subject,
+    owner: FICTIONAL_JID,
+    creation: 1681809164,
+    size: 2,
+    participants: [{ id: FICTIONAL_JID, jid: FICTIONAL_JID, admin: "superadmin" }],
+    ...extra,
+  });
+  const { client } = await createHarness({
+    configureSocket: (socket) => {
+      socket.groupFetchAllParticipating = async () => ({
+        "120363000000000002@g.us": metadata("120363000000000002@g.us", "Zoo"),
+        "120363000000000001@g.us": metadata("120363000000000001@g.us", "Family", {
+          announce: true,
+          desc: "Weekend plans",
+        }),
+        "120363000000000003@g.us": { id: "120363000000000003@g.us" },
+        "not-a-group": metadata("not-a-group", "Broken"),
+      });
+    },
+  });
+  t.after(() => client.disconnect());
+
+  const groups = await client.listGroups();
+  assert.deepEqual(groups.map(({ jid, subject }) => [jid, subject]), [
+    ["120363000000000001@g.us", "Family"],
+    ["120363000000000002@g.us", "Zoo"],
+  ]);
+  assert.deepEqual(groups[0], {
+    jid: "120363000000000001@g.us",
+    subject: "Family",
+    description: "Weekend plans",
+    owner: FICTIONAL_JID,
+    created_at: "2023-04-18T09:12:44.000Z",
+    size: 2,
+    announce_only: true,
+    admins_only_settings: false,
+    is_community: false,
+    parent_community: null,
+  });
+});
+
+test("listGroups maps malformed and failed responses to upstream errors", async () => {
+  let response = null;
+  const { client } = await createHarness({
+    configureSocket: (socket) => {
+      socket.groupFetchAllParticipating = async () => {
+        if (response instanceof Error) throw response;
+        return response;
+      };
+    },
+  });
+  await assert.rejects(client.listGroups(), WhatsappProtocolError);
+  response = upstreamError(500);
+  await assert.rejects(client.listGroups(), WhatsappUpstreamError);
+  await client.disconnect();
+  await assert.rejects(client.listGroups(), WhatsappDisconnectedError);
+});
+
+test("receipts become message status and chat read events", async (t) => {
+  const { client, ev } = await createHarness({
+    configureSocket: (socket) => {
+      socket.authState = { creds: { me: { id: "12025550100:4@s.whatsapp.net", lid: "999999999999991:4@lid" } } };
+    },
+  });
+  t.after(() => client.disconnect());
+  const statuses = [];
+  const reads = [];
+  client.on("message_status", (status) => statuses.push(status));
+  client.on("chat_read", (read) => reads.push(read));
+
+  ev.emit("messages.update", [
+    { key: { remoteJid: FICTIONAL_LID, id: "3EB0SENT", fromMe: true }, update: { status: 4 } },
+    { key: { remoteJid: FICTIONAL_LID, id: "3EB0INCOMING", fromMe: false }, update: { status: 4 } },
+  ]);
+  ev.emit("message-receipt.update", [
+    {
+      key: { remoteJid: FICTIONAL_GROUP_JID, id: "3EB0GROUP", fromMe: false },
+      receipt: { userJid: "999999999999991@lid", readTimestamp: 1790840180 },
+    },
+  ]);
+  ev.emit("messages.update", "malformed");
+
+  assert.deepEqual(statuses, [{
+    chatId: FICTIONAL_LID,
+    messageId: "3EB0SENT",
+    status: "read",
+    participant: null,
+    timestamp: null,
+  }]);
+  assert.deepEqual(reads, [
+    { chatId: FICTIONAL_LID, status: "read", messageIds: ["3EB0INCOMING"] },
+    { chatId: FICTIONAL_GROUP_JID, status: "read", messageIds: ["3EB0GROUP"] },
+  ]);
+});

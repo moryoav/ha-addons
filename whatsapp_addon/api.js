@@ -14,6 +14,7 @@ const {
   normalizeClientId,
   normalizeGroupJid,
   normalizePhoneJid,
+  normalizeProfileJid,
   requirePlainObject,
   requireString,
 } = require("./validation");
@@ -29,6 +30,8 @@ const API_CAPABILITIES = Object.freeze([
   "check_number",
   "get_group_info",
   "reject_call",
+  "get_profile",
+  "list_groups",
 ]);
 const PRESENCE_TYPES = new Set([
   "available",
@@ -243,6 +246,64 @@ const validateGroupInfoResult = (result, expectedJid) => {
       admin: participant.admin,
     })),
   };
+};
+
+const HTTPS_URL_PATTERN = /^https:\/\/[^\s]{1,2048}$/;
+const isStringList = (value) =>
+  Array.isArray(value) && value.length <= 5 && value.every(isString);
+
+const isValidBusiness = (business) =>
+  business === null ||
+  (!!business &&
+    typeof business === "object" &&
+    !Array.isArray(business) &&
+    ["description", "category", "email", "address"].every((field) =>
+      isNullOr(business[field], isString)
+    ) &&
+    isStringList(business.website));
+
+const validateProfileResult = (result, expectedJid) => {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    Array.isArray(result) ||
+    result.jid !== expectedJid ||
+    !isNullOr(result.picture_url, matches(HTTPS_URL_PATTERN)) ||
+    !isNullOr(result.about, isString) ||
+    !isNullOr(result.about_set_at, matches(ISO_TIMESTAMP_PATTERN)) ||
+    !isValidBusiness(result.business)
+  ) {
+    throw new WhatsappProtocolError();
+  }
+
+  return {
+    jid: result.jid,
+    picture_url: result.picture_url,
+    about: result.about,
+    about_set_at: result.about_set_at,
+    business:
+      result.business === null
+        ? null
+        : {
+            description: result.business.description,
+            category: result.business.category,
+            email: result.business.email,
+            website: [...result.business.website],
+            address: result.business.address,
+          },
+  };
+};
+
+// Each group reuses the group-info contract, without the member list.
+const validateGroupListResult = (result) => {
+  if (!Array.isArray(result)) throw new WhatsappProtocolError();
+  return result.map((group) => {
+    const { participants, ...summary } = validateGroupInfoResult(
+      { ...group, participants: [] },
+      group?.jid
+    );
+    return summary;
+  });
 };
 
 const asyncRoute = (handler) => (req, res, next) => {
@@ -463,6 +524,39 @@ const createApiApp = ({
   );
 
   app.post(
+    "/profile",
+    asyncRoute(async (req, res) => {
+      const body = requirePlainObject(req.body);
+      const { client, clientId } = requireClient(clients, body, clientStates);
+      const jid = normalizeProfileJid(body.to);
+      const limit = checkLookupLimit(clientId);
+      if (!limit.allowed) {
+        res.set("Retry-After", String(limit.retryAfterSeconds));
+        throw new ApiError(429, "rate_limited", "Too many lookups. Try again later.");
+      }
+
+      const result = await client.getProfile(jid);
+      res.json(validateProfileResult(result, jid));
+    })
+  );
+
+  app.post(
+    "/groups",
+    asyncRoute(async (req, res) => {
+      const body = requirePlainObject(req.body);
+      const { client, clientId } = requireClient(clients, body, clientStates);
+      const limit = checkLookupLimit(clientId);
+      if (!limit.allowed) {
+        res.set("Retry-After", String(limit.retryAfterSeconds));
+        throw new ApiError(429, "rate_limited", "Too many lookups. Try again later.");
+      }
+
+      const groups = await client.listGroups();
+      res.json({ groups: validateGroupListResult(groups) });
+    })
+  );
+
+  app.post(
     "/rejectCall",
     asyncRoute(async (req, res) => {
       const body = requirePlainObject(req.body);
@@ -520,4 +614,6 @@ module.exports = {
   safeTokenMatches,
   validateCheckResult,
   validateGroupInfoResult,
+  validateGroupListResult,
+  validateProfileResult,
 };

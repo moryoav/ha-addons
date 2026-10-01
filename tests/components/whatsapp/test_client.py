@@ -15,6 +15,7 @@ from custom_components.whatsapp.client import (
     normalize_api_token,
     normalize_group_target,
     normalize_phone_target,
+    normalize_profile_target,
     validate_call_reference,
 )
 
@@ -857,3 +858,150 @@ async def test_reject_call_preserves_structured_api_error(status, code) -> None:
     assert not isinstance(exc_info.value, WhatsappUnsupportedCapability)
     assert exc_info.value.status == status
     assert exc_info.value.code == code
+
+
+
+def _profile(**overrides) -> dict:
+    """Return a valid fictional profile response."""
+    return {
+        "jid": "12025550123@s.whatsapp.net",
+        "picture_url": "https://pps.whatsapp.net/fictional.jpg",
+        "about": "Busy",
+        "about_set_at": "2026-09-01T10:00:00.000Z",
+        "business": {
+            "description": "Fictional bakery",
+            "category": "Bakery",
+            "email": None,
+            "website": ["https://example.com"],
+            "address": None,
+        },
+        **overrides,
+    }
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [
+        ("+12025550123", "12025550123@s.whatsapp.net"),
+        ("12025550123@s.whatsapp.net", "12025550123@s.whatsapp.net"),
+        ("999999999999999@lid", "999999999999999@lid"),
+        (FICTIONAL_GROUP_JID, FICTIONAL_GROUP_JID),
+    ],
+)
+def test_normalize_profile_target(target, expected) -> None:
+    """Test phone numbers, phone JIDs, LIDs, and groups are accepted."""
+    assert normalize_profile_target(target) == expected
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["status@broadcast", "12025550123:3@s.whatsapp.net", " 12025550123", ""],
+)
+def test_normalize_profile_target_rejects_other_targets(target) -> None:
+    """Test broadcasts, device JIDs, and padded values are rejected."""
+    with pytest.raises(ValueError):
+        normalize_profile_target(target)
+
+
+async def test_get_profile_success() -> None:
+    """Test the profile response is validated and returned."""
+    session = FakeSession(FakeResponse(json_data={**_profile(), "extra": 1}))
+    client = WhatsappClient(session, "http://addon")
+
+    assert await client.async_get_profile(
+        {"clientId": "default", "to": "+12025550123"}
+    ) == _profile()
+    method, url, kwargs = session.calls[0]
+    assert (method, url) == ("POST", "http://addon/profile")
+    assert kwargs["json"] == {
+        "clientId": "default",
+        "to": "12025550123@s.whatsapp.net",
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        _profile(jid="999999999999999@lid"),
+        _profile(picture_url="http://insecure.example/x.jpg"),
+        _profile(about=1),
+        _profile(about_set_at="yesterday"),
+        _profile(business={"description": None}),
+        _profile(
+            business={**_profile()["business"], "website": "https://example.com"}
+        ),
+    ],
+)
+async def test_get_profile_rejects_malformed_response(payload) -> None:
+    """Test malformed profiles cannot reach automations."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_data=payload)), "http://addon"
+    )
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await client.async_get_profile({"clientId": "default", "to": "12025550123"})
+    assert exc_info.value.code == "invalid_response"
+
+
+async def test_list_groups_success() -> None:
+    """Test group summaries are validated and returned without members."""
+    group = {
+        key: value for key, value in _group_info().items() if key != "participants"
+    }
+    session = FakeSession(FakeResponse(json_data={"groups": [group]}))
+    client = WhatsappClient(session, "http://addon")
+
+    assert await client.async_list_groups({"clientId": "default"}) == {
+        "groups": [group]
+    }
+    assert session.calls[0][1] == "http://addon/groups"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [None, [], {"groups": None}, {"groups": [None]}, {"groups": [{"jid": "x"}]}],
+)
+async def test_list_groups_rejects_malformed_response(payload) -> None:
+    """Test malformed group lists cannot reach automations."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_data=payload)), "http://addon"
+    )
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await client.async_list_groups({"clientId": "default"})
+    assert exc_info.value.code == "invalid_response"
+
+
+@pytest.mark.parametrize(
+    ("method", "data"),
+    [
+        ("async_get_profile", {"clientId": "default", "to": "12025550123"}),
+        ("async_list_groups", {"clientId": "default"}),
+    ],
+)
+async def test_lookups_require_capability_or_endpoint(method, data) -> None:
+    """Test older add-ons report the lookups as unsupported."""
+    session = FakeSession(FakeResponse(json_data=_modern_health()))
+    client = WhatsappClient(session, "http://addon")
+    await client.async_health()
+    with pytest.raises(WhatsappUnsupportedCapability):
+        await getattr(client, method)(data)
+    assert len(session.calls) == 1
+
+    legacy = FakeResponse(
+        status=404,
+        json_error=ContentTypeError(Mock(), (), message="text/html"),
+        text_data="Cannot POST",
+    )
+    client = WhatsappClient(FakeSession(legacy), "http://addon")
+    with pytest.raises(WhatsappUnsupportedCapability):
+        await getattr(client, method)(data)
+
+    structured = FakeResponse(
+        status=404,
+        json_data={"error": {"code": "client_not_found", "message": "Missing."}},
+    )
+    client = WhatsappClient(FakeSession(structured), "http://addon")
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await getattr(client, method)(data)
+    assert not isinstance(exc_info.value, WhatsappUnsupportedCapability)
+    assert exc_info.value.code == "client_not_found"

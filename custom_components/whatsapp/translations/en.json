@@ -111,6 +111,20 @@
         }
       }
     },
+    "get_profile": {
+      "name": "Get profile",
+      "description": "Returns the profile picture URL, about text, and business profile of a WhatsApp contact, or the picture of a group.",
+      "fields": {
+        "to": {
+          "name": "Contact or group",
+          "description": "A phone number, a phone JID, a LID, or a group @g.us JID."
+        }
+      }
+    },
+    "list_groups": {
+      "name": "List groups",
+      "description": "Returns every WhatsApp group the linked account belongs to, with its JID, name, and settings."
+    },
     "reject_call": {
       "name": "Reject call",
       "description": "Declines an incoming WhatsApp call reported by a whatsapp_call_update event.",
@@ -143,6 +157,9 @@
     },
     "invalid_group_target": {
       "message": "Enter a WhatsApp group JID ending in @g.us, such as the key.remoteJid of a received group message. Phone numbers, LIDs, and broadcasts are not groups."
+    },
+    "invalid_profile_target": {
+      "message": "Enter a phone number, a phone JID ending in @s.whatsapp.net, a LID ending in @lid, or a group JID ending in @g.us. Device JIDs and broadcasts are not supported."
     },
     "invalid_phone_target": {
       "message": "Enter an international phone number using 5 to 15 digits, optionally prefixed with +, or its @s.whatsapp.net JID. Groups, broadcasts, LIDs, and device JIDs are not supported."

@@ -40,7 +40,9 @@ the same message twice with different `remoteJid` values.
 
 ## Find a group ID and send a notification
 
-I capture the group ID from an incoming event:
+The quickest way is `whatsapp.list_groups` (version 2.5.0 or newer), which
+[lists every group](#list-every-group) the account belongs to. You can also
+capture the group ID from an incoming event:
 
 1. Add the WhatsApp account linked to the add-on to the group. Complete any
    invitation or approval in WhatsApp first.
@@ -179,3 +181,68 @@ group. An unknown or disconnected client, a group the account has left, rate
 limiting, and an upstream WhatsApp failure are reported as action errors.
 
 `whatsapp.get_group_info` requires add-on and integration version 2.1.0 or newer.
+
+## List every group
+
+`whatsapp.list_groups` returns every group the linked account belongs to,
+sorted by name:
+
+```yaml
+- action: whatsapp.list_groups
+  data:
+    clientId: default
+  response_variable: groups
+```
+
+The response has this shape:
+
+```yaml
+groups:
+  - jid: 120363000000000000@g.us
+    subject: Family
+    description: Weekend plans and grocery lists
+    owner: 12025550123@s.whatsapp.net
+    created_at: "2023-04-18T09:12:44.000Z"
+    size: 4
+    announce_only: false
+    admins_only_settings: false
+    is_community: false
+    parent_community: null
+```
+
+Each group has the same fields as `whatsapp.get_group_info`, without
+`participants`. Call `whatsapp.get_group_info` for a group's member list.
+
+## Look up a contact's profile
+
+`whatsapp.get_profile` returns a contact's profile picture URL, about text, and
+business profile. It accepts a phone number, a phone JID, a LID, or a group JID:
+
+```yaml
+- action: whatsapp.get_profile
+  data:
+    clientId: default
+    to: "+12025550123"
+  response_variable: profile
+```
+
+The response has this shape:
+
+```yaml
+jid: 12025550123@s.whatsapp.net
+picture_url: https://pps.whatsapp.net/v/example.jpg
+about: Available
+about_set_at: "2026-09-01T10:00:00.000Z"
+business: null
+```
+
+A field is `null` when the contact hides it from you or has not set it. For a
+group, only `picture_url` is filled in. `business` is set for WhatsApp Business
+accounts and contains `description`, `category`, `email`, `website` (a list),
+and `address`.
+
+`picture_url` is a temporary WhatsApp link. Use it soon, for example as the
+image of a notification, and look it up again later instead of storing it.
+
+Both actions require `response_variable`, share the per-client lookup rate
+limit, and require add-on and integration version 2.5.0 or newer.

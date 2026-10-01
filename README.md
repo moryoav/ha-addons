@@ -19,7 +19,37 @@ If this project is useful to you, you can support my work:
 ---
 
 Send WhatsApp messages from Home Assistant automations and receive WhatsApp
-message, call, and presence events through the companion add-on.
+message, receipt, call, and presence events through the companion add-on.
+
+## What it can do
+
+**Actions** (under the `whatsapp` domain):
+
+| Action | What it does | Since |
+| --- | --- | --- |
+| `send_message` | Send text, images, videos, documents, stickers, voice messages, locations, contacts, polls, reactions, edits, deletions, and quoted replies. | 1.x |
+| `read_messages` | Mark a received message as read. | 1.x |
+| `presence_subscribe`, `send_presence_update`, `send_infinity_presence_update` | Follow a contact's presence and show online, typing, or recording. | 1.x |
+| `set_status` | Set the account's about text. | 1.x |
+| `check_number` | Check whether a phone number is on WhatsApp and get its LID. | 1.4.31 |
+| `get_group_info` | Get a group's name, description, settings, and members. | 2.1.0 |
+| `reject_call` | Decline an incoming call. | 2.3.0 |
+| `get_profile` | Get a contact's profile picture, about text, and business profile, or a group's picture. | 2.5.0 |
+| `list_groups` | List every group the account belongs to. | 2.5.0 |
+
+**Events:**
+
+| Event | Fires when | Since |
+| --- | --- | --- |
+| `new_whatsapp_message` | A message is received, optionally with its [decrypted media](https://moryoav.github.io/ha-addons/examples/incoming-media/) and the chat's archive state. | 1.x |
+| `whatsapp_message_sent` | This account sends a message, from Home Assistant, the phone, or another device. | 1.4.39 |
+| `whatsapp_message_status` | A sent message is delivered, read, or played. | 2.5.0 |
+| `whatsapp_chat_read` | You read or play received messages on another device, such as the phone. | 2.5.0 |
+| `whatsapp_call_update` | An incoming call rings, is answered, declined, or stops ringing. | 1.x |
+| `whatsapp_call_log` | A call ends, incoming or made from the phone. | 2.4.0 |
+| `whatsapp_presence_update` | A followed contact's presence changes. | 1.x |
+| `whatsapp_send_message_result` | `send_message` finishes. | 1.x |
+| `whatsapp_addon_health_failure` | The add-on restarts after its health checks failed. | 1.x |
 
 ## New in 2.0: decrypted incoming media
 
@@ -219,6 +249,10 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   name, description, owner, settings, and participants.
 - `whatsapp.reject_call`: decline an incoming call using the `callId` and
   `from` values of its `whatsapp_call_update` event.
+- `whatsapp.get_profile`: look up a contact's profile picture URL, about text,
+  and business profile, or a group's picture.
+- `whatsapp.list_groups`: list every group the linked account belongs to, with
+  its JID, name, description, and settings.
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event
@@ -234,6 +268,8 @@ The add-on fires these Home Assistant events:
 | --- | --- |
 | `new_whatsapp_message` | A received WhatsApp message. |
 | `whatsapp_message_sent` | An outgoing WhatsApp message reported by the connected session. |
+| `whatsapp_message_status` | A sent message was delivered, read, or played. |
+| `whatsapp_chat_read` | Received messages were read or played on another device. |
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
 | `whatsapp_call_log` | One record per finished call, incoming or outgoing. |
 | `whatsapp_presence_update` | A contact presence update. |
@@ -267,6 +303,30 @@ Home Assistant, so no integration update is required. Existing received-message
 automations still use `new_whatsapp_message`. Logging automations can listen to
 both events, as in the [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages). Reply and mark-as-read automations should
 keep listening only to the received-message event to avoid acting on own sends.
+
+`whatsapp_message_status` fires when a message this account sent, from Home
+Assistant or the phone, is delivered, read, or played. Its data contains
+`clientId`, `messageId`, `chatId`, `status` (`delivered`, `read`, `played`, or
+`error`), `participant`, and `timestamp`. `messageId` matches the `message_id`
+returned by `whatsapp.send_message`. In a direct chat, `participant` and
+`timestamp` are `null`. In a group, every member's receipt is a separate event,
+with `participant` set to that member and `timestamp` to the receipt time;
+WhatsApp reports a voice message played in a group as `read`. Recipients who
+turned off read receipts only produce `delivered`. Receipts for status updates
+(stories) are not reported.
+
+`whatsapp_chat_read` fires when this account reads or plays received messages on
+another device, such as the phone. Its data contains `clientId`, `chatId`,
+`status` (`read`, or `played` for voice messages), and `messageIds`, the IDs of
+the received messages that were read. A large batch is split across several
+events of at most 100 IDs. Check `messageIds` for the message you care about,
+for example to dismiss its Home Assistant notification once you have read it on
+the phone.
+
+Both events need add-on version 2.5.0 or newer. See the
+[unread-alert escalation](https://moryoav.github.io/ha-addons/examples/automations/#escalate-when-an-alert-is-not-read) and
+[notification dismissal](https://moryoav.github.io/ha-addons/examples/automations/#dismiss-a-notification-after-reading-the-chat-on-the-phone)
+examples.
 
 `whatsapp_call_update` fires for every call lifecycle update reported by
 Baileys. Its `status` is one of `offer`, `ringing`, `accept`, `reject`,
@@ -350,17 +410,17 @@ When replying to an incoming event, the safest target is usually:
 I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
 
 - [Messages and media](https://moryoav.github.io/ha-addons/examples/messages/): text, stickers, documents, videos, polls, voice messages, locations, and reactions.
-- [Recipients and number lookup](https://moryoav.github.io/ha-addons/examples/recipients/): identifiers and WhatsApp registration checks.
+- [Recipients and lookups](https://moryoav.github.io/ha-addons/examples/recipients/): identifiers, registration checks, profiles, and group lists.
 - [Presence](https://moryoav.github.io/ha-addons/examples/presence/): subscriptions, online notifications, and typing indicators.
-- [Automations](https://moryoav.github.io/ha-addons/examples/automations/): calls, logging, replies, read markers, sensor alerts, and local webhooks.
+- [Automations](https://moryoav.github.io/ha-addons/examples/automations/): declining calls, call logs, unread-alert escalation, logging, replies, read markers, sensor alerts, and local webhooks.
 - [Reusable scripts](https://moryoav.github.io/ha-addons/examples/scripts/): send responses, quoted follow-ups, and saved message keys.
 - [Incoming messages and agents](https://moryoav.github.io/ha-addons/examples/incoming-messages/): chat filters, text extraction, and conversation replies.
 - [AI-written notifications](https://moryoav.github.io/ha-addons/examples/ai-notifications/), [conversation history](https://moryoav.github.io/ha-addons/examples/conversation-history/), and [sensor charts](https://moryoav.github.io/ha-addons/examples/sensor-charts/): notification wording, stored context, and chart alerts.
 
 ## Data updates
 
-The integration does not poll WhatsApp. The add-on pushes message, call, and
-presence events into Home Assistant as they arrive, advertises its local API
+The integration does not poll WhatsApp. The add-on pushes message, receipt,
+call, and presence events into Home Assistant as they arrive, advertises its local API
 through Supervisor discovery, and actions call the local add-on API on demand.
 
 ## Diagnostics
@@ -442,6 +502,9 @@ updates the existing alert instead of accumulating duplicates.
   newer. Older add-ons report that the action is unsupported.
 - `whatsapp.reject_call` requires add-on and integration version 2.3.0 or
   newer. Older add-ons report that the action is unsupported.
+- `whatsapp.get_profile` and `whatsapp.list_groups` require add-on and
+  integration version 2.5.0 or newer. `whatsapp_message_status` and
+  `whatsapp_chat_read` require add-on version 2.5.0 or newer.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If the add-on reports that its clients are paused, open its Web UI. Try Retry
   connection first. If the same failure returns, use Reset and re-pair for the

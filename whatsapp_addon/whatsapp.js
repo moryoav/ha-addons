@@ -16,12 +16,14 @@ const { ChatArchiveStore } = require("./chat-archive-store");
 const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
+const { chatReadsFrom, messageStatusesFrom } = require("./receipts");
 const {
   RequestValidationError,
   normalizeCallId,
   normalizeCallerJid,
   normalizeGroupJid,
   normalizePhoneJid,
+  normalizeProfileJid,
   requireString,
 } = require("./validation");
 
@@ -52,8 +54,39 @@ const GROUP_ADMIN_ROLES = new Set(["admin", "superadmin"]);
 // Seconds; rejects zero, negatives, NaN and values past the year 2100.
 const MAX_UNIX_SECONDS = 4_102_444_800;
 // Baileys waits for WhatsApp's answer without a timeout of its own. Stay below
-// the integration's 10 second request timeout so a stuck call fails cleanly.
-const REJECT_CALL_TIMEOUT_MS = 8_000;
+// the integration's 10 second request timeout so a stuck query fails cleanly.
+const QUERY_TIMEOUT_MS = 8_000;
+// WhatsApp answers lookups of hidden or missing profile data with these codes.
+const UNAVAILABLE_CODES = new Set([401, 403, 404]);
+
+const withTimeout = (promise, label) => {
+  let timer;
+  const timeout = new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(Object.assign(new Error(`${label} timed out.`), {
+        statusCode: 408,
+      }));
+    }, QUERY_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
+
+const optionalString = (value) =>
+  typeof value === "string" && value !== "" ? value : null;
+
+const normalizeBusinessProfile = (profile) => {
+  if (!isPlainObject(profile)) return null;
+  return {
+    description: optionalString(profile.description),
+    category: optionalString(profile.category),
+    email: optionalString(profile.email),
+    website: Array.isArray(profile.website)
+      ? profile.website.filter((site) => typeof site === "string" && site).slice(0, 5)
+      : [],
+    address: optionalString(profile.address),
+  };
+};
 
 // Identifiers WhatsApp omits, or reports in an unexpected form, become null so
 // one unusual participant cannot fail the whole group lookup.
@@ -755,6 +788,22 @@ class WhatsappClient extends EventEmitter {
       this.emit("presence_update", presence);
     });
 
+    const me = () => this.#conn?.authState?.creds?.me || this.#conn?.user;
+    for (const event of ["messages.update", "message-receipt.update"]) {
+      this.#conn.ev.on(event, (updates) => {
+        try {
+          for (const status of messageStatusesFrom(event, updates)) {
+            this.emit("message_status", status);
+          }
+          for (const read of chatReadsFrom(event, updates, me())) {
+            this.emit("chat_read", read);
+          }
+        } catch {
+          // Receipts must never interrupt message processing.
+        }
+      });
+    }
+
     this.#conn.ev.on("call", (calls) => {
       if (!Array.isArray(calls)) return;
       for (const call of calls) this.emit("call_update", call);
@@ -866,6 +915,73 @@ class WhatsappClient extends EventEmitter {
     return this.#lookupGroup(jid);
   };
 
+  getProfile = async (to) => {
+    this.#assertConnected();
+    const jid = normalizeProfileJid(to);
+    const socket = this.#conn;
+    const isGroup = jid.endsWith("@g.us");
+    const lookup = (operation, query) =>
+      this.#runUpstream(operation, () => withTimeout(query(), operation));
+    const [picture, about, business] = await Promise.allSettled([
+      lookup("profile picture lookup", () =>
+        socket.profilePictureUrl(jid, "image", QUERY_TIMEOUT_MS)
+      ),
+      isGroup ? undefined : lookup("about lookup", () => socket.fetchStatus(jid)),
+      isGroup
+        ? undefined
+        : lookup("business profile lookup", () => socket.getBusinessProfile(jid)),
+    ]);
+
+    // Hidden or missing data is null; any other failure fails the lookup.
+    const value = (result) => {
+      if (result.status === "fulfilled") return result.value;
+      if (UNAVAILABLE_CODES.has(result.reason?.upstreamCode)) return undefined;
+      throw result.reason;
+    };
+    const pictureUrl = value(picture);
+    const aboutEntry = (value(about) || []).find((entry) =>
+      isPlainObject(entry?.status)
+    )?.status;
+    const aboutSetAt =
+      aboutEntry?.setAt instanceof Date && aboutEntry.setAt.getTime() > 0
+        ? aboutEntry.setAt.toISOString()
+        : null;
+
+    return {
+      jid,
+      picture_url:
+        typeof pictureUrl === "string" && pictureUrl.startsWith("https://")
+          ? pictureUrl
+          : null,
+      about: optionalString(aboutEntry?.status),
+      about_set_at: aboutSetAt,
+      business: normalizeBusinessProfile(value(business)),
+    };
+  };
+
+  listGroups = async () => {
+    this.#assertConnected();
+    const socket = this.#conn;
+    const groups = await this.#runUpstream("group list", () =>
+      withTimeout(socket.groupFetchAllParticipating(), "Group list")
+    );
+    if (!isPlainObject(groups)) throw new WhatsappProtocolError();
+
+    const summaries = [];
+    for (const [jid, metadata] of Object.entries(groups)) {
+      if (!GROUP_JID_PATTERN.test(jid)) continue;
+      try {
+        const { participants, ...summary } = normalizeGroupMetadata(metadata, jid);
+        summaries.push(summary);
+      } catch {
+        // One malformed group must not hide the others.
+      }
+    }
+    return summaries.sort(
+      (a, b) => a.subject.localeCompare(b.subject) || a.jid.localeCompare(b.jid)
+    );
+  };
+
   setSendPresenceUpdateInterval = async (status, recipient) => {
     clearInterval(this.#sendPresenceUpdateInterval);
     this.#sendPresenceUpdateInterval = undefined;
@@ -960,21 +1076,9 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
 
-    await this.#runUpstream("call rejection", () => {
-      const rejection = socket.rejectCall(id, caller);
-      let timer;
-      const timeout = new Promise((resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(Object.assign(new Error("Call rejection timed out."), {
-            statusCode: 408,
-          }));
-        }, REJECT_CALL_TIMEOUT_MS);
-        timer.unref?.();
-      });
-      return Promise.race([rejection, timeout]).finally(() =>
-        clearTimeout(timer)
-      );
-    });
+    await this.#runUpstream("call rejection", () =>
+      withTimeout(socket.rejectCall(id, caller), "Call rejection")
+    );
     this.emit("call_rejected", { callId: id });
   };
 

@@ -27,6 +27,7 @@ from .client import (
     WhatsappUnsupportedCapability,
     normalize_group_target,
     normalize_phone_target,
+    normalize_profile_target,
     validate_call_reference,
 )
 from .const import (
@@ -45,6 +46,8 @@ from .const import (
     PRESENCE_TYPES,
     SERVICE_CHECK_NUMBER,
     SERVICE_GET_GROUP_INFO,
+    SERVICE_GET_PROFILE,
+    SERVICE_LIST_GROUPS,
     SERVICE_PRESENCE_SUBSCRIBE,
     SERVICE_READ_MESSAGES,
     SERVICE_REJECT_CALL,
@@ -112,6 +115,19 @@ READ_MESSAGES_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CLIENT_ID): cv.string,
         vol.Required(ATTR_BODY): dict,
+    }
+)
+
+GET_PROFILE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CLIENT_ID): cv.string,
+        vol.Required(ATTR_TO): cv.string,
+    }
+)
+
+LIST_GROUPS_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CLIENT_ID): cv.string,
     }
 )
 
@@ -245,6 +261,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             lambda client, data: client.async_read_messages(data),
         )
 
+    async def async_get_profile(call: ServiceCall) -> dict[str, Any]:
+        try:
+            jid = normalize_profile_target(call.data[ATTR_TO])
+        except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_profile_target",
+            ) from err
+
+        return await _async_call_api(
+            hass,
+            SERVICE_GET_PROFILE,
+            {**call.data, ATTR_TO: jid},
+            lambda client, data: client.async_get_profile(data),
+        )
+
+    async def async_list_groups(call: ServiceCall) -> dict[str, Any]:
+        return await _async_call_api(
+            hass,
+            SERVICE_LIST_GROUPS,
+            call.data,
+            lambda client, data: client.async_list_groups(data),
+        )
+
     async def async_reject_call(call: ServiceCall) -> None:
         try:
             validate_call_reference(call.data[ATTR_CALL_ID], call.data[ATTR_FROM])
@@ -311,6 +351,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_READ_MESSAGES,
         async_read_messages,
         schema=READ_MESSAGES_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_PROFILE,
+        async_get_profile,
+        schema=GET_PROFILE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_LIST_GROUPS,
+        async_list_groups,
+        schema=LIST_GROUPS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN,

@@ -791,6 +791,41 @@ const createAddonRuntime = ({
     if (callLog) queueCallLog(clientId, callLog);
   };
 
+  const onMessageStatus = (status, clientId) => {
+    diagnostics?.recordMessageStatus?.();
+    void postSupervisor(
+      "/core/api/events/whatsapp_message_status",
+      { clientId, ...status },
+      "message status event delivery"
+    );
+    if (!debugEnabled) return;
+    logger.debug?.("WhatsApp message status received.", {
+      runId,
+      clientRef: logRef(clientId),
+      messageRef: logRef(status.messageId),
+      chatRef: logRef(status.chatId),
+      participantRef: status.participant ? logRef(status.participant) : null,
+      status: status.status,
+    });
+  };
+
+  const onChatRead = (read, clientId) => {
+    diagnostics?.recordChatRead?.();
+    void postSupervisor(
+      "/core/api/events/whatsapp_chat_read",
+      { clientId, ...read },
+      "chat read event delivery"
+    );
+    if (!debugEnabled) return;
+    logger.debug?.("WhatsApp chat read on another device.", {
+      runId,
+      clientRef: logRef(clientId),
+      chatRef: logRef(read.chatId),
+      status: read.status,
+      messageCount: read.messageIds.length,
+    });
+  };
+
   const onPresenceUpdate = (presence, clientId) => {
     void postSupervisor(
       "/core/api/events/whatsapp_presence_update",
@@ -972,6 +1007,8 @@ const createAddonRuntime = ({
     client.on("presence_update", (presence) =>
       onPresenceUpdate(presence, clientId)
     );
+    client.on("message_status", (status) => onMessageStatus(status, clientId));
+    client.on("chat_read", (read) => onChatRead(read, clientId));
     client.on("decryption_diagnostic", (diagnostic) =>
       onDecryptionDiagnostic(diagnostic, clientId)
     );

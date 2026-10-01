@@ -265,6 +265,8 @@ test("runtime diagnostics emit bounded summaries and rate-limited warnings", asy
   diagnostics.recordCallHistoryEntry();
   diagnostics.recordCallLogDelivered(true);
   diagnostics.recordCallLogDelivered(false);
+  diagnostics.recordMessageStatus();
+  diagnostics.recordChatRead();
   diagnostics.recordMessageBatch(12);
   diagnostics.recordMessageIgnored("from_me");
   diagnostics.recordMessageDuplicate();
@@ -299,6 +301,8 @@ test("runtime diagnostics emit bounded summaries and rate-limited warnings", asy
   assert.equal(summary.activity.callHistoryEntries, 1);
   assert.equal(summary.activity.callLogsDelivered, 1);
   assert.equal(summary.activity.callLogDeliveryFailed, 1);
+  assert.equal(summary.activity.messageStatusEvents, 1);
+  assert.equal(summary.activity.chatReadEvents, 1);
   assert.equal(summary.activity.messagesReceived, 12);
   assert.equal(summary.activity.messageIgnoredFromMe, 1);
   assert.equal(summary.activity.apiSlow, 1);
