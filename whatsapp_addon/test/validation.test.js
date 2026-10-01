@@ -10,6 +10,7 @@ const {
   normalizeConfiguredClientIds,
   normalizeGroupJid,
   normalizePhoneJid,
+  normalizeProfileJid,
   resolveSessionPath,
 } = require("../validation");
 
@@ -139,5 +140,27 @@ test("call rejection accepts only call IDs and caller JIDs from call events", ()
     undefined,
   ]) {
     assert.throws(() => normalizeCallerJid(value), RequestValidationError);
+  }
+});
+
+test("profile lookups accept phones, phone JIDs, LIDs and groups", () => {
+  for (const [input, expected] of [
+    [FICTIONAL_NUMBER, FICTIONAL_JID],
+    [`+${FICTIONAL_NUMBER}`, FICTIONAL_JID],
+    [FICTIONAL_JID, FICTIONAL_JID],
+    ["999999999999999@lid", "999999999999999@lid"],
+    ["120363000000000000@g.us", "120363000000000000@g.us"],
+  ]) {
+    assert.equal(normalizeProfileJid(input), expected);
+  }
+  for (const value of [
+    "status@broadcast",
+    `${FICTIONAL_NUMBER}:3@s.whatsapp.net`,
+    "999999999999999:3@lid",
+    ` ${FICTIONAL_JID}`,
+    "",
+    null,
+  ]) {
+    assert.throws(() => normalizeProfileJid(value), RequestValidationError);
   }
 });

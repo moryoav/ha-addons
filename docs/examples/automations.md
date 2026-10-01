@@ -116,6 +116,81 @@ about incoming calls nobody answered. It needs add-on version 2.4.0 or newer.
 `startedAt` is `null` when WhatsApp does not report a start time, so check it
 before formatting it, as the missed-call example does.
 
+## Escalate when an alert is not read
+
+This sends a leak alert and waits up to 10 minutes for WhatsApp to report that
+it was read. If it was not, it notifies a phone instead. It needs add-on and
+integration version 2.5.0 or newer.
+
+```yaml
+- alias: Escalate unread leak alert
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.kitchen_leak
+      to: "on"
+  action:
+    - action: whatsapp.send_message
+      data:
+        clientId: default
+        to: 12025550123@s.whatsapp.net
+        body:
+          text: Water leak detected in the kitchen.
+      response_variable: alert
+    - wait_for_trigger:
+        - platform: event
+          event_type: whatsapp_message_status
+          event_data:
+            messageId: "{{ alert.message_id }}"
+            status: read
+      timeout: "00:10:00"
+      continue_on_timeout: true
+    - if:
+        - condition: template
+          value_template: "{{ wait.trigger is none }}"
+      then:
+        - action: notify.mobile_app_my_phone
+          data:
+            message: The WhatsApp leak alert was not read within 10 minutes.
+  mode: single
+```
+
+A recipient who turned off read receipts never reports `read`, so this example
+always escalates for them.
+
+## Dismiss a notification after reading the chat on the phone
+
+The first automation shows a notification for messages in a group. The second
+removes it once you read the group on your phone.
+
+```yaml
+- alias: Notify about family group messages
+  trigger:
+    - platform: event
+      event_type: new_whatsapp_message
+      event_data:
+        key:
+          remoteJid: 120363000000000000@g.us
+  action:
+    - action: persistent_notification.create
+      data:
+        notification_id: whatsapp_family_group
+        title: Family group
+        message: New WhatsApp messages.
+  mode: queued
+
+- alias: Dismiss family group notification
+  trigger:
+    - platform: event
+      event_type: whatsapp_chat_read
+      event_data:
+        chatId: 120363000000000000@g.us
+  action:
+    - action: persistent_notification.dismiss
+      data:
+        notification_id: whatsapp_family_group
+  mode: queued
+```
+
 ## Log received and sent messages
 
 ```yaml

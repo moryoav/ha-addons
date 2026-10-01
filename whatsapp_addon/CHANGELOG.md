@@ -1,3 +1,21 @@
+## 2.5.0
+
+- Added the `whatsapp_message_status` event. It fires when a message this
+  account sent is delivered, read, or played, with the message ID returned by
+  `whatsapp.send_message`. In groups, each member's receipt is its own event.
+- Added the `whatsapp_chat_read` event. It fires when you read or play received
+  messages on another device, such as the phone, so automations can dismiss
+  notifications you have already seen.
+- Added the `/profile` and `/groups` API routes and the `get_profile` and
+  `list_groups` capabilities behind two new actions: `whatsapp.get_profile`
+  returns a contact's profile picture URL, about text, and business profile, or
+  a group's picture; `whatsapp.list_groups` returns every group the account
+  belongs to, with its JID, name, description, and settings.
+- Added an overview of every action and event to the README and knowledge base,
+  and examples for unread-alert escalation, notification dismissal, profile
+  lookups, and group lists.
+- The new actions require the 2.5.0 HACS integration.
+
 ## 2.4.0
 
 - Added the `whatsapp_call_log` event. It fires once for each finished call,

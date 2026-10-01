@@ -16,7 +16,7 @@ nav:
   - Home: index.md
   - Examples:
       - Messages and media: examples/messages.md
-      - Recipients and number lookup: examples/recipients.md
+      - Recipients and lookups: examples/recipients.md
       - Presence: examples/presence.md
       - Automations: examples/automations.md
       - Reusable scripts: examples/scripts.md

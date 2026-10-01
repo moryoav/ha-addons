@@ -30,6 +30,19 @@ const fictionalGroupInfo = () => ({
   ],
 });
 
+const fictionalProfile = (jid = FICTIONAL_JID) => ({
+  jid,
+  picture_url: "https://pps.whatsapp.net/fictional.jpg",
+  about: "Busy",
+  about_set_at: "2026-09-01T10:00:00.000Z",
+  business: null,
+});
+
+const fictionalGroupSummary = () => {
+  const { participants, ...summary } = fictionalGroupInfo();
+  return summary;
+};
+
 const listen = (app) =>
   new Promise((resolve, reject) => {
     const server = app.listen(0, "127.0.0.1", () => resolve(server));
@@ -79,6 +92,8 @@ const createClient = (overrides = {}) => ({
     lid: FICTIONAL_LID,
   }),
   getGroupInfo: async () => fictionalGroupInfo(),
+  getProfile: async (jid) => fictionalProfile(jid),
+  listGroups: async () => [fictionalGroupSummary()],
   presenceSubscribe: async () => {},
   readMessages: async () => {},
   rejectCall: async () => {},
@@ -740,4 +755,88 @@ test("rejectCall maps client failures to the shared error contract", async () =>
       }
     );
   }
+});
+
+test("profile returns only the documented fields for valid targets", async () => {
+  const calls = [];
+  const client = createClient({
+    getProfile: async (jid) => {
+      calls.push(jid);
+      return { ...fictionalProfile(jid), extra: "ignored" };
+    },
+  });
+  await withApp({ clients: { default: client } }, async (baseUrl) => {
+    const response = await request(baseUrl, "/profile", {
+      body: { clientId: "default", to: `+${FICTIONAL_NUMBER}` },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.payload, fictionalProfile(FICTIONAL_JID));
+
+    for (const to of [FICTIONAL_LID, FICTIONAL_GROUP_JID]) {
+      const ok = await request(baseUrl, "/profile", { body: { clientId: "default", to } });
+      assert.equal(ok.status, 200);
+    }
+    for (const to of ["status@broadcast", `${FICTIONAL_NUMBER}:3@s.whatsapp.net`, " x", 42]) {
+      const bad = await request(baseUrl, "/profile", { body: { clientId: "default", to } });
+      assert.equal(bad.status, 400);
+      assert.equal(bad.payload.error.code, "invalid_request");
+    }
+  });
+  assert.deepEqual(calls, [FICTIONAL_JID, FICTIONAL_LID, FICTIONAL_GROUP_JID]);
+});
+
+test("malformed profiles become upstream errors", async () => {
+  for (const result of [
+    null,
+    { ...fictionalProfile(), jid: FICTIONAL_LID },
+    { ...fictionalProfile(), picture_url: "http://insecure.example/x.jpg" },
+    { ...fictionalProfile(), about_set_at: 42 },
+    { ...fictionalProfile(), business: { description: null, category: null, email: null, address: null } },
+    { ...fictionalProfile(), business: { description: 1, category: null, email: null, address: null, website: [] } },
+  ]) {
+    await withApp(
+      { clients: { default: createClient({ getProfile: async () => result }) } },
+      async (baseUrl) => {
+        const response = await request(baseUrl, "/profile", {
+          body: { clientId: "default", to: FICTIONAL_JID },
+        });
+        assert.equal(response.status, 502);
+        assert.equal(response.payload.error.code, "upstream_error");
+      }
+    );
+  }
+});
+
+test("groups lists every group without members", async () => {
+  await withApp({ clients: { default: createClient() } }, async (baseUrl) => {
+    const response = await request(baseUrl, "/groups", { body: { clientId: "default" } });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.payload, { groups: [fictionalGroupSummary()] });
+  });
+  for (const result of [null, [{ ...fictionalGroupSummary(), size: -1 }], [{ jid: "x" }]]) {
+    await withApp(
+      { clients: { default: createClient({ listGroups: async () => result }) } },
+      async (baseUrl) => {
+        const response = await request(baseUrl, "/groups", { body: { clientId: "default" } });
+        assert.equal(response.status, 502);
+      }
+    );
+  }
+});
+
+test("profile and group list lookups share the per-client rate limit", async () => {
+  await withApp(
+    { clients: { default: createClient() }, lookupRateLimit: { limit: 2, windowMs: 60_000 } },
+    async (baseUrl) => {
+      const body = { clientId: "default", to: FICTIONAL_JID };
+      assert.equal((await request(baseUrl, "/profile", { body })).status, 200);
+      assert.equal((await request(baseUrl, "/groups", { body: { clientId: "default" } })).status, 200);
+      const limited = await request(baseUrl, "/profile", { body });
+      assert.equal(limited.status, 429);
+      assert.equal(limited.payload.error.code, "rate_limited");
+      assert.ok(Number(limited.headers.get("retry-after")) >= 1);
+    }
+  );
+  assert.ok(API_CAPABILITIES.includes("get_profile"));
+  assert.ok(API_CAPABILITIES.includes("list_groups"));
 });

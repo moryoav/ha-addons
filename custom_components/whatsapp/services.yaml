@@ -174,3 +174,28 @@ reject_call:
       example: "{{ trigger.event.data.from }}"
       selector:
         text:
+
+get_profile:
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:
+    to:
+      required: true
+      example: "+12025550123"
+      selector:
+        text:
+
+list_groups:
+  fields:
+    clientId:
+      name: Client ID
+      description: The add-on client session to use.
+      required: true
+      example: default
+      selector:
+        text:

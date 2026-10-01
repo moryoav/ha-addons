@@ -1415,3 +1415,43 @@ test("call logs reach Home Assistant from call history and declined calls", asyn
     assert.ok(!text.includes(secret), secret);
   }
 });
+
+test("message statuses and chat reads reach Home Assistant with private logs", async () => {
+  const key = Buffer.alloc(32, 13);
+  const client = new FakeClient();
+  const requests = [];
+  const logs = [];
+  const counts = { status: 0, read: 0 };
+  const record = (level) => (...args) => logs.push([level, ...args]);
+  createAddonRuntime({
+    clientIds: ["default"],
+    clientFactory: () => client,
+    fingerprintKey: key,
+    logLevel: "debug",
+    runId: "0123456789abcdef",
+    logger: { info: record("info"), warn: record("warn"), debug: record("debug") },
+    httpClient: { post: async (...args) => requests.push(args) },
+    diagnostics: {
+      recordMessageStatus: () => { counts.status += 1; },
+      recordChatRead: () => { counts.read += 1; },
+    },
+  });
+  const status = {
+    chatId: FICTIONAL_LID, messageId: "3EB0SENT", status: "read",
+    participant: null, timestamp: null,
+  };
+  const read = { chatId: FICTIONAL_JID, status: "read", messageIds: ["3EB0A", "3EB0B"] };
+  client.emit("message_status", status);
+  client.emit("chat_read", read);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(requests.map(([url, payload]) => [url.split("/").at(-1), payload]), [
+    ["whatsapp_message_status", { clientId: "default", ...status }],
+    ["whatsapp_chat_read", { clientId: "default", ...read }],
+  ]);
+  assert.deepEqual(counts, { status: 1, read: 1 });
+  const text = JSON.stringify(logs);
+  for (const secret of [FICTIONAL_NUMBER, "999999999999999", "3EB0SENT", "3EB0A"]) {
+    assert.ok(!text.includes(secret), secret);
+  }
+});

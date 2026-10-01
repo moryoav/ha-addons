@@ -2,6 +2,26 @@
 
 All notable changes to this repository are documented here.
 
+## 2.5.0
+
+### Receipts, profiles, and group lists
+
+- Added the `whatsapp_message_status` event. It fires when a message this
+  account sent is delivered, read, or played, with the message ID returned by
+  `whatsapp.send_message`. In groups, each member's receipt is its own event.
+- Added the `whatsapp_chat_read` event. It fires when you read or play received
+  messages on another device, such as the phone, so automations can dismiss
+  notifications you have already seen.
+- Added the `whatsapp.get_profile` action: a contact's profile picture URL,
+  about text, and business profile, or a group's picture.
+- Added the `whatsapp.list_groups` action: every group the account belongs to,
+  with its JID, name, description, and settings.
+- Added an overview of every action and event to the README and knowledge base,
+  and examples for unread-alert escalation, notification dismissal, profile
+  lookups, and group lists.
+- Update both the add-on and the HACS integration to 2.5.0 for the new
+  actions. The new events need only the add-on.
+
 ## 2.4.0
 
 ### Call log event

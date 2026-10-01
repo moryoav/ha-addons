@@ -537,6 +537,7 @@ const emptyCounters = () => ({
   callUpdatesDelivered: 0,
   callUpdatesIgnored: 0,
   callUpdatesReceived: 0,
+  chatReadEvents: 0,
   connectionsConnected: 0,
   connectionsDisconnected: 0,
   connectionsErrors: 0,
@@ -553,6 +554,7 @@ const emptyCounters = () => ({
   messageIgnoredMissing: 0,
   messageIgnoredMissingType: 0,
   messageIgnoredOther: 0,
+  messageStatusEvents: 0,
   messagesReceived: 0,
 });
 
@@ -931,6 +933,12 @@ const createRuntimeDiagnostics = ({
     },
     recordCallHistoryEntry() {
       increment(counters, "callHistoryEntries");
+    },
+    recordMessageStatus() {
+      increment(counters, "messageStatusEvents");
+    },
+    recordChatRead() {
+      increment(counters, "chatReadEvents");
     },
     recordCallLogDelivered(delivered) {
       increment(

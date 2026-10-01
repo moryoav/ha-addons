@@ -9,6 +9,8 @@ filters, text extraction, media types, and conversation replies.
 | --- | --- |
 | `new_whatsapp_message` | A received WhatsApp message. |
 | `whatsapp_message_sent` | An outgoing WhatsApp message reported by the connected session. |
+| `whatsapp_message_status` | A sent message was delivered, read, or played. |
+| `whatsapp_chat_read` | Received messages were read or played on another device. |
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
 | `whatsapp_call_log` | One record per finished call, incoming or outgoing. |
 | `whatsapp_presence_update` | A contact presence update. |
@@ -133,6 +135,30 @@ reaction, edit, and delete results from this text-notification collector.
 The helper holds the latest matching ID, so another send can overwrite it.
 For a specific task, use the action's [response variable](../examples/messages.md#capture-the-sent-message-id)
 and preserve the [full message key](../examples/scripts.md#save-a-message-key-for-another-run).
+
+## Receipt events
+
+`whatsapp_message_status` fires when a message this account sent, from Home
+Assistant or the phone, is delivered, read, or played. Its data contains
+`clientId`, `messageId`, `chatId`, `status` (`delivered`, `read`, `played`, or
+`error`), `participant`, and `timestamp`. `messageId` matches the `message_id`
+returned by `whatsapp.send_message`. In a direct chat, `participant` and
+`timestamp` are `null`. In a group, every member's receipt is a separate event,
+with `participant` set to that member and `timestamp` to the receipt time;
+WhatsApp reports a voice message played in a group as `read`. Recipients who
+turned off read receipts only produce `delivered`. Receipts for status updates
+(stories) are not reported.
+
+`whatsapp_chat_read` fires when this account reads or plays received messages on
+another device, such as the phone. Its data contains `clientId`, `chatId`,
+`status` (`read`, or `played` for voice messages), and `messageIds`, the IDs of
+the received messages, at most 100 per event. Use it to dismiss a Home Assistant
+notification once you have read the chat on the phone.
+
+Both events need add-on version 2.5.0 or newer. See the
+[unread-alert escalation](../examples/automations.md#escalate-when-an-alert-is-not-read) and
+[notification dismissal](../examples/automations.md#dismiss-a-notification-after-reading-the-chat-on-the-phone)
+examples.
 
 ## Call events
 

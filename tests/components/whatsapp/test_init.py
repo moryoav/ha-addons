@@ -607,3 +607,64 @@ async def test_reject_call_translates_failures(
             blocking=True,
         )
     assert exc_info.value.translation_key == translation_key
+
+
+
+async def test_profile_and_group_list_actions(hass, enable_custom_integrations) -> None:
+    """Test get_profile and list_groups return the add-on responses."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_get_profile.return_value = {"jid": "12025550123@s.whatsapp.net"}
+    client.async_list_groups.return_value = {"groups": []}
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    profile = await hass.services.async_call(
+        DOMAIN,
+        "get_profile",
+        {"clientId": "default", "to": "+12025550123"},
+        blocking=True,
+        return_response=True,
+    )
+    assert profile == {"jid": "12025550123@s.whatsapp.net"}
+    client.async_get_profile.assert_awaited_once_with(
+        {"clientId": "default", "to": "12025550123@s.whatsapp.net"}
+    )
+
+    groups = await hass.services.async_call(
+        DOMAIN,
+        "list_groups",
+        {"clientId": "default"},
+        blocking=True,
+        return_response=True,
+    )
+    assert groups == {"groups": []}
+
+    for service, data in (
+        ("get_profile", {"clientId": "default", "to": "+12025550123"}),
+        ("list_groups", {"clientId": "default"}),
+    ):
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(DOMAIN, service, data, blocking=True)
+
+
+@pytest.mark.parametrize(
+    "target", ["status@broadcast", "12025550123:3@s.whatsapp.net", ""]
+)
+async def test_get_profile_rejects_invalid_target(
+    hass, enable_custom_integrations, target
+) -> None:
+    """Test get_profile rejects targets that are not contacts or groups."""
+    client = AsyncMock(spec=WhatsappClient)
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await hass.services.async_call(
+            DOMAIN,
+            "get_profile",
+            {"clientId": "default", "to": target},
+            blocking=True,
+            return_response=True,
+        )
+    assert exc_info.value.translation_key == "invalid_profile_target"
+    client.async_get_profile.assert_not_awaited()

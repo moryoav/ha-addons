@@ -285,6 +285,8 @@ I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/h
 | ------------------------------- | ------------------------------------------------------- |
 | new_whatsapp_message            | The message that was received                           |
 | whatsapp_message_sent           | An outgoing message reported by the connected session   |
+| whatsapp_message_status         | A sent message was delivered, read, or played           |
+| whatsapp_chat_read              | Received messages were read on another device           |
 | whatsapp_call_update            | An incoming call lifecycle update                       |
 | whatsapp_call_log               | One record per finished incoming or outgoing call       |
 | whatsapp_presence_update        | Presence of contact in a chat updated                   |
@@ -321,6 +323,28 @@ needs updating. Logging automations can listen to both message events; see the
 [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages).
 Keep reply and mark-as-read automations on `new_whatsapp_message` so they do not
 act on outgoing messages.
+
+`whatsapp_message_status` fires when a message this account sent, from Home
+Assistant or the phone, is delivered, read, or played. Its data contains
+`clientId`, `messageId`, `chatId`, `status` (`delivered`, `read`, `played`, or
+`error`), `participant`, and `timestamp`. `messageId` matches the `message_id`
+returned by `whatsapp.send_message`. In a direct chat, `participant` and
+`timestamp` are `null`. In a group, every member's receipt is a separate event,
+with `participant` set to that member and `timestamp` to the receipt time;
+WhatsApp reports a voice message played in a group as `read`. Recipients who
+turned off read receipts only produce `delivered`. Receipts for status updates
+(stories) are not reported.
+
+`whatsapp_chat_read` fires when this account reads or plays received messages on
+another device, such as the phone. Its data contains `clientId`, `chatId`,
+`status` (`read`, or `played` for voice messages), and `messageIds`, the IDs of
+the received messages, at most 100 per event. Use it to dismiss a Home Assistant
+notification once you have read the chat on the phone.
+
+Both events need add-on version 2.5.0 or newer. See the
+[unread-alert escalation](https://moryoav.github.io/ha-addons/examples/automations/#escalate-when-an-alert-is-not-read) and
+[notification dismissal](https://moryoav.github.io/ha-addons/examples/automations/#dismiss-a-notification-after-reading-the-chat-on-the-phone)
+examples.
 
 `whatsapp_call_update` fires for each lifecycle update reported by Baileys. Its
 `status` is one of `offer`, `ringing`, `accept`, `reject`, `timeout`, or

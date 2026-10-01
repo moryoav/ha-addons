@@ -14,6 +14,20 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   name, description, owner, settings, and participants.
 - `whatsapp.reject_call`: decline an incoming call using the `callId` and
   `from` values of its `whatsapp_call_update` event.
+- `whatsapp.get_profile`: look up a contact's profile picture URL, about text,
+  and business profile, or a group's picture.
+- `whatsapp.list_groups`: list every group the linked account belongs to, with
+  its JID, name, description, and settings.
+
+The lookup actions `check_number`, `get_group_info`, `get_profile`, and
+`list_groups` require `response_variable` and share a per-client rate limit.
+
+| Action | Add-on and integration version |
+| --- | --- |
+| `check_number` | 1.4.31 |
+| `get_group_info` | 2.1.0 |
+| `reject_call` | 2.3.0 |
+| `get_profile`, `list_groups` | 2.5.0 |
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event
@@ -24,7 +38,7 @@ the recipient read the message.
 ## Examples
 
 - [Messages and media](../examples/messages.md)
-- [Recipients and number lookup](../examples/recipients.md)
+- [Recipients, profiles, and group lists](../examples/recipients.md)
 - [Presence](../examples/presence.md)
 - [Automations, calls, and read markers](../examples/automations.md)
 - [Reusable notification scripts](../examples/scripts.md)
