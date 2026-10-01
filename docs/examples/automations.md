@@ -159,8 +159,10 @@ always escalates for them.
 
 ## Dismiss a notification after reading the chat on the phone
 
-The first automation shows a notification for messages in a group. The second
-removes it once you read the group on your phone.
+The first automation shows a notification for messages in a group and stores
+the ID of the newest one in an `input_text` helper,
+`input_text.family_group_last_message`, that you create first. The second
+removes the notification once that message is read on your phone.
 
 ```yaml
 - alias: Notify about family group messages
@@ -171,6 +173,11 @@ removes it once you read the group on your phone.
         key:
           remoteJid: 120363000000000000@g.us
   action:
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.family_group_last_message
+      data:
+        value: "{{ trigger.event.data.key.id }}"
     - action: persistent_notification.create
       data:
         notification_id: whatsapp_family_group
@@ -184,12 +191,20 @@ removes it once you read the group on your phone.
       event_type: whatsapp_chat_read
       event_data:
         chatId: 120363000000000000@g.us
+  condition:
+    - condition: template
+      value_template: >-
+        {{ states("input_text.family_group_last_message")
+           in trigger.event.data.messageIds }}
   action:
     - action: persistent_notification.dismiss
       data:
         notification_id: whatsapp_family_group
   mode: queued
 ```
+
+`whatsapp_chat_read` lists the messages that were read, not the whole chat, so
+the condition keeps an older message from dismissing a newer notification.
 
 ## Log received and sent messages
 

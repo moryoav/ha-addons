@@ -318,8 +318,10 @@ turned off read receipts only produce `delivered`. Receipts for status updates
 `whatsapp_chat_read` fires when this account reads or plays received messages on
 another device, such as the phone. Its data contains `clientId`, `chatId`,
 `status` (`read`, or `played` for voice messages), and `messageIds`, the IDs of
-the received messages, at most 100 per event. Use it to dismiss a Home Assistant
-notification once you have read the chat on the phone.
+the received messages that were read. A large batch is split across several
+events of at most 100 IDs. Check `messageIds` for the message you care about,
+for example to dismiss its Home Assistant notification once you have read it on
+the phone.
 
 Both events need add-on version 2.5.0 or newer. See the
 [unread-alert escalation](https://moryoav.github.io/ha-addons/examples/automations/#escalate-when-an-alert-is-not-read) and

@@ -106,9 +106,11 @@ test("group reads count only when this account is the reader", () => {
   assert.deepEqual(chatReadsFrom("message-receipt.update", [ownRead("G1", OWN_LID)], {}), []);
 });
 
-test("one chat read reports at most 100 message IDs", () => {
-  const updates = Array.from({ length: 150 }, (_, index) =>
-    update(false, 4, { id: `ID${index}` })
-  );
-  assert.equal(chatReadsFrom("messages.update", updates, self)[0].messageIds.length, 100);
+test("large chat reads are split into events of at most 100 IDs", () => {
+  const ids = Array.from({ length: 150 }, (_, index) => `ID${index}`);
+  const updates = [...ids, "ID0", "ID149"].map((id) => update(false, 4, { id }));
+  const reads = chatReadsFrom("messages.update", updates, self);
+  assert.deepEqual(reads.map((read) => read.messageIds.length), [100, 50]);
+  assert.ok(reads.every((read) => read.chatId === PEER_LID && read.status === "read"));
+  assert.deepEqual(reads.flatMap((read) => read.messageIds), ids);
 });

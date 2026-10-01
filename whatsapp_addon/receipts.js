@@ -95,7 +95,8 @@ const messageStatusesFrom = (event, updates) => {
 
 /**
  * Messages this account read or played on another device, grouped per chat
- * and status. Group receipts must name this account as the reader.
+ * and status. A large batch is split into several reads of at most 100 IDs.
+ * Group receipts must name this account as the reader.
  */
 const chatReadsFrom = (event, updates, self = {}) => {
   const own = new Set([self.id, self.lid].map(userPart).filter(Boolean));
@@ -120,17 +121,24 @@ const chatReadsFrom = (event, updates, self = {}) => {
     const read = reads.get(groupKey) || {
       chatId: target.chatId,
       status,
-      messageIds: [],
+      messageIds: new Set(),
     };
-    if (
-      read.messageIds.length < MAX_MESSAGE_IDS &&
-      !read.messageIds.includes(target.messageId)
-    ) {
-      read.messageIds.push(target.messageId);
-    }
+    read.messageIds.add(target.messageId);
     reads.set(groupKey, read);
   }
-  return [...reads.values()];
+
+  const chunks = [];
+  for (const { chatId, status, messageIds } of reads.values()) {
+    const ids = [...messageIds];
+    for (let start = 0; start < ids.length; start += MAX_MESSAGE_IDS) {
+      chunks.push({
+        chatId,
+        status,
+        messageIds: ids.slice(start, start + MAX_MESSAGE_IDS),
+      });
+    }
+  }
+  return chunks;
 };
 
 module.exports = {
