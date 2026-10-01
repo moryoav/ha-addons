@@ -301,9 +301,12 @@ const attachServerSyncMonitor = ({ socket, onReport }) => {
 };
 
 module.exports = {
+  CALL_RESULTS,
   attachServerSyncMonitor,
   createAppStateLogger,
   describeJid,
+  enumName,
+  safeInteger,
   summarizeCallLogRecord,
   summarizeSyncAction,
 };

@@ -285,11 +285,37 @@ test("call lifecycle updates fire filterable privacy-safe events", async () => {
   });
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(requests.length, statuses.length);
+  // The reject ends the call, so its call log follows that update.
+  const eventTypes = requests.map(([url]) => url.split("/").at(-1));
+  assert.deepEqual(eventTypes, [
+    "whatsapp_call_update",
+    "whatsapp_call_update",
+    "whatsapp_call_update",
+    "whatsapp_call_update",
+    "whatsapp_call_log",
+    "whatsapp_call_update",
+    "whatsapp_call_update",
+  ]);
+  assert.deepEqual(requests[4][1], {
+    clientId: "default",
+    callId: `fictional-call-${FICTIONAL_NUMBER}`,
+    direction: "incoming",
+    result: "declined",
+    isVideo: false,
+    durationSeconds: null,
+    startedAt: "2026-08-25T12:00:00.000Z",
+    peer: FICTIONAL_LID,
+    participants: [],
+    groupJid: null,
+  });
+  const updateRequests = requests.filter(([url]) =>
+    url.endsWith("/whatsapp_call_update")
+  );
+  assert.equal(updateRequests.length, statuses.length);
   assert.deepEqual(recordedStatuses, statuses);
   assert.deepEqual(deliveryResults, statuses.map(() => true));
   assert.equal(ignored, 1);
-  for (const [index, request] of requests.entries()) {
+  for (const [index, request] of updateRequests.entries()) {
     assert.equal(
       request[0],
       "http://supervisor/core/api/events/whatsapp_call_update"
@@ -1287,5 +1313,105 @@ test("app-state sync and call history are logged in debug mode with fingerprints
     for (const secret of [FICTIONAL_NUMBER, "999999999999999", callId]) {
       assert.ok(!text.includes(secret), secret);
     }
+  }
+});
+
+test("call logs reach Home Assistant from call history and declined calls", async () => {
+  const key = Buffer.alloc(32, 11);
+  const callId = "0123456789ABCDEF0123456789ABCDEF";
+  const client = new FakeClient();
+  const requests = [];
+  const logs = [];
+  const delivered = [];
+  const record = (level) => (...args) => logs.push([level, ...args]);
+  createAddonRuntime({
+    clientIds: ["default"],
+    clientFactory: () => client,
+    fingerprintKey: key,
+    logLevel: "debug",
+    runId: "0123456789abcdef",
+    logger: { info: record("info"), warn: record("warn"), debug: record("debug") },
+    httpClient: { post: async (...args) => requests.push(args) },
+    diagnostics: { recordCallLogDelivered: (value) => delivered.push(value) },
+  });
+  const self = { id: `${FICTIONAL_NUMBER}:3@s.whatsapp.net`, lid: undefined };
+  const history = (overrides = {}) => ({
+    index: ["call_log", "999999999999991@lid", callId, "0"],
+    syncAction: {
+      value: {
+        callLogAction: {
+          callLogRecord: {
+            callResult: 0,
+            isIncoming: false,
+            isVideo: false,
+            duration: 16,
+            startTime: 1790840170,
+            callId,
+            participants: [{ userJid: FICTIONAL_LID, callResult: 0 }],
+            ...overrides,
+          },
+        },
+      },
+    },
+  });
+
+  client.emit("app_state_sync", {
+    type: "action", mutation: history({ callId: "INITIAL0SYNC" }), initialSync: true, self,
+  });
+  client.emit("app_state_sync", {
+    type: "action", mutation: history(), initialSync: false, self,
+  });
+  client.emit("app_state_sync", {
+    type: "action", mutation: history(), initialSync: false, self,
+  });
+
+  const rejected = "FEDCBA9876543210FEDCBA9876543210";
+  client.emit("call_update", { id: rejected, status: "offer", from: FICTIONAL_LID, isVideo: true });
+  client.emit("call_rejected", { callId: rejected });
+  client.emit("call_update", { id: rejected, status: "terminate", from: FICTIONAL_LID });
+  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+
+  const callLogs = requests
+    .filter(([url]) => url.endsWith("/whatsapp_call_log"))
+    .map(([, payload]) => payload);
+  assert.deepEqual(callLogs, [
+    {
+      clientId: "default",
+      callId,
+      direction: "outgoing",
+      result: "connected",
+      isVideo: false,
+      durationSeconds: 16,
+      startedAt: "2026-10-01T07:36:10.000Z",
+      peer: FICTIONAL_LID,
+      participants: [{ jid: FICTIONAL_LID, result: "connected" }],
+      groupJid: null,
+    },
+    {
+      clientId: "default",
+      callId: rejected,
+      direction: "incoming",
+      result: "declined",
+      isVideo: true,
+      durationSeconds: null,
+      startedAt: null,
+      peer: FICTIONAL_LID,
+      participants: [],
+      groupJid: null,
+    },
+  ]);
+  assert.deepEqual(delivered, [true, true]);
+  const infoLogs = logs.filter(
+    ([level, message]) => level === "info" && message === "WhatsApp call log event delivered."
+  );
+  assert.deepEqual(infoLogs.map(([, , details]) => details), [
+    { runId: "0123456789abcdef", clientRef: fingerprint("default", key),
+      callDirection: "outgoing", callResult: "connected", attempt: 1 },
+    { runId: "0123456789abcdef", clientRef: fingerprint("default", key),
+      callDirection: "incoming", callResult: "declined", attempt: 1 },
+  ]);
+  const text = JSON.stringify(logs);
+  for (const secret of [FICTIONAL_NUMBER, "999999999999999", callId, rejected]) {
+    assert.ok(!text.includes(secret), secret);
   }
 });
