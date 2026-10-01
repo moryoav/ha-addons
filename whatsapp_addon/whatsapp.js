@@ -975,6 +975,7 @@ class WhatsappClient extends EventEmitter {
         clearTimeout(timer)
       );
     });
+    this.emit("call_rejected", { callId: id });
   };
 
   updateProfileStatus = async (status) => {

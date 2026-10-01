@@ -526,6 +526,8 @@ const emptyCounters = () => ({
   appStateNotifications: 0,
   callAccepted: 0,
   callHistoryEntries: 0,
+  callLogDeliveryFailed: 0,
+  callLogsDelivered: 0,
   callOffers: 0,
   callRejected: 0,
   callRinging: 0,
@@ -929,6 +931,12 @@ const createRuntimeDiagnostics = ({
     },
     recordCallHistoryEntry() {
       increment(counters, "callHistoryEntries");
+    },
+    recordCallLogDelivered(delivered) {
+      increment(
+        counters,
+        delivered ? "callLogsDelivered" : "callLogDeliveryFailed"
+      );
     },
     recordMessageBatch(count) {
       increment(counters, "messageBatches");

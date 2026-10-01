@@ -68,6 +68,54 @@ The caller's `from` value can be a LID; `whatsapp.send_message` accepts it
 directly. The `regex_replace` removes a device suffix such as `:12` if WhatsApp
 reports one.
 
+## Notify about missed calls
+
+`whatsapp_call_log` fires once per finished call. This automation notifies you
+about incoming calls nobody answered. It needs add-on version 2.4.0 or newer.
+
+```yaml
+- alias: Missed WhatsApp call
+  trigger:
+    - platform: event
+      event_type: whatsapp_call_log
+      event_data:
+        direction: incoming
+        result: missed
+  action:
+    - action: persistent_notification.create
+      data:
+        title: Missed WhatsApp call
+        message: >-
+          {{ "Video" if trigger.event.data.isVideo else "Voice" }} call from
+          {{ trigger.event.data.peer or "an unknown caller" }} at
+          {{ (as_timestamp(trigger.event.data.startedAt) | timestamp_custom("%H:%M"))
+             if trigger.event.data.startedAt else "an unknown time" }}.
+  mode: queued
+```
+
+## Log calls made from the phone
+
+```yaml
+- alias: Log outgoing WhatsApp calls
+  trigger:
+    - platform: event
+      event_type: whatsapp_call_log
+      event_data:
+        direction: outgoing
+  action:
+    - action: logbook.log
+      data:
+        name: "WhatsApp ({{ trigger.event.data.clientId }})"
+        message: >-
+          Called {{ trigger.event.data.peer or "someone" }}:
+          {{ trigger.event.data.result }},
+          {{ trigger.event.data.durationSeconds or 0 }} seconds.
+  mode: queued
+```
+
+`startedAt` is `null` when WhatsApp does not report a start time, so check it
+before formatting it, as the missed-call example does.
+
 ## Log received and sent messages
 
 ```yaml

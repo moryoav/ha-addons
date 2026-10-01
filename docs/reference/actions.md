@@ -26,6 +26,6 @@ the recipient read the message.
 - [Messages and media](../examples/messages.md)
 - [Recipients and number lookup](../examples/recipients.md)
 - [Presence](../examples/presence.md)
-- [Automations, declining calls, and read markers](../examples/automations.md)
+- [Automations, calls, and read markers](../examples/automations.md)
 - [Reusable notification scripts](../examples/scripts.md)
 - [Incoming messages and conversation agents](../examples/incoming-messages.md)

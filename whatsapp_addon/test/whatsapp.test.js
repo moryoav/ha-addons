@@ -1135,8 +1135,14 @@ test("rejectCall forwards the call event fields to Baileys", async (t) => {
   });
   t.after(() => client.disconnect());
 
+  const declined = [];
+  client.on("call_rejected", (event) => declined.push(event));
   await client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_LID);
   await client.rejectCall(FICTIONAL_CALL_ID, FICTIONAL_JID);
+  assert.deepEqual(declined, [
+    { callId: FICTIONAL_CALL_ID },
+    { callId: FICTIONAL_CALL_ID },
+  ]);
   assert.deepEqual(rejected, [
     [FICTIONAL_CALL_ID, FICTIONAL_LID],
     [FICTIONAL_CALL_ID, FICTIONAL_JID],

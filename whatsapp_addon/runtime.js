@@ -6,6 +6,7 @@ const qrimage = require("qr-image");
 
 const { createApiApp } = require("./api");
 const { summarizeSyncAction } = require("./app-state-sync");
+const { CALL_LOG_EVENT, createCallLogTracker } = require("./call-log");
 const {
   DEFAULT_HEALTH_FAILURE_PATH,
   DEFAULT_HEARTBEAT_PATH,
@@ -426,13 +427,14 @@ const createAddonRuntime = ({
     });
   };
 
-  const deliverCallUpdate = async (clientId, update) => {
+  // logFields describe the event in warnings without identifiers.
+  const deliverCallEvent = async (clientId, eventType, payload, logFields) => {
     for (let attempt = 1; ; attempt += 1) {
       if (callDeliveryStopped) return { delivered: false, attempt: 0 };
 
       const result = await requestSupervisor(
-        `/core/api/events/${CALL_UPDATE_EVENT}`,
-        { clientId, ...update },
+        `/core/api/events/${eventType}`,
+        { clientId, ...payload },
         CALL_EVENT_REQUEST_TIMEOUT_MS
       );
       if (result.delivered) {
@@ -450,7 +452,7 @@ const createAddonRuntime = ({
           {
             runId,
             clientRef: logRef(clientId),
-            callStatus: update.status,
+            ...logFields,
             httpStatus: result.status,
             attempt,
             retryInMs,
@@ -463,7 +465,7 @@ const createAddonRuntime = ({
       logger.warn?.("Home Assistant call event delivery failed.", {
         runId,
         clientRef: logRef(clientId),
-        callStatus: update.status,
+        ...logFields,
         httpStatus: result.status,
         attempt,
       });
@@ -666,6 +668,84 @@ const createAddonRuntime = ({
     });
   };
 
+  // Call updates and call logs share one queue, so a call's log always
+  // reaches Home Assistant after its last update.
+  const queueCallEvent = (clientId, eventType, payload, logFields, onResult) => {
+    if (pendingCallUpdates >= MAX_PENDING_CALL_UPDATES) {
+      onResult({ delivered: false, attempt: 0 });
+      logger.warn?.(
+        "WhatsApp call event dropped because the delivery queue is full.",
+        {
+          runId,
+          clientRef: logRef(clientId),
+          ...logFields,
+          queueLimit: MAX_PENDING_CALL_UPDATES,
+        }
+      );
+      return;
+    }
+
+    pendingCallUpdates += 1;
+    const deliveryTask = callDeliveryTail.then(async () => {
+      try {
+        return await deliverCallEvent(clientId, eventType, payload, logFields);
+      } catch {
+        logger.warn?.(
+          "Home Assistant call event delivery failed unexpectedly.",
+          {
+            runId,
+            clientRef: logRef(clientId),
+            ...logFields,
+          }
+        );
+        return { delivered: false, attempt: 0 };
+      }
+    });
+    callDeliveryTail = deliveryTask.then(() => undefined);
+
+    void deliveryTask.then((result) => {
+      pendingCallUpdates -= 1;
+      onResult(result);
+    });
+  };
+
+  const callLogTrackers = new Map();
+  const callLogTracker = (clientId) => {
+    if (!callLogTrackers.has(clientId)) {
+      callLogTrackers.set(clientId, createCallLogTracker());
+    }
+    return callLogTrackers.get(clientId);
+  };
+
+  const queueCallLog = (clientId, callLog) => {
+    const logFields = {
+      callDirection: callLog.direction,
+      callResult: callLog.result,
+    };
+    queueCallEvent(clientId, CALL_LOG_EVENT, callLog, logFields, (result) => {
+      diagnostics?.recordCallLogDelivered?.(result.delivered);
+      if (!result.delivered) return;
+      logger.info?.("WhatsApp call log event delivered.", {
+        runId,
+        clientRef: logRef(clientId),
+        ...logFields,
+        attempt: result.attempt,
+      });
+      if (!debugEnabled) return;
+      logger.debug?.("WhatsApp call log event delivered.", {
+        runId,
+        clientRef: logRef(clientId),
+        callRef: logRef(callLog.callId),
+        peerRef: callLog.peer ? logRef(callLog.peer) : null,
+        ...logFields,
+        isVideo: callLog.isVideo,
+        durationSeconds: callLog.durationSeconds,
+        participantCount: callLog.participants.length,
+        isGroup: callLog.groupJid !== null,
+      });
+    });
+  };
+
   const onCallUpdate = (call, clientId) => {
     const update = normalizeCallUpdate(call);
     if (!update) {
@@ -680,60 +760,35 @@ const createAddonRuntime = ({
     }
 
     diagnostics?.recordCallUpdate?.(update.status);
-    if (pendingCallUpdates >= MAX_PENDING_CALL_UPDATES) {
-      diagnostics?.recordCallDelivered?.(false);
-      logger.warn?.(
-        "WhatsApp call update dropped because the delivery queue is full.",
-        {
+    const callLog = callLogTracker(clientId).fromCallUpdate(update);
+    queueCallEvent(
+      clientId,
+      CALL_UPDATE_EVENT,
+      update,
+      { callStatus: update.status },
+      (result) => {
+        diagnostics?.recordCallDelivered?.(result.delivered);
+        if (!result.delivered) return;
+        logger.info?.("WhatsApp call update event delivered.", {
           runId,
           clientRef: logRef(clientId),
           callStatus: update.status,
-          queueLimit: MAX_PENDING_CALL_UPDATES,
-        }
-      );
-      return;
-    }
-
-    pendingCallUpdates += 1;
-    const deliveryTask = callDeliveryTail.then(async () => {
-      try {
-        return await deliverCallUpdate(clientId, update);
-      } catch {
-        logger.warn?.(
-          "Home Assistant call event delivery failed unexpectedly.",
-          {
-            runId,
-            clientRef: logRef(clientId),
-            callStatus: update.status,
-          }
-        );
-        return { delivered: false, attempt: 0 };
+          attempt: result.attempt,
+        });
+        if (!debugEnabled) return;
+        logger.debug?.("WhatsApp call update event delivered.", {
+          runId,
+          clientRef: logRef(clientId),
+          callRef: logRef(update.callId),
+          callerRef: logRef(update.from),
+          status: update.status,
+          isVideo: update.isVideo,
+          isGroup: update.isGroup,
+          offline: update.offline,
+        });
       }
-    });
-    callDeliveryTail = deliveryTask.then(() => undefined);
-
-    void deliveryTask.then((result) => {
-      pendingCallUpdates -= 1;
-      diagnostics?.recordCallDelivered?.(result.delivered);
-      if (!result.delivered) return;
-      logger.info?.("WhatsApp call update event delivered.", {
-        runId,
-        clientRef: logRef(clientId),
-        callStatus: update.status,
-        attempt: result.attempt,
-      });
-      if (!debugEnabled) return;
-      logger.debug?.("WhatsApp call update event delivered.", {
-        runId,
-        clientRef: logRef(clientId),
-        callRef: logRef(update.callId),
-        callerRef: logRef(update.from),
-        status: update.status,
-        isVideo: update.isVideo,
-        isGroup: update.isGroup,
-        offline: update.offline,
-      });
-    });
+    );
+    if (callLog) queueCallLog(clientId, callLog);
   };
 
   const onPresenceUpdate = (presence, clientId) => {
@@ -744,8 +799,8 @@ const createAddonRuntime = ({
     );
   };
 
-  // Debug-only view of app-state sync, used to learn how the phone's call
-  // history reaches a linked device. Identifiers appear only as fingerprints.
+  // App-state sync carries the phone's outgoing call history. Everything else
+  // here is a debug-only view, with identifiers only as fingerprints.
   const onAppStateSync = (event, clientId) => {
     if (event?.type === "server_sync") {
       diagnostics?.recordAppStateNotification?.();
@@ -769,6 +824,15 @@ const createAddonRuntime = ({
       return;
     }
     if (event?.type !== "action") return;
+
+    // A first sync after pairing replays old call history; report live calls only.
+    if (!event.initialSync) {
+      const callLog = callLogTracker(clientId).fromCallHistory(
+        event.mutation,
+        event.self
+      );
+      if (callLog) queueCallLog(clientId, callLog);
+    }
 
     const summary = summarizeSyncAction(event.mutation, {
       ref: logRef,
@@ -902,6 +966,9 @@ const createAddonRuntime = ({
     );
     client.on("call_update", (call) => onCallUpdate(call, clientId));
     client.on("app_state_sync", (event) => onAppStateSync(event, clientId));
+    client.on("call_rejected", ({ callId } = {}) =>
+      callLogTracker(clientId).markDeclined(callId)
+    );
     client.on("presence_update", (presence) =>
       onPresenceUpdate(presence, clientId)
     );

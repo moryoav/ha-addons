@@ -2,6 +2,28 @@
 
 All notable changes to this repository are documented here.
 
+## 2.4.0
+
+### Call log event
+
+- Added the `whatsapp_call_log` event. It fires once for each finished call,
+  in either direction, with `direction`, `result`, `isVideo`,
+  `durationSeconds`, `startedAt`, `peer`, `participants`, and `groupJid`.
+- Outgoing calls made from the phone come from the call history the phone
+  shares after the call, usually within about 15 seconds, and include
+  WhatsApp's result (`connected`, `missed`, `rejected`, `cancelled`, ...) and
+  the duration.
+- Incoming calls are reported when they stop ringing, as `answered`,
+  `declined`, or `missed`. Their duration is `null`: WhatsApp does not tell a
+  linked device when an answered call ends.
+- Added missed-call and outgoing-call automation examples.
+- Documented that `terminate` right after `accept` means the call stopped
+  ringing on the linked device, not that it ended, and that `ringing` can fire
+  once per device.
+- Debug runtime summaries count delivered and failed call log events.
+- The HACS integration is unchanged; only its version number moves to
+  2.4.0.
+
 ## 2.3.0
 
 ### Decline incoming calls

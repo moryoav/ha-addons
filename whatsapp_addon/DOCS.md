@@ -286,6 +286,7 @@ I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/h
 | new_whatsapp_message            | The message that was received                           |
 | whatsapp_message_sent           | An outgoing message reported by the connected session   |
 | whatsapp_call_update            | An incoming call lifecycle update                       |
+| whatsapp_call_log               | One record per finished incoming or outgoing call       |
 | whatsapp_presence_update        | Presence of contact in a chat updated                   |
 | whatsapp_send_message_result    | Result event fired after sending a message              |
 | whatsapp_addon_health_failure   | Sanitized details after the prior run ended unhealthy   |
@@ -332,10 +333,40 @@ a 33-second backoff window when Home Assistant Core is unavailable. Baileys
 updates can still be missing or arrive after a reconnect, so automations should
 filter the desired status without assuming a complete lifecycle.
 
+For a call answered on the phone or another device, `accept` is followed almost
+immediately by `terminate`: the call stopped ringing on the add-on's linked
+device, not the end of the call. WhatsApp sends a linked device nothing more
+about an answered call, so there is no update when it ends. `ringing` can fire
+once for each of your devices; trigger on `offer` to act once per call.
+
 Starting with version 2.3.0, the `whatsapp.reject_call` action declines an
 incoming call using the `callId` and `from` values of its `offer` event. See the
 [night-time example](https://moryoav.github.io/ha-addons/examples/automations/#decline-calls-at-night-and-reply-with-a-message).
-Calls made from the phone are not reported as call events.
+Calls made from the phone are not reported as call events;
+`whatsapp_call_log` reports them after they end.
+
+`whatsapp_call_log` fires once for each finished call, in either direction.
+Its data contains `clientId`, `callId`, `direction` (`incoming` or `outgoing`),
+`result`, `isVideo`, `durationSeconds`, `startedAt`, `peer`, `participants`,
+and `groupJid`. `peer` is the other person's phone JID or LID.
+
+- **Outgoing calls** made from the phone come from the call history the phone
+  shares with the add-on, usually about 15 seconds after the call ends.
+  `result` is WhatsApp's own outcome: `connected`, `missed`, `rejected`,
+  `cancelled`, `unavailable`, `failed`, `abandoned`, `accepted_elsewhere`,
+  `invalid`, or `unknown`. `durationSeconds` is the call length, and
+  `participants` lists each called person as `{jid, result}`.
+- **Incoming calls** are followed through their `whatsapp_call_update` events
+  and reported when they stop ringing. `result` is `answered`, `declined`
+  (rejected on a device or with `whatsapp.reject_call`), or `missed`.
+  `durationSeconds` is always `null` and `participants` is empty, because
+  WhatsApp does not tell a linked device when an answered call ends or who
+  else joined it.
+
+Calls are reported only while the add-on is connected, and only once per
+`callId`. An incoming call whose `offer` the add-on did not see, or whose ending
+does not arrive within 10 minutes, is not reported. See the
+[missed-call example](https://moryoav.github.io/ha-addons/examples/automations/#notify-about-missed-calls).
 
 `whatsapp_addon_health_failure` includes its schema and service, a run id,
 first and last failure timestamps, failure count and streak, the bounded failure
