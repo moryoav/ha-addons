@@ -88,7 +88,8 @@ about incoming calls nobody answered. It needs add-on version 2.4.0 or newer.
         message: >-
           {{ "Video" if trigger.event.data.isVideo else "Voice" }} call from
           {{ trigger.event.data.peer or "an unknown caller" }} at
-          {{ as_timestamp(trigger.event.data.startedAt) | timestamp_custom("%H:%M") }}.
+          {{ (as_timestamp(trigger.event.data.startedAt) | timestamp_custom("%H:%M"))
+             if trigger.event.data.startedAt else "an unknown time" }}.
   mode: queued
 ```
 
@@ -113,7 +114,7 @@ about incoming calls nobody answered. It needs add-on version 2.4.0 or newer.
 ```
 
 `startedAt` is `null` when WhatsApp does not report a start time, so check it
-before formatting it in other automations.
+before formatting it, as the missed-call example does.
 
 ## Log received and sent messages
 
