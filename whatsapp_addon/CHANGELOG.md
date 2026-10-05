@@ -1,3 +1,23 @@
+## 2.6.0
+
+- A vote on a WhatsApp poll now arrives with the voter's choice. The vote's
+  `new_whatsapp_message` event (`type: pollUpdateMessage`) includes a
+  `poll_vote` object with `status`, `poll_id`, `poll_name`, and
+  `selected_options`, the names of the options the voter has selected now. An
+  empty list means the vote was withdrawn.
+- Works for polls sent from Home Assistant, from the phone, and by other
+  people, in direct chats and groups, once the add-on has received the poll on
+  version 2.6.0 or newer.
+- WhatsApp encrypts votes with a secret carried only by the poll's own message.
+  The add-on keeps the secret, question, and option names of the newest 100
+  polls per account for 30 days alongside the session data, so votes are still
+  decoded after a restart. Remembered polls are cleared when the session is
+  reset or logged out, and the secret is never sent to Home Assistant.
+- A vote on a poll the add-on does not have still fires its event, with
+  `poll_vote.status: error` and `poll_vote.error: unknown_poll`.
+- Added a poll vote automation example and the `poll_vote` field reference.
+- No HACS integration update is needed.
+
 ## 2.5.0
 
 - Added the `whatsapp_message_status` event. It fires when a message this

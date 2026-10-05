@@ -25,7 +25,7 @@ COPY --from=dependencies /node_modules /node_modules
 COPY package.json package-lock.json /
 COPY api.js app-state-sync.js call-log.js chat-archive-store.js decryption-diagnostics.js diagnostics.js event-buffer-flush.js index.js \
     libsignal-log-filter.js media-store.js message-dedupe.js message-retry-cache.js recovery.js runtime.js \
-    lid-sender-receipts.js offline-sync.js receipts.js validation.js webui.js whatsapp.js /
+    lid-sender-receipts.js offline-sync.js poll-store.js receipts.js validation.js webui.js whatsapp.js /
 COPY logo.png /
 COPY healthcheck.sh run.sh /
 

@@ -29,7 +29,7 @@ receipt, call, and presence events through the companion add-on.
 
 | Event | Fires when | Since |
 | --- | --- | --- |
-| `new_whatsapp_message` | A message is received, optionally with its [decrypted media](examples/incoming-media.md) and the chat's archive state. | 1.x |
+| `new_whatsapp_message` | A message is received, optionally with its [decrypted media](examples/incoming-media.md), the chat's archive state, and the choice in a [poll vote](reference/events.md#poll-votes). | 1.x |
 | `whatsapp_message_sent` | This account sends a message, from Home Assistant, the phone, or another device. | 1.4.39 |
 | `whatsapp_message_status` | A sent message is delivered, read, or played. | 2.5.0 |
 | `whatsapp_chat_read` | You read or play received messages on another device, such as the phone. | 2.5.0 |
@@ -43,7 +43,7 @@ receipt, call, and presence events through the companion add-on.
 
 | Topic | Examples |
 | --- | --- |
-| [Messages and media](examples/messages.md) | Text, stickers, documents, videos, polls, voice messages, locations, reactions, edits, deletion, and quoted follow-ups. |
+| [Messages and media](examples/messages.md) | Text, stickers, documents, videos, polls and poll votes, voice messages, locations, reactions, edits, deletion, and quoted follow-ups. |
 | [Recipients and lookups](examples/recipients.md) | Phone JIDs, LIDs, group lists and IDs, registration checks, and contact profiles. |
 | [Presence](examples/presence.md) | Subscriptions, online notifications, typing indicators, and a bounded typing loop. |
 | [Automations](examples/automations.md) | Declining calls, call logs, unread-alert escalation, logging, replies, read markers, arrival messages, sensor alerts, and webhooks. |
