@@ -61,6 +61,7 @@ const validPoll = (poll) =>
 // answer: a vote only decrypts with the secret of the poll it was cast on.
 class PollStore {
   #file;
+  #temporary;
   #entries = new Map();
   #owner = null;
   #loaded = false;
@@ -74,6 +75,7 @@ class PollStore {
 
   constructor({ directory, onError = () => {}, maxEntries = MAX_POLLS, ttlMs = RETENTION_MS, now = Date.now }) {
     this.#file = path.join(directory, "poll-cache.json");
+    this.#temporary = `${this.#file}.tmp`;
     this.#warn = onError;
     this.#maxEntries = maxEntries;
     this.#ttlMs = ttlMs;
@@ -86,6 +88,9 @@ class PollStore {
       return;
     }
     this.#loaded = true;
+    // A write interrupted before its rename leaves a copy of the secrets that
+    // no later expiry or logout would remove.
+    await fs.rm(this.#temporary, { force: true }).catch(() => this.#warn());
     this.#owner = ownerId(account);
     if (!this.#owner) return;
     try {
@@ -222,10 +227,11 @@ class PollStore {
         try {
           // The auth session already owns this directory. Never recreate it
           // after logout/reset, which could resurrect a deleted session.
-          await fs.writeFile(`${this.#file}.tmp`, snapshot, { mode: 0o600 });
-          await fs.rename(`${this.#file}.tmp`, this.#file);
+          await fs.writeFile(this.#temporary, snapshot, { mode: 0o600 });
+          await fs.rename(this.#temporary, this.#file);
         } catch {
           this.#dirty = true;
+          await fs.rm(this.#temporary, { force: true }).catch(() => {});
           this.#warn();
         }
       });

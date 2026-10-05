@@ -314,6 +314,34 @@ test("a vote is only accepted in the chat its poll was sent to", async (t) => {
     ready(direct, ["Weekly report"]));
 });
 
+test("an interrupted or failed write never leaves a copy of the secrets behind", async (t) => {
+  const { baileys, create, decode, errors, file, store, vote } = await fixture(t);
+  const leftover = `${file}.tmp`;
+  // Left by a write that was interrupted before its rename.
+  await fs.writeFile(leftover, "Fictional interrupted snapshot");
+  await create().load(undefined);
+  await assert.rejects(fs.stat(leftover), { code: "ENOENT" });
+  await fs.writeFile(leftover, "Fictional interrupted snapshot");
+  await store.load(OWNER);
+  await assert.rejects(fs.stat(leftover), { code: "ENOENT" });
+  assert.deepEqual(errors, []);
+
+  // The snapshot can be written, but not moved into place.
+  const poll = pollMessage();
+  store.remember(poll, baileys);
+  await fs.mkdir(file);
+  await store.flush();
+  await assert.rejects(fs.stat(leftover), { code: "ENOENT" });
+  assert.deepEqual(errors, [[]]);
+  assert.deepEqual(decode(vote({ poll })), ready(poll, ["Weekly report"]));
+  // The next flush retries the write.
+  await fs.rmdir(file);
+  await store.flush();
+  const restored = create();
+  await restored.load(OWNER);
+  assert.deepEqual(decode(vote({ poll }), restored), ready(poll, ["Weekly report"]));
+});
+
 test("write failure preserves memory and never recreates a removed session directory", async (t) => {
   const { baileys, decode, directory, errors, store, vote } = await fixture(t);
   await store.load(OWNER);
