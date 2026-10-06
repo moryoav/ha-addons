@@ -2,6 +2,13 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+### Documentation
+
+- Updated the main and add-on READMEs to describe current features and setup
+  without release history or version-specific upgrade instructions.
+
 ## 2.7.0
 
 ### App and account status sensors
