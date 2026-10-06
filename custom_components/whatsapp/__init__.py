@@ -6,17 +6,18 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import voluptuous as vol
-
-from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import (
     ConfigEntryError,
-    ConfigEntryNotReady,
     HomeAssistantError,
     ServiceValidationError,
 )
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.setup import async_setup_component
 
@@ -56,7 +57,11 @@ from .const import (
     SERVICE_SEND_PRESENCE_UPDATE,
     SERVICE_SET_STATUS,
 )
+from .coordinator import WhatsappStatusCoordinator
+from .entity import app_device_identifier
 from .media import WhatsAppMediaView
+
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
 @dataclass(slots=True)
@@ -64,6 +69,7 @@ class WhatsappRuntimeData:
     """Runtime data for a WhatsApp config entry."""
 
     client: WhatsappClient
+    coordinator: WhatsappStatusCoordinator | None = None
 
 
 SEND_MESSAGE_SCHEMA = vol.Schema(
@@ -390,18 +396,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             translation_key="invalid_api_token_config",
         ) from err
 
-    try:
-        await client.async_health()
-    except WhatsappCannotConnect as err:
-        raise ConfigEntryNotReady("Could not connect to the WhatsApp add-on") from err
-
-    entry.runtime_data = WhatsappRuntimeData(client=client)
+    coordinator = WhatsappStatusCoordinator(hass, entry, client)
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = WhatsappRuntimeData(client=client, coordinator=coordinator)
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, app_device_identifier(entry))},
+        name="WhatsApp app",
+        model="WhatsApp app",
+        entry_type=dr.DeviceEntryType.SERVICE,
+    )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a WhatsApp config entry."""
-    return True
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device_entry: DeviceEntry
+) -> bool:
+    """Allow removal of accounts absent from a successful status snapshot."""
+    coordinator = entry.runtime_data.coordinator
+    if (
+        coordinator is None
+        or not coordinator.last_update_success
+        or coordinator.data is None
+    ):
+        return False
+    if (DOMAIN, app_device_identifier(entry)) in device_entry.identifiers:
+        return False
+    active_identifiers = {
+        (DOMAIN, f"{entry.entry_id}_account_{client_id}")
+        for client_id in coordinator.data
+    }
+    return not bool(device_entry.identifiers & active_identifiers)
 
 
 def _get_client(hass: HomeAssistant) -> WhatsappClient:

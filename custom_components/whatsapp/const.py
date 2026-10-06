@@ -36,6 +36,18 @@ CAPABILITY_GET_GROUP_INFO: Final = SERVICE_GET_GROUP_INFO
 CAPABILITY_REJECT_CALL: Final = SERVICE_REJECT_CALL
 CAPABILITY_GET_PROFILE: Final = SERVICE_GET_PROFILE
 CAPABILITY_LIST_GROUPS: Final = SERVICE_LIST_GROUPS
+CAPABILITY_GET_STATUS: Final = "get_status"
+
+SESSION_STATES: Final = (
+    "connecting",
+    "connected",
+    "disconnected",
+    "logged_out",
+    "pairing",
+    "reconnecting",
+    "restarting",
+    "recovery_paused",
+)
 
 ATTR_BODY: Final = "body"
 ATTR_CALL_ID: Final = "callId"

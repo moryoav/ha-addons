@@ -1,3 +1,13 @@
+## 2.7.0
+
+- Added the `/status` API route and `get_status` capability for Home Assistant
+  account devices, WhatsApp connection sensors, and Session state sensors.
+- Exposed only configured account IDs and local session states through the
+  existing optional API authentication. Pairing codes, phone numbers, message
+  content, and session secrets are excluded.
+- Kept the public health probe independent of account connection status.
+- Account sensors require the 2.7.0 HACS integration.
+
 ## 2.5.0
 
 - Added the `whatsapp_message_status` event. It fires when a message this

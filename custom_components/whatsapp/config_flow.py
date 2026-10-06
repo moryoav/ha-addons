@@ -7,7 +7,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 
 try:
@@ -85,7 +84,7 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return await self._async_create_or_update_entry(
             url,
-            title=getattr(discovery_info, "name", "WhatsApp Add-on"),
+            title=getattr(discovery_info, "name", "WhatsApp app"),
             api_token=api_token,
             replace_api_token=True,
         )
@@ -110,7 +109,7 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         url: str,
         *,
-        title: str = "WhatsApp Add-on",
+        title: str = "WhatsApp app",
         api_token: str | None = None,
         replace_api_token: bool = False,
     ) -> FlowResult:

@@ -26,6 +26,7 @@ nav:
       - Conversation history: examples/conversation-history.md
       - Sensor charts: examples/sensor-charts.md
   - Reference:
+      - Devices and sensors: reference/entities.md
       - Actions: reference/actions.md
       - Events: reference/events.md
 

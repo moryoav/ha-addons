@@ -11,6 +11,11 @@ receipt, call, and presence events through the companion add-on.
 
 ## What it can do
 
+**Devices and sensors:** One shared WhatsApp app device shows App connection.
+Each configured account gets its own device with WhatsApp connection and
+Session state. All status entities refresh together every 30 seconds. See
+[Devices and sensors](reference/entities.md) for setup, states, and examples.
+
 **Actions** (under the `whatsapp` domain):
 
 | Action | What it does | Since |
