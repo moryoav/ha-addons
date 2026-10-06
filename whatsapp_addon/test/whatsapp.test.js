@@ -1528,6 +1528,56 @@ test("poll votes reach Home Assistant decoded and the poll secret never does", a
   assert.ok(requests[0][1].message.pollUpdateMessage.vote.encPayload);
 });
 
+test("wrapped polls and votes reach Home Assistant without their nested secrets", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const requests = [];
+  createAddonRuntime({ clientIds: ["default"], clientFactory: () => client,
+    logger: {}, httpClient: { post: async (...args) => requests.push(args) } });
+
+  for (const wrapper of ["ephemeralMessage", "viewOnceMessageV2", "pollCreationMessageV5"]) {
+    const poll = fictionalPoll(`fictional-wrapped-poll-${wrapper}`, { fromMe: false, participant: FICTIONAL_JID });
+    const vote = await fictionalVote(`fictional-wrapped-vote-${wrapper}`, poll,
+      { creator: FICTIONAL_JID, voter: FICTIONAL_LID, selected: ["Weekly report"] });
+    ev.emit("messages.upsert", { type: "notify", messages: [
+      { key: poll.key, message: { [wrapper]: { message: poll.message } } },
+      { key: vote.key, message: { ephemeralMessage: { message: vote.message } } },
+    ] });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(requests.length, 6);
+  assert.equal(JSON.stringify(requests).includes("messageSecret"), false);
+  for (const index of [1, 3, 5]) {
+    assert.equal(requests[index][1].type, "pollUpdateMessage");
+    assert.equal(requests[index][1].poll_vote.status, "ready");
+    assert.deepEqual(requests[index][1].poll_vote.selected_options, ["Weekly report"]);
+  }
+});
+
+test("sent poll results omit secrets while keeping them available for vote decoding and retries", async (t) => {
+  const poll = fictionalPoll("fictional-send-result-poll", { fromMe: true });
+  const { client, calls, ev } = await createHarness({
+    sendMessage: async () => poll,
+    configureSocket: (socket) => {
+      socket.authState = { creds: { me: { id: "12025550100:4@s.whatsapp.net" } } };
+    },
+  });
+  t.after(() => client.disconnect());
+  const vote = await fictionalVote("fictional-send-result-vote", poll,
+    { creator: "12025550100@s.whatsapp.net", voter: FICTIONAL_LID, selected: ["Weekly report"] });
+  const result = await client.sendMessage(FICTIONAL_GROUP_JID,
+    { poll: { name: "Which report would you like?", values: POLL_OPTIONS } });
+  assert.equal(result.key.id, poll.key.id);
+  assert.equal(JSON.stringify(result).includes("messageSecret"), false);
+  const cached = await calls.socketOptions[0].getMessage(poll.key);
+  assert.ok(cached.messageContextInfo.messageSecret);
+  const received = [];
+  client.on("msg", (message) => received.push(message));
+  ev.emit("messages.upsert", { type: "notify", messages: [vote] });
+  assert.deepEqual(received[0].poll_vote.selected_options, ["Weekly report"]);
+});
+
 test("remembered polls decode votes after a restart and are forgotten on logout", async (t) => {
   const fs = require("node:fs/promises");
   const os = require("node:os");

@@ -252,7 +252,7 @@ object whose `pollCreationMessageKey.id` matched the sent poll's message ID.
 
 ## React to a poll vote
 
-Starting with add-on 2.6.0, the event for a vote also carries a `poll_vote`
+Starting with add-on 2.8.0, the event for a vote also carries a `poll_vote`
 object with the names of the options the voter has selected. This automation
 answers when someone picks the weekly report in the poll above:
 

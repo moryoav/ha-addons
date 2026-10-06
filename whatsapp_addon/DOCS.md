@@ -303,7 +303,7 @@ the destination chat, using the same cache and values.
 No HACS integration update is needed. See the
 [archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
 
-Starting with add-on 2.6.0, the event for a poll vote
+Starting with add-on 2.8.0, the event for a poll vote
 (`type: pollUpdateMessage`) includes a `poll_vote` object with `status`,
 `poll_id`, `poll_name`, and `selected_options`, the names of the options the
 voter has selected now. An empty list means the vote was withdrawn. WhatsApp

@@ -33,7 +33,7 @@ events are unchanged. The download endpoint requires integration 2.0.0 or newer.
 See [Decrypt incoming media](../examples/incoming-media.md) for setup,
 the full event contract, retention, and processing examples.
 
-Starting with add-on 2.6.0, the event for a poll vote also includes a
+Starting with add-on 2.8.0, the event for a poll vote also includes a
 `poll_vote` object with the voter's selected options. See
 [Poll votes](#poll-votes).
 
@@ -102,7 +102,7 @@ Only the add-on needs updating; no HACS integration update is required.
 
 WhatsApp encrypts a poll vote with a secret that only the poll's own message
 carries, so a vote by itself shows which poll it belongs to but not the choice.
-Starting with add-on 2.6.0, the add-on remembers the polls it sees and adds a
+Starting with add-on 2.8.0, the add-on remembers the polls it sees and adds a
 `poll_vote` object to each vote's message event (`type: pollUpdateMessage`):
 
 | Field | Meaning |
@@ -122,17 +122,18 @@ object. Other message types have no `poll_vote` field.
 
 This works for polls sent from Home Assistant, from the phone, and by other
 people, in direct chats and groups, once the add-on has received the poll on
-version 2.6.0 or newer.
+version 2.8.0 or newer.
 
 For each account, the add-on keeps the secret, question, and option names of
 the newest 100 polls, each for 30 days, alongside the account's session data.
 Remembered polls survive restarts, remain separate between accounts, and are
 cleared when the session is reset or logged out. The secret is never sent to
-Home Assistant.
+Home Assistant, including in wrapped message events and send results. Wrapped
+votes use the same `pollUpdateMessage` event type as unwrapped votes.
 
 | `error` | Meaning |
 | --- | --- |
-| `unknown_poll` | The add-on does not have this poll: it was sent before the update to 2.6.0, more than 30 days ago, or is no longer among the newest 100. Also reported for a vote that arrives in a different chat than its poll. |
+| `unknown_poll` | The add-on does not have this poll: it was sent before the update to 2.8.0, more than 30 days ago, or is no longer among the newest 100. Also reported for a vote that arrives in a different chat than its poll. |
 | `decrypt_failed` | The poll is known, but the vote could not be decrypted with it. |
 | `unknown_option` | The vote selects an option that is not in the remembered poll. |
 

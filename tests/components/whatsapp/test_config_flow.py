@@ -40,7 +40,7 @@ async def test_user_flow_success(hass, enable_custom_integrations) -> None:
         )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "WhatsApp Add-on"
+    assert result["title"] == "WhatsApp app"
     assert result["data"] == {CONF_URL: "http://detected-addon:3000"}
 
 

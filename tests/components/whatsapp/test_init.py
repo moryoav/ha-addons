@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import (
     ConfigEntryError,
     ConfigEntryNotReady,
@@ -42,12 +43,19 @@ def _entry_with_client(hass, client) -> MockConfigEntry:
 
 async def test_setup_entry_success(hass, enable_custom_integrations) -> None:
     """Test successful config entry setup."""
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_URL: "http://addon:3000"})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        state=ConfigEntryState.SETUP_IN_PROGRESS,
+        data={CONF_URL: "http://addon:3000"},
+    )
     entry.add_to_hass(hass)
 
-    with patch(
-        "custom_components.whatsapp.WhatsappClient.async_health",
-        AsyncMock(return_value={"status": "ok"}),
+    with (
+        patch(
+            "custom_components.whatsapp.WhatsappClient.async_health",
+            AsyncMock(return_value={"status": "ok"}),
+        ),
+        patch.object(hass.config_entries, "async_forward_entry_setups", AsyncMock()),
     ):
         assert await async_setup_entry(hass, entry)
 
@@ -61,11 +69,15 @@ async def test_setup_entry_passes_discovered_api_token(
     """Test a discovery token is passed only to the API client."""
     entry = MockConfigEntry(
         domain=DOMAIN,
+        state=ConfigEntryState.SETUP_IN_PROGRESS,
         data={CONF_URL: "http://addon:3000", CONF_API_TOKEN: "secret-token"},
     )
     entry.add_to_hass(hass)
 
-    with patch("custom_components.whatsapp.WhatsappClient") as client_cls:
+    with (
+        patch("custom_components.whatsapp.WhatsappClient") as client_cls,
+        patch.object(hass.config_entries, "async_forward_entry_setups", AsyncMock()),
+    ):
         client_cls.return_value.async_health = AsyncMock(return_value={"status": "ok"})
         assert await async_setup_entry(hass, entry)
 
@@ -75,7 +87,11 @@ async def test_setup_entry_passes_discovered_api_token(
 
 async def test_setup_entry_cannot_connect(hass, enable_custom_integrations) -> None:
     """Test setup retry when the add-on cannot be reached or identified."""
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_URL: "http://addon:3000"})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        state=ConfigEntryState.SETUP_IN_PROGRESS,
+        data={CONF_URL: "http://addon:3000"},
+    )
 
     with patch(
         "custom_components.whatsapp.WhatsappClient.async_health",
@@ -607,7 +623,6 @@ async def test_reject_call_translates_failures(
             blocking=True,
         )
     assert exc_info.value.translation_key == translation_key
-
 
 
 async def test_profile_and_group_list_actions(hass, enable_custom_integrations) -> None:

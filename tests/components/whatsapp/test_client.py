@@ -18,6 +18,7 @@ from custom_components.whatsapp.client import (
     normalize_profile_target,
     validate_call_reference,
 )
+from custom_components.whatsapp.const import SESSION_STATES
 
 pytestmark = pytest.mark.enable_socket
 
@@ -99,6 +100,113 @@ async def test_health_modern_success() -> None:
     assert client.capabilities == frozenset(
         {"send_message", "check_number", "get_group_info"}
     )
+
+
+def _account_status(clients=None) -> dict:
+    """Return the account status API contract."""
+    return {
+        "service": "ha-whatsapp-addon",
+        "api_version": 1,
+        "clients": clients
+        if clients is not None
+        else [
+            {"id": "personal", "state": "connected"},
+            {"id": "work", "state": "pairing"},
+        ],
+    }
+
+
+async def test_account_status_retains_only_ids_and_states() -> None:
+    """Test status credentials and discard extra session fields."""
+    payload = _account_status()
+    payload["clients"][0]["qrDataUrl"] = "private-qr"
+    session = FakeSession(FakeResponse(json_data=payload))
+    client = WhatsappClient(session, "http://app", api_token="status-token")
+    assert await client.async_status() == {"personal": "connected", "work": "pairing"}
+    assert session.calls[0][0:2] == ("GET", "http://app/status")
+    assert session.calls[0][2]["headers"] == {"Authorization": "Bearer status-token"}
+
+
+@pytest.mark.parametrize("state", SESSION_STATES)
+async def test_account_status_accepts_all_runtime_states(state) -> None:
+    """Keep all documented states usable by session sensors."""
+    client = WhatsappClient(
+        FakeSession(
+            FakeResponse(json_data=_account_status([{"id": "default", "state": state}]))
+        ),
+        "http://app",
+    )
+    assert await client.async_status() == {"default": state}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {},
+        {**_account_status(), "service": "other"},
+        {**_account_status(), "api_version": True},
+        {**_account_status(), "api_version": 2},
+        {**_account_status(), "clients": {}},
+        _account_status([None]),
+        _account_status([{}]),
+        _account_status([{"id": 1, "state": "connected"}]),
+        _account_status([{"id": "../private", "state": "connected"}]),
+        _account_status([{"id": "a" * 65, "state": "connected"}]),
+        _account_status([{"id": "default", "state": None}]),
+        _account_status([{"id": "default", "state": "private-error-content"}]),
+        _account_status([{"id": "default", "state": "connected"}] * 2),
+    ],
+)
+async def test_account_status_rejects_invalid_snapshots(payload) -> None:
+    """Reject incomplete account data without leaking it into errors."""
+    client = WhatsappClient(FakeSession(FakeResponse(json_data=payload)), "http://app")
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await client.async_status()
+    assert exc_info.value.code == "invalid_response"
+    assert "private" not in str(exc_info.value)
+
+
+async def test_account_status_empty_accounts() -> None:
+    """An empty account list is a valid snapshot."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_data=_account_status([]))), "http://app"
+    )
+    assert await client.async_status() == {}
+
+
+async def test_account_status_unsupported_capability() -> None:
+    """Do not request status from apps that advertise no support."""
+    session = FakeSession(FakeResponse(json_data=_modern_health()))
+    client = WhatsappClient(session, "http://app")
+    await client.async_health()
+    with pytest.raises(WhatsappUnsupportedCapability):
+        await client.async_status()
+    assert len(session.calls) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403, 404, 500])
+async def test_account_status_http_error(status) -> None:
+    """Status failures retain safe operational codes."""
+    client = WhatsappClient(
+        FakeSession(
+            FakeResponse(status=status, json_data={"error": {"code": "unauthorized"}})
+        ),
+        "http://app",
+    )
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await client.async_status()
+    assert exc_info.value.status == status
+
+
+async def test_account_status_invalid_json() -> None:
+    """Malformed bodies never become entity state."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_error=ValueError("private data"))), "http://app"
+    )
+    with pytest.raises(WhatsappApiError, match="non-JSON"):
+        await client.async_status()
 
 
 @pytest.mark.parametrize(
@@ -860,7 +968,6 @@ async def test_reject_call_preserves_structured_api_error(status, code) -> None:
     assert exc_info.value.code == code
 
 
-
 def _profile(**overrides) -> dict:
     """Return a valid fictional profile response."""
     return {
@@ -908,9 +1015,10 @@ async def test_get_profile_success() -> None:
     session = FakeSession(FakeResponse(json_data={**_profile(), "extra": 1}))
     client = WhatsappClient(session, "http://addon")
 
-    assert await client.async_get_profile(
-        {"clientId": "default", "to": "+12025550123"}
-    ) == _profile()
+    assert (
+        await client.async_get_profile({"clientId": "default", "to": "+12025550123"})
+        == _profile()
+    )
     method, url, kwargs = session.calls[0]
     assert (method, url) == ("POST", "http://addon/profile")
     assert kwargs["json"] == {
@@ -928,9 +1036,7 @@ async def test_get_profile_success() -> None:
         _profile(about=1),
         _profile(about_set_at="yesterday"),
         _profile(business={"description": None}),
-        _profile(
-            business={**_profile()["business"], "website": "https://example.com"}
-        ),
+        _profile(business={**_profile()["business"], "website": "https://example.com"}),
     ],
 )
 async def test_get_profile_rejects_malformed_response(payload) -> None:

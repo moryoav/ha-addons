@@ -1,6 +1,5 @@
 # WhatsApp for Home Assistant
 
-[![Release][release-badge]][release-url]
 [![HACS][hacs-badge]][hacs-url]
 [![License][license-badge]][license-url]
 
@@ -19,42 +18,60 @@ If this project is useful to you, you can support my work:
 ---
 
 Send WhatsApp messages from Home Assistant automations and receive WhatsApp
-message, receipt, call, and presence events through the companion add-on.
+message, receipt, call, and presence events through the companion app.
 
 ## What it can do
 
+**Devices and sensors:**
+
+| Device | Entity | What it shows |
+| --- | --- | --- |
+| WhatsApp app | App connection | Whether Home Assistant can reach the local app. |
+| WhatsApp (account ID) | WhatsApp connection | Whether that account is connected to WhatsApp. |
+| WhatsApp (account ID) | Session state | Connected, connecting, reconnecting, pairing required, logged out, disconnected, restarting, or paused for recovery. |
+
+Each configured account gets a separate device, including accounts waiting for
+pairing. One shared update runs every 30 seconds. App connection can be connected
+while an account is disconnected. If account status cannot be read, its entities
+become unavailable. Devices and entity IDs remain stable while the configured
+account ID stays the same, including after a restart or re-pairing.
+
+These are diagnostic entities, enabled by default. See
+[Devices and sensors](https://moryoav.github.io/ha-addons/reference/entities/)
+for states, account removal, and an alert example.
+
 **Actions** (under the `whatsapp` domain):
 
-| Action | What it does | Since |
-| --- | --- | --- |
-| `send_message` | Send text, images, videos, documents, stickers, voice messages, locations, contacts, polls, reactions, edits, deletions, and quoted replies. | 1.x |
-| `read_messages` | Mark a received message as read. | 1.x |
-| `presence_subscribe`, `send_presence_update`, `send_infinity_presence_update` | Follow a contact's presence and show online, typing, or recording. | 1.x |
-| `set_status` | Set the account's about text. | 1.x |
-| `check_number` | Check whether a phone number is on WhatsApp and get its LID. | 1.4.31 |
-| `get_group_info` | Get a group's name, description, settings, and members. | 2.1.0 |
-| `reject_call` | Decline an incoming call. | 2.3.0 |
-| `get_profile` | Get a contact's profile picture, about text, and business profile, or a group's picture. | 2.5.0 |
-| `list_groups` | List every group the account belongs to. | 2.5.0 |
+| Action | What it does |
+| --- | --- |
+| `send_message` | Send text, images, videos, documents, stickers, voice messages, locations, contacts, polls, reactions, edits, deletions, and quoted replies. |
+| `read_messages` | Mark a received message as read. |
+| `presence_subscribe`, `send_presence_update`, `send_infinity_presence_update` | Follow a contact's presence and show online, typing, or recording. |
+| `set_status` | Set the account's about text. |
+| `check_number` | Check whether a phone number is on WhatsApp and get its LID. |
+| `get_group_info` | Get a group's name, description, settings, and members. |
+| `reject_call` | Decline an incoming call. |
+| `get_profile` | Get a contact's profile picture, about text, and business profile, or a group's picture. |
+| `list_groups` | List every group the account belongs to. |
 
 **Events:**
 
-| Event | Fires when | Since |
-| --- | --- | --- |
-| `new_whatsapp_message` | A message is received, optionally with its [decrypted media](https://moryoav.github.io/ha-addons/examples/incoming-media/), the chat's archive state, and the choice in a [poll vote](https://moryoav.github.io/ha-addons/reference/events/#poll-votes). | 1.x |
-| `whatsapp_message_sent` | This account sends a message, from Home Assistant, the phone, or another device. | 1.4.39 |
-| `whatsapp_message_status` | A sent message is delivered, read, or played. | 2.5.0 |
-| `whatsapp_chat_read` | You read or play received messages on another device, such as the phone. | 2.5.0 |
-| `whatsapp_call_update` | An incoming call rings, is answered, declined, or stops ringing. | 1.x |
-| `whatsapp_call_log` | A call ends, incoming or made from the phone. | 2.4.0 |
-| `whatsapp_presence_update` | A followed contact's presence changes. | 1.x |
-| `whatsapp_send_message_result` | `send_message` finishes. | 1.x |
-| `whatsapp_addon_health_failure` | The add-on restarts after its health checks failed. | 1.x |
+| Event | Fires when |
+| --- | --- |
+| `new_whatsapp_message` | A message is received, optionally with its [decrypted media](https://moryoav.github.io/ha-addons/examples/incoming-media/), the chat's archive state, and the choice in a [poll vote](https://moryoav.github.io/ha-addons/reference/events/#poll-votes). |
+| `whatsapp_message_sent` | This account sends a message, from Home Assistant, the phone, or another device. |
+| `whatsapp_message_status` | A sent message is delivered, read, or played. |
+| `whatsapp_chat_read` | You read or play received messages on another device, such as the phone. |
+| `whatsapp_call_update` | An incoming call rings, is answered, declined, or stops ringing. |
+| `whatsapp_call_log` | A call ends, incoming or made from the phone. |
+| `whatsapp_presence_update` | A followed contact's presence changes. |
+| `whatsapp_send_message_result` | `send_message` finishes. |
+| `whatsapp_addon_health_failure` | The add-on restarts after its health checks failed. |
 
-## New in 2.0: decrypted incoming media
+## Decrypted incoming media
 
 Turn received WhatsApp attachments into inputs for Home Assistant automations.
-The add-on can now download and decrypt images, voice notes, audio, videos,
+The add-on can download and decrypt images, voice notes, audio, videos,
 documents, and stickers automatically, then enrich `new_whatsapp_message`
 with a ready-to-use local file, an authenticated download link, and its expiry.
 
@@ -63,9 +80,8 @@ Files expire automatically after a configurable retention period, with size
 and storage limits. Automations can send the decrypted file to an OCR,
 transcription, document-processing, or AI integration of your choice.
 
-**Update both the add-on and HACS integration to 2.0.0, restart Home Assistant,
-then enable Download incoming media in the add-on configuration.** Downloads
-are off by default. Existing actions and message payloads remain compatible.
+**Enable Download incoming media in the add-on configuration.** Downloads
+are off by default.
 
 See [Decrypt incoming media](https://moryoav.github.io/ha-addons/examples/incoming-media/)
 for setup, retention options, the enriched event, and an automation example.
@@ -78,13 +94,12 @@ for setup, retention options, the enriched event, and an automation example.
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
 
-The add-on supports `aarch64` and `amd64`. Release 1.4.31 removes `armhf`,
-`armv7`, and `i386`, which Home Assistant has not supported since 2025.12.
+The add-on supports `aarch64` and `amd64`.
 
 This repository contains two pieces:
 
 - `whatsapp_addon`: the Home Assistant add-on that runs the local WhatsApp Web client bridge.
-- `custom_components/whatsapp`: the Home Assistant integration that exposes actions, diagnostics, setup flow support, and add-on connectivity.
+- `custom_components/whatsapp`: the Home Assistant integration that exposes account devices, status sensors, actions, diagnostics, and setup flow support.
 
 The integration uses the local add-on HTTP API and serves decrypted attachments
 from the shared `/media/whatsapp` directory using Home Assistant authentication.
@@ -132,7 +147,8 @@ Use the default repository URL for stable releases:
 https://github.com/moryoav/ha-addons
 ```
 
-Since add-on 2.1.1, Home Assistant installs a prebuilt image from `ghcr.io/moryoav/whatsapp-addon` instead of building the add-on on the host. Each add-on version corresponds to an image tag built from the matching GitHub release.
+Home Assistant installs a prebuilt image from `ghcr.io/moryoav/whatsapp-addon`.
+Each stable image is built from the matching GitHub release.
 
 This repository does not currently publish a separate canary or `next` branch. If a canary channel is introduced later, it will be documented with its `#branch` repository URL and a distinct add-on name.
 
@@ -170,10 +186,6 @@ As a manual fallback, copy `custom_components/whatsapp` into:
 
 Then restart Home Assistant.
 
-Add-on releases before 1.4.31 could install a bundled legacy component. The
-current add-on neither updates nor deletes that copy. If you previously relied
-on it, follow [Legacy integration migration](#legacy-integration-migration).
-
 ### 3. Configure the integration
 
 In Home Assistant, go to:
@@ -204,8 +216,8 @@ The add-on accepts these options:
   and message IDs, retry activity, and encrypted payload fingerprints. Keep it
   disabled during normal operation.
 - `api_token`: optional bearer token for the internal add-on API. Use a strong
-  random value when you want defense in depth. Leave it unset to preserve
-  compatibility with older internal-network installations. A token may contain
+  random value when you want defense in depth. Leave it unset if you do not need
+  API authentication. A token may contain
   `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`, `+`, and `/`, followed by optional
   `=` padding, with a maximum total length of 512 characters. Random hex or
   URL-safe Base64 is recommended; spaces, `:`, and other characters make the
@@ -281,17 +293,16 @@ The add-on fires these Home Assistant events:
 `message` payload. Other fields, such as `messageTimestamp`, are passed through
 when present.
 
-Starting with add-on 2.2.0, `new_whatsapp_message` also includes
-`chat_archived`: `true` for an archived chat, `false` for an unarchived chat,
+`new_whatsapp_message` and `whatsapp_message_sent` also include `chat_archived`:
+`true` for an archived chat, `false` for an unarchived chat,
 or `null` if its state is not known. The value comes from the latest locally
 cached WhatsApp chat state, with no extra network request per message. Known
 flags survive add-on restarts and are updated by WhatsApp synchronization.
-Starting with add-on 2.2.1, `whatsapp_message_sent` includes the same field for
-the destination chat, using the same cache and values.
-No HACS integration update is needed. See the
+For `whatsapp_message_sent`, the field describes the destination chat.
+See the
 [archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
 
-Starting with add-on 2.6.0, the event for a poll vote
+The event for a poll vote
 (`type: pollUpdateMessage`) includes a `poll_vote` object with `status`,
 `poll_id`, `poll_name`, and `selected_options`, the names of the options the
 voter has selected now. An empty list means the vote was withdrawn. WhatsApp
@@ -302,18 +313,17 @@ decode later votes. A vote on a poll it does not have still fires, with
 [poll vote fields and limits](https://moryoav.github.io/ha-addons/reference/events/#poll-votes)
 and the [automation example](https://moryoav.github.io/ha-addons/examples/messages/#react-to-a-poll-vote).
 
-Starting with add-on 1.4.39, `whatsapp_message_sent` fires for messages with
+`whatsapp_message_sent` fires for messages with
 `key.fromMe: true`, including messages sent from the phone, other linked
 devices, and the add-on itself when reported by WhatsApp. For this event,
 `key.remoteJid` identifies the destination chat or group and can be a LID.
-The existing dedupe checks apply to both directions. The event reports a sent
+Duplicate-message checks apply to both directions. The event reports a sent
 message observed by the session; it is not a delivery or read receipt.
 
-Only the add-on needs updating for this event. It sends the event directly to
-Home Assistant, so no integration update is required. Existing received-message
-automations still use `new_whatsapp_message`. Logging automations can listen to
-both events, as in the [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages). Reply and mark-as-read automations should
-keep listening only to the received-message event to avoid acting on own sends.
+The add-on sends this event directly to Home Assistant. Logging automations can
+listen to both events, as in the [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages).
+Reply and mark-as-read automations should listen only to `new_whatsapp_message`
+to avoid acting on own sends.
 
 `whatsapp_message_status` fires when a message this account sent, from Home
 Assistant or the phone, is delivered, read, or played. Its data contains
@@ -334,7 +344,7 @@ events of at most 100 IDs. Check `messageIds` for the message you care about,
 for example to dismiss its Home Assistant notification once you have read it on
 the phone.
 
-Both events need add-on version 2.5.0 or newer. See the
+See the
 [unread-alert escalation](https://moryoav.github.io/ha-addons/examples/automations/#escalate-when-an-alert-is-not-read) and
 [notification dismissal](https://moryoav.github.io/ha-addons/examples/automations/#dismiss-a-notification-after-reading-the-chat-on-the-phone)
 examples.
@@ -357,7 +367,7 @@ device, not the end of the call. WhatsApp sends a linked device nothing more
 about an answered call, so there is no update when it ends. `ringing` can fire
 once for each of your devices; trigger on `offer` to act once per call.
 
-Starting with version 2.3.0, `whatsapp.reject_call` declines an incoming call.
+`whatsapp.reject_call` declines an incoming call.
 Pass the `callId` and `from` values of its `offer` event, as in the
 [night-time example](https://moryoav.github.io/ha-addons/examples/automations/#decline-calls-at-night-and-reply-with-a-message).
 WhatsApp does not let a linked device start calls, and it does not report calls
@@ -403,7 +413,7 @@ Message targets can use:
 - Group JID, such as the synthetic `120363000000000000@g.us`.
 - Broadcast JID, such as `status@broadcast`.
 
-**For direct chats, migrate automations to LID (`@lid`) targets whenever
+**For direct chats, use LID (`@lid`) targets whenever
 available.**
 Phone-number JIDs (`@s.whatsapp.net`) are less reliable with Baileys. Run
 `whatsapp.check_number` with the phone number, then use the returned `lid` as
@@ -451,7 +461,7 @@ codes, session data, or API tokens. Identifier-related entries use run-scoped
 one-way references for correlation. Return the option to `info` after collecting
 the relevant logs.
 
-Starting with version 2.3.0, debug mode also logs WhatsApp app-state sync:
+Debug mode also logs WhatsApp app-state sync:
 `server_sync` collection names, resync progress, the kind of each synced
 change, and a summary of any call-history entry the phone shares, with
 identifiers replaced by one-way references.
@@ -485,8 +495,8 @@ Each client retains up to 1,000 messages for four hours, with a 16 MiB serialize
 data budget and a 1 MiB per-message limit. Older entries are evicted when a limit
 is reached. Ordinary socket reconnects retain the cache; stopping the client,
 logging out, entering recovery pause, or restarting the add-on clears it. Nothing
-is written to disk. Baileys remains at 6.7.23, and the protective recovery pause
-remains enabled. The cache improves retry support but is not a confirmed fix for
+is written to disk. The protective recovery pause is enabled.
+The cache improves retry support but is not a confirmed fix for
 decryption storms.
 
 Failed native health checks are retained at both log levels. If Supervisor
@@ -507,17 +517,9 @@ updates the existing alert instead of accumulating duplicates.
   discovery refreshes the configured API token. Because `/health` is public for
   container monitoring, a stale token is detected on the first protected action rather
   than during setup.
-- `whatsapp.check_number` requires add-on and integration version 1.4.31 or
-  newer. An endpoint/version error usually means only one half was updated.
-- `whatsapp.get_group_info` requires add-on and integration version 2.1.0 or
-  newer. Older add-ons report that the action is unsupported.
-- `whatsapp.reject_call` requires add-on and integration version 2.3.0 or
-  newer. Older add-ons report that the action is unsupported.
-- `whatsapp.get_profile` and `whatsapp.list_groups` require add-on and
-  integration version 2.5.0 or newer. `whatsapp_message_status` and
-  `whatsapp_chat_read` require add-on version 2.5.0 or newer.
-- Decoded poll votes (`poll_vote`) require add-on version 2.6.0 or newer. A
-  vote with `poll_vote.error: unknown_poll` belongs to a poll the add-on does
+- If an action is unsupported or its endpoint is missing, update both the
+  add-on and HACS integration, then restart Home Assistant.
+- A vote with `poll_vote.error: unknown_poll` belongs to a poll the add-on does
   not have: one sent before the update, more than 30 days ago, or pushed out by
   100 newer polls.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
@@ -530,9 +532,8 @@ updates the existing alert instead of accumulating duplicates.
   `whatsapp_call_update` and filters on a supported `status` value. The add-on
   log reports the call status, HTTP status, attempt number, and retry delay when
   Home Assistant Core is temporarily unavailable.
-- `whatsapp_call_log` requires add-on version 2.4.0 or newer. Outgoing calls
-  appear only after they end and the phone shares its call history, usually
-  within about 15 seconds.
+- Outgoing calls appear in `whatsapp_call_log` only after they end and the
+  phone shares its call history, usually within about 15 seconds.
 - If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
 - Isolated libsignal `Bad MAC` and session lifecycle messages are summarized by
   the add-on instead of logging full stack traces or session data. A confirmed
@@ -541,9 +542,8 @@ updates the existing alert instead of accumulating duplicates.
 
 ## Legacy integration migration
 
-Add-on 1.4.31 retired the bundled compatibility component and removed the
-add-on's read-write `/config` access. Updating or uninstalling the add-on leaves
-any existing `/config/custom_components/whatsapp` directory untouched.
+The add-on and integration are managed separately. Updating or uninstalling the
+add-on leaves any existing `/config/custom_components/whatsapp` directory untouched.
 
 If an older add-on installed the integration for you:
 
@@ -572,7 +572,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development notes, [SECURITY.md](SECU
 
 [hacs-badge]: https://img.shields.io/badge/HACS-41BDF5.svg?style=flat-square
 [hacs-url]: #installation
-[release-badge]: https://img.shields.io/github/v/release/moryoav/ha-addons?style=flat-square
-[release-url]: https://github.com/moryoav/ha-addons/releases/latest
 [license-badge]: https://img.shields.io/github/license/moryoav/ha-addons?style=flat-square
 [license-url]: https://github.com/moryoav/ha-addons/blob/main/LICENSE

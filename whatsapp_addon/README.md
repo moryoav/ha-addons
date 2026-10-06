@@ -3,21 +3,29 @@
 Write WhatsApp messages from Home Assistant and receive events for sent and
 received messages, incoming calls, and presence updates.
 
-## New in 2.0: decrypted incoming media
+## App and account status sensors
+
+The integration creates one shared WhatsApp app device and a separate device
+for every configured account. The app device has an **App connection**
+binary sensor; each account has a **WhatsApp connection** binary sensor and a
+**Session state** sensor. The integration reads existing local connection state
+every 30 seconds without extra WhatsApp requests. See
+[Devices and sensors](https://moryoav.github.io/ha-addons/reference/entities/).
+
+## Decrypted incoming media
 
 Automatically download and decrypt incoming images, voice notes, audio, videos,
 documents, and stickers. Each attachment gets a unique temporary file and an
 authenticated link in `new_whatsapp_message`, ready for OCR, transcription, or
 other processing in Home Assistant.
 
-Update both the add-on and integration to 2.0.0, restart Home Assistant, then
-enable **Download incoming media**. Downloads are off by default. Files are
-kept for 24 hours by default, with configurable retention and storage limits.
+Enable **Download incoming media** in the add-on configuration. Downloads are
+off by default. Files are kept for 24 hours by default, with configurable
+retention and storage limits.
 See the [incoming media guide](https://moryoav.github.io/ha-addons/examples/incoming-media/).
 
-Starting with add-on 1.4.39, `whatsapp_message_sent` reports outgoing messages,
-including messages sent from the linked phone. The add-on sends this event
-directly to Home Assistant; no integration update is required. See the
+`whatsapp_message_sent` reports outgoing messages, including messages sent from
+the linked phone. The add-on sends this event directly to Home Assistant. See the
 [event details and logging example](https://github.com/moryoav/ha-addons#events).
 
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
@@ -28,9 +36,7 @@ directly to Home Assistant; no integration update is required. See the
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
 
-Supported architectures are `aarch64` and `amd64`. Release 1.4.31 removes
-`armhf`, `armv7`, and `i386`, which Home Assistant has not supported since
-2025.12.
+Supported architectures are `aarch64` and `amd64`.
 
 This add-on runs the local WhatsApp Web bridge used by the `whatsapp` Home Assistant integration in this repository.
 
@@ -130,10 +136,6 @@ to:
 
 Then restart Home Assistant.
 
-Add-on releases before 1.4.31 could install a bundled legacy component. The
-current add-on leaves that existing directory untouched. Install the current
-integration through HACS so it is updated independently from the add-on.
-
 ### 4. Add the integration
 
 [![Add the WhatsApp integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=whatsapp)
@@ -208,15 +210,12 @@ the new code.
 
 ## Integration compatibility
 
-The add-on and integration are separate installations. Version 1.4.31 retired
-the bundled component installer and all read-write `/config` access. Updating or
+The add-on and integration are separate installations. Updating or
 uninstalling the add-on does not change an existing
 `/config/custom_components/whatsapp` directory.
 
-Install or update the WhatsApp integration from the default HACS catalog, then
-restart Home Assistant. Keep both parts at version 1.4.31 or newer to use the
-number-registration check and optional API authentication. A mismatched older
-add-on can produce an endpoint/version error for `whatsapp.check_number`.
+Install the WhatsApp integration from the default HACS catalog, then restart
+Home Assistant.
 
 The add-on registers a Supervisor discovery message on startup so Home
 Assistant can create or update the integration connection. When `api_token` is

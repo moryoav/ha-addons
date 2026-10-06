@@ -224,6 +224,15 @@ class WhatsappError extends WhatsappUpstreamError {
   }
 }
 
+// Keep protocol context out of Home Assistant, including inside message wrappers
+// and quoted messages. Retry and poll stores take their copies before this runs.
+const stripMessageContext = (content, seen = new WeakSet()) => {
+  if (!content || typeof content !== "object" || content instanceof Uint8Array || seen.has(content)) return;
+  seen.add(content);
+  delete content.messageContextInfo;
+  for (const value of Object.values(content)) stripMessageContext(value, seen);
+};
+
 class WhatsappClient extends EventEmitter {
   #conn;
   #path;
@@ -789,7 +798,7 @@ class WhatsappClient extends EventEmitter {
           continue;
         }
 
-        delete message.message.messageContextInfo;
+        stripMessageContext(message.message);
         const messageType = this.#getMessageType(message);
         if (!messageType) {
           this.emit("msg_ignored", {
@@ -811,7 +820,7 @@ class WhatsappClient extends EventEmitter {
 
         const pollVote = this.#decodePollVote(message, me());
         this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
-          type: messageType,
+          type: pollVote ? "pollUpdateMessage" : messageType,
           ...message,
           chat_archived: this.#archiveStore.get(message.key?.remoteJid),
           ...(pollVote ? { poll_vote: pollVote } : {}),
@@ -1059,6 +1068,7 @@ class WhatsappClient extends EventEmitter {
         this.#cacheRetryMessage(result);
         this.#rememberPoll(result);
       }
+      stripMessageContext(result?.message);
       return result;
     });
   };
