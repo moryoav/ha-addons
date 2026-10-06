@@ -2,8 +2,8 @@ rules:
   # Bronze
   action-setup: done
   appropriate-polling:
-    status: exempt
-    comment: The integration does not poll; the add-on pushes inbound message, call, and presence events to Home Assistant.
+    status: done
+    comment: One coordinator polls the local app every 30 seconds for all status entities; message, call, and presence events remain pushed.
   brands: done
   common-modules: done
   config-flow-test-coverage: done
@@ -15,15 +15,9 @@ rules:
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions: done
-  entity-event-setup:
-    status: exempt
-    comment: The integration does not create entities or subscribe entity lifecycle events.
-  entity-unique-id:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entities.
-  has-entity-name:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entities.
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
   runtime-data: done
   test-before-configure: done
   test-before-setup: done
@@ -35,24 +29,20 @@ rules:
   docs-configuration-parameters: done
   docs-installation-parameters: done
   entity-unavailable:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entities to mark unavailable.
+    status: done
+    comment: Account entities become unavailable when status cannot be read; the app connectivity sensor reports disconnection explicitly.
   integration-owner: done
-  log-when-unavailable:
-    status: exempt
-    comment: Service action failures are returned to the caller; there is no background polling loop that would log availability changes.
+  log-when-unavailable: done
   parallel-updates:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entity updates.
+    status: done
+    comment: Both platforms set PARALLEL_UPDATES to 0 and share one coordinator.
   reauthentication-flow:
     status: exempt
     comment: The optional local API token is configured in add-on options and delivered or refreshed through Supervisor discovery; the integration does not accept or renew credentials, and WhatsApp pairing remains in the add-on QR flow.
   test-coverage: done
 
   # Gold
-  devices:
-    status: exempt
-    comment: The integration connects to a local add-on service and does not represent physical or logical Home Assistant devices.
+  devices: done
   diagnostics: done
   discovery-update-info: done
   discovery: done
@@ -63,29 +53,21 @@ rules:
   docs-supported-functions: done
   docs-troubleshooting: done
   docs-use-cases: done
-  dynamic-devices:
-    status: exempt
-    comment: The integration exposes no devices; additional WhatsApp sessions are add-on clients used by service actions.
-  entity-category:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entities.
-  entity-device-class:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entities.
+  dynamic-devices: done
+  entity-category: done
+  entity-device-class: done
   entity-disabled-by-default:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entities.
-  entity-translations:
-    status: exempt
-    comment: The integration exposes service actions and events only, with no entities.
+    status: done
+    comment: All three status entity types are useful for connection monitoring and enabled by default.
+  entity-translations: done
   exception-translations: done
   icon-translations:
     status: exempt
-    comment: The integration exposes service actions and events only, with no entity icons.
+    comment: The status entities use default device-class icons and define no custom icons.
   reconfiguration-flow: done
   repair-issues:
     status: exempt
     comment: Connection issues are handled during setup and service calls; there are no persistent device repairs to create.
   stale-devices:
-    status: exempt
-    comment: The integration exposes no devices, so there are no stale devices to remove.
+    status: done
+    comment: Accounts absent from a successful status snapshot can be removed by the user; active accounts and the shared app device cannot be removed.

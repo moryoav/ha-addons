@@ -3,6 +3,15 @@
 Write WhatsApp messages from Home Assistant and receive events for sent and
 received messages, incoming calls, and presence updates.
 
+## App and account status sensors
+
+Update both components to 2.7.0 for one shared WhatsApp app device and a separate
+device for every configured account. The app device has an **App connection**
+binary sensor; each account has a **WhatsApp connection** binary sensor and a
+**Session state** sensor. The integration reads existing local connection state
+every 30 seconds without extra WhatsApp requests. See
+[Devices and sensors](https://moryoav.github.io/ha-addons/reference/entities/).
+
 ## New in 2.0: decrypted incoming media
 
 Automatically download and decrypt incoming images, voice notes, audio, videos,

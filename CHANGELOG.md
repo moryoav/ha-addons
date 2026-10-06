@@ -2,6 +2,24 @@
 
 All notable changes to this repository are documented here.
 
+## 2.7.0
+
+### App and account status sensors
+
+- Added one WhatsApp app device with an App connection binary sensor.
+- Added a separate device for each configured WhatsApp account, with a
+  WhatsApp connection binary sensor and a Session state sensor.
+- Added automatic account discovery, stable device identities across restarts
+  and re-pairing, and connection monitoring every 30 seconds.
+- Added account states for connecting, connected, disconnected, logged out,
+  pairing required, reconnecting, restarting, and paused for recovery.
+- Account entities become unavailable when status cannot be read. App
+  connection stays visible and shows disconnected when the app is unreachable.
+- Added a protected local status API without pairing codes or message content.
+- Updated integration setup text to use Home Assistant's app terminology.
+- Update both the WhatsApp app and the HACS integration to 2.7.0 for account
+  devices. Older apps still support App connection and existing actions.
+
 ## 2.5.0
 
 ### Receipts, profiles, and group lists

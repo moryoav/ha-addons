@@ -32,6 +32,7 @@ const API_CAPABILITIES = Object.freeze([
   "reject_call",
   "get_profile",
   "list_groups",
+  "get_status",
 ]);
 const PRESENCE_TYPES = new Set([
   "available",
@@ -399,6 +400,23 @@ const createApiApp = ({
   app.use(createApiAuth(sharedSecret));
   app.use(express.json({ limit: "1mb", strict: true }));
   app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+
+  // Expose only the configured account IDs and their local connection states.
+  // Pairing codes, account identities, and message data remain in the web UI.
+  app.get("/status", (req, res) => {
+    const ids = [...new Set([
+      ...Object.keys(clients),
+      ...Object.keys(clientStates || {}),
+    ])].sort();
+    res.json({
+      service: "ha-whatsapp-addon",
+      api_version: API_VERSION,
+      clients: ids.map((id) => ({
+        id,
+        state: clientStates?.[id]?.state || "connecting",
+      })),
+    });
+  });
 
   app.post(
     "/sendMessage",

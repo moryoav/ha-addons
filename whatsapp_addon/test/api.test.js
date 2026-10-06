@@ -143,6 +143,58 @@ test("health identifies the API without exposing client IDs or CORS", async () =
   );
 });
 
+test("status reports each configured account without session secrets", async () => {
+  const clientStates = {
+    personal: {
+      state: "connected",
+      qrDataUrl: "private-qr-code",
+      phone: FICTIONAL_NUMBER,
+      lastErrorCode: 123,
+    },
+    work: { state: "pairing" },
+    paused: { state: "recovery_paused" },
+  };
+  await withApp(
+    {
+      clients: { personal: createClient(), starting: createClient() },
+      clientStates,
+      sharedSecret: "status-token",
+    },
+    async (baseUrl) => {
+      assert.equal((await request(baseUrl, "/status")).status, 401);
+      assert.equal((await request(baseUrl, "/status", {
+        headers: { authorization: "Bearer wrong-token" },
+      })).status, 401);
+      const headers = { authorization: "Bearer status-token" };
+      const response = await request(baseUrl, "/status", { headers });
+      assert.equal(response.status, 200);
+      assert.deepEqual(response.payload, {
+        service: "ha-whatsapp-addon",
+        api_version: 1,
+        clients: [
+          { id: "paused", state: "recovery_paused" },
+          { id: "personal", state: "connected" },
+          { id: "starting", state: "connecting" },
+          { id: "work", state: "pairing" },
+        ],
+      });
+      assert.equal(response.headers.get("access-control-allow-origin"), null);
+      clientStates.work = { state: "connected" };
+      const updated = await request(baseUrl, "/status", { headers });
+      assert.equal(updated.payload.clients.find(({ id }) => id === "work").state, "connected");
+      assert.equal((await request(baseUrl, "/health")).status, 200);
+    }
+  );
+});
+
+test("status allows existing token-free local installations", async () => {
+  await withApp({ clients: {} }, async (baseUrl) => {
+    const response = await request(baseUrl, "/status");
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.payload.clients, []);
+  });
+});
+
 test("paused clients remain healthy but reject API actions", async () => {
   await withApp(
     {

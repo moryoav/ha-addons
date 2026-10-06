@@ -22,9 +22,11 @@ from .const import (
     CAPABILITY_CHECK_NUMBER,
     CAPABILITY_GET_GROUP_INFO,
     CAPABILITY_GET_PROFILE,
+    CAPABILITY_GET_STATUS,
     CAPABILITY_LIST_GROUPS,
     CAPABILITY_REJECT_CALL,
     DEFAULT_TIMEOUT,
+    SESSION_STATES,
 )
 
 _PHONE_NUMBER_PATTERN = re.compile(r"^\+?([1-9][0-9]{4,14})$")
@@ -43,6 +45,7 @@ _ISO_TIMESTAMP_PATTERN = re.compile(
 _GROUP_ADMIN_ROLES = frozenset({"admin", "superadmin"})
 _API_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~+/-]+=*$")
 _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 class WhatsappApiError(Exception):
@@ -515,6 +518,47 @@ class WhatsappClient:
                     ) from err
                 raise
         return await self._read_json(response, action, WhatsappApiError)
+
+    async def async_status(self) -> dict[str, str]:
+        """Return account states without retaining other session information."""
+        if (
+            self._capabilities is not None
+            and CAPABILITY_GET_STATUS not in self._capabilities
+        ):
+            raise WhatsappUnsupportedCapability(
+                "the app does not advertise account status support",
+                code="unsupported_capability",
+            )
+
+        response = await self._request("GET", "status")
+        await self._raise_for_error(response, "account status")
+        payload = await self._read_json(response, "account status", WhatsappApiError)
+        if (
+            not isinstance(payload, dict)
+            or payload.get("service") != ADDON_SERVICE
+            or type(payload.get("api_version")) is not int
+            or payload["api_version"] != ADDON_API_VERSION
+            or not isinstance(payload.get("clients"), list)
+        ):
+            raise WhatsappApiError(
+                "invalid account status response", code="invalid_response"
+            )
+
+        accounts: dict[str, str] = {}
+        for account in payload["clients"]:
+            if (
+                not isinstance(account, dict)
+                or not isinstance(client_id := account.get("id"), str)
+                or _CLIENT_ID_PATTERN.fullmatch(client_id) is None
+                or client_id in accounts
+                or not isinstance(state := account.get("state"), str)
+                or state not in SESSION_STATES
+            ):
+                raise WhatsappApiError(
+                    "invalid account status response", code="invalid_response"
+                )
+            accounts[client_id] = state
+        return accounts
 
     async def async_send_message(self, data: dict[str, Any]) -> dict[str, Any]:
         """Send a WhatsApp message."""

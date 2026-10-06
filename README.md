@@ -19,9 +19,27 @@ If this project is useful to you, you can support my work:
 ---
 
 Send WhatsApp messages from Home Assistant automations and receive WhatsApp
-message, receipt, call, and presence events through the companion add-on.
+message, receipt, call, and presence events through the companion app.
 
 ## What it can do
+
+**Devices and sensors** (update both components to 2.7.0):
+
+| Device | Entity | What it shows |
+| --- | --- | --- |
+| WhatsApp app | App connection | Whether Home Assistant can reach the local app. |
+| WhatsApp (account ID) | WhatsApp connection | Whether that account is connected to WhatsApp. |
+| WhatsApp (account ID) | Session state | Connected, connecting, reconnecting, pairing required, logged out, disconnected, restarting, or paused for recovery. |
+
+Each configured account gets a separate device, including accounts waiting for
+pairing. One shared update runs every 30 seconds. App connection can be connected
+while an account is disconnected. If account status cannot be read, its entities
+become unavailable. Devices and entity IDs remain stable while the configured
+account ID stays the same, including after a restart or re-pairing.
+
+These are diagnostic entities, enabled by default. See
+[Devices and sensors](https://moryoav.github.io/ha-addons/reference/entities/)
+for states, account removal, and an alert example.
 
 **Actions** (under the `whatsapp` domain):
 
@@ -84,7 +102,7 @@ The add-on supports `aarch64` and `amd64`. Release 1.4.31 removes `armhf`,
 This repository contains two pieces:
 
 - `whatsapp_addon`: the Home Assistant add-on that runs the local WhatsApp Web client bridge.
-- `custom_components/whatsapp`: the Home Assistant integration that exposes actions, diagnostics, setup flow support, and add-on connectivity.
+- `custom_components/whatsapp`: the Home Assistant integration that exposes account devices, status sensors, actions, diagnostics, and setup flow support.
 
 The integration uses the local add-on HTTP API and serves decrypted attachments
 from the shared `/media/whatsapp` directory using Home Assistant authentication.
