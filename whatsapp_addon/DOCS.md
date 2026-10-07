@@ -303,6 +303,19 @@ the destination chat, using the same cache and values.
 No HACS integration update is needed. See the
 [archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
 
+Starting with add-on 2.8.0, the event for a poll vote
+(`type: pollUpdateMessage`) includes a `poll_vote` object with `status`,
+`poll_id`, `poll_name`, and `selected_options`, the names of the options the
+voter has selected now. An empty list means the vote was withdrawn. WhatsApp
+encrypts votes with a secret carried only by the poll's own message, so the
+add-on keeps the secret, question, and option names of the newest 100 polls per
+account for 30 days alongside the session data. Remembered polls survive
+restarts and are cleared when the session is reset or logged out. A vote on a
+poll the add-on does not have still fires, with `poll_vote.status: error` and
+`poll_vote.error: unknown_poll`. No HACS integration update is needed. See the
+[poll vote fields and limits](https://moryoav.github.io/ha-addons/reference/events/#poll-votes)
+and the [automation example](https://moryoav.github.io/ha-addons/examples/messages/#react-to-a-poll-vote).
+
 `new_whatsapp_message` and `whatsapp_message_sent` event data includes the
 configured `clientId`, the detected message `type`, the Baileys `key`, and the
 `message` payload. Other fields, such as `messageTimestamp`, are passed through

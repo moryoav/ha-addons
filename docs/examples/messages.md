@@ -249,8 +249,49 @@ That helper must contain a valid JSON array of strings.
 
 In the live test, `new_whatsapp_message` carried a `message.pollUpdateMessage`
 object whose `pollCreationMessageKey.id` matched the sent poll's message ID.
-That lets a workflow associate an update with its poll. This example does not
-decode the selected options or calculate vote totals.
+
+## React to a poll vote
+
+Starting with add-on 2.8.0, the event for a vote also carries a `poll_vote`
+object with the names of the options the voter has selected. This automation
+answers when someone picks the weekly report in the poll above:
+
+```yaml
+- alias: Send the report chosen in the WhatsApp poll
+  triggers:
+    - trigger: event
+      event_type: new_whatsapp_message
+      event_data:
+        clientId: default
+        type: pollUpdateMessage
+  conditions:
+    - condition: template
+      value_template: >-
+        {% set vote = trigger.event.data.get('poll_vote', {}) %}
+        {{ vote.get('status') == 'ready'
+           and vote.poll_name == 'Which report would you like?'
+           and 'Weekly report' in vote.selected_options }}
+  actions:
+    - action: whatsapp.send_message
+      data:
+        clientId: default
+        to: "{{ trigger.event.data.key.remoteJid }}"
+        body:
+          text: Here is the weekly report.
+  mode: queued
+```
+
+`selected_options` is the voter's complete current selection, in the poll's own
+order. Every change of mind fires a new event with the full list, and an empty
+list means the vote was withdrawn. In a group, `key.participant` identifies the
+voter.
+
+To follow one specific poll instead of every poll with the same question,
+compare `poll_vote.poll_id` with the `message_id` that `whatsapp.send_message`
+returned for the poll. The add-on does not keep vote totals; count them in the
+automation if you need them. Polls are remembered for 30 days; see
+[Poll votes](../reference/events.md#poll-votes) for the fields, limits, and
+error codes.
 
 ## React to a message sent earlier
 

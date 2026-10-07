@@ -16,6 +16,7 @@ const { ChatArchiveStore } = require("./chat-archive-store");
 const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
+const { PollStore } = require("./poll-store");
 const { chatReadsFrom, messageStatusesFrom } = require("./receipts");
 const {
   RequestValidationError,
@@ -223,6 +224,15 @@ class WhatsappError extends WhatsappUpstreamError {
   }
 }
 
+// Keep protocol context out of Home Assistant, including inside message wrappers
+// and quoted messages. Retry and poll stores take their copies before this runs.
+const stripMessageContext = (content, seen = new WeakSet()) => {
+  if (!content || typeof content !== "object" || content instanceof Uint8Array || seen.has(content)) return;
+  seen.add(content);
+  delete content.messageContextInfo;
+  for (const value of Object.values(content)) stripMessageContext(value, seen);
+};
+
 class WhatsappClient extends EventEmitter {
   #conn;
   #path;
@@ -247,6 +257,7 @@ class WhatsappClient extends EventEmitter {
   #serverSync;
   #archiveStore;
   #archiveListeners;
+  #pollStore;
 
   #status = {
     attempt: 0,
@@ -297,6 +308,10 @@ class WhatsappClient extends EventEmitter {
     this.#archiveStore = new ChatArchiveStore({
       directory: path,
       onError: () => this.#socketLogger.warn?.("Chat archive cache could not be loaded or saved."),
+    });
+    this.#pollStore = new PollStore({
+      directory: path,
+      onError: () => this.#socketLogger.warn?.("Poll cache could not be loaded or saved."),
     });
 
     if (autoConnect) {
@@ -357,6 +372,7 @@ class WhatsappClient extends EventEmitter {
       codec: proto?.Message,
     }));
     await this.#archiveStore.load(authResult.state.creds?.me?.id);
+    await this.#pollStore.load(authResult.state.creds?.me?.id);
     const socket = (this.#conn = makeWASocket({
       version: versionResult.version,
       auth: authResult.state,
@@ -431,8 +447,11 @@ class WhatsappClient extends EventEmitter {
     }
     // Register before the connection opens and before HA consumers strip context.
     socket.ev.on("messages.upsert", ({ messages }) => {
-      if (this.#conn !== socket || this.#retryCache !== retryCache) return;
-      for (const message of messages || []) this.#cacheRetryMessage(message);
+      if (this.#conn !== socket) return;
+      for (const message of messages || []) {
+        if (!this.#status.disconnected) this.#rememberPoll(message);
+        if (this.#retryCache === retryCache) this.#cacheRetryMessage(message);
+      }
     });
     if (
       this.#decryptionDiagnostics &&
@@ -450,7 +469,10 @@ class WhatsappClient extends EventEmitter {
 
     this.#conn.ev.on("creds.update", (state) => {
       if (state?.me?.id) {
-        if (this.#conn === socket) this.#archiveStore.setOwner(state.me.id);
+        if (this.#conn === socket) {
+          this.#archiveStore.setOwner(state.me.id);
+          this.#pollStore.setOwner(state.me.id);
+        }
         this.emit("pair", {
           phone: state.me.id.split(":")[0],
           name: state.me.name,
@@ -503,6 +525,7 @@ class WhatsappClient extends EventEmitter {
       await this.#conn.end();
     }
     await this.#archiveStore.flush();
+    await this.#pollStore.flush();
   };
 
   restart = async () => {
@@ -653,6 +676,24 @@ class WhatsappClient extends EventEmitter {
     }));
   };
 
+  #rememberPoll = (message) => {
+    try {
+      this.#pollStore.remember(message, this.#baileys);
+    } catch {
+      // Poll bookkeeping must never interrupt message processing.
+    }
+  };
+
+  // Returns undefined for anything but a poll vote.
+  #decodePollVote = (message, me) => {
+    try {
+      const { extractMessageContent, decryptPollVote } = this.#baileys;
+      return this.#pollStore.decode(message, { extractMessageContent, decryptPollVote, me });
+    } catch {
+      return undefined;
+    }
+  };
+
   #closeLidSenderReceipts = () => {
     this.#lidSenderReceipts?.close();
     this.#lidSenderReceipts = undefined;
@@ -730,6 +771,7 @@ class WhatsappClient extends EventEmitter {
       });
     }
 
+    const me = () => this.#conn?.authState?.creds?.me || this.#conn?.user;
     this.#conn.ev.on("messages.upsert", async ({ messages, type, requestId }) => {
       if (this.#decryptionDiagnostics) {
         for (const message of messages || []) {
@@ -756,7 +798,7 @@ class WhatsappClient extends EventEmitter {
           continue;
         }
 
-        delete message.message.messageContextInfo;
+        stripMessageContext(message.message);
         const messageType = this.#getMessageType(message);
         if (!messageType) {
           this.emit("msg_ignored", {
@@ -776,10 +818,12 @@ class WhatsappClient extends EventEmitter {
           this.emit("msg_dedupe_collision", dedupeResult);
         }
 
+        const pollVote = this.#decodePollVote(message, me());
         this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
-          type: messageType,
+          type: pollVote ? "pollUpdateMessage" : messageType,
           ...message,
           chat_archived: this.#archiveStore.get(message.key?.remoteJid),
+          ...(pollVote ? { poll_vote: pollVote } : {}),
         });
       }
     });
@@ -788,7 +832,6 @@ class WhatsappClient extends EventEmitter {
       this.emit("presence_update", presence);
     });
 
-    const me = () => this.#conn?.authState?.creds?.me || this.#conn?.user;
     for (const event of ["messages.update", "message-receipt.update"]) {
       this.#conn.ev.on(event, (updates) => {
         try {
@@ -833,6 +876,7 @@ class WhatsappClient extends EventEmitter {
     const statusCode = Number.isInteger(upstreamCode) ? upstreamCode : null;
     if (statusCode === this.#baileys.DisconnectReason?.loggedOut) {
       this.#archiveStore.clear();
+      this.#pollStore.clear();
       this.#clearRetryCache();
       this.#lidDelivered = undefined;
       this.#status.reconnecting = false;
@@ -1022,7 +1066,9 @@ class WhatsappClient extends EventEmitter {
       // Also handle sends without an upsert echo. Never repopulate a stopped client.
       if (this.#conn === socket && this.#retryCache === retryCache) {
         this.#cacheRetryMessage(result);
+        this.#rememberPoll(result);
       }
+      stripMessageContext(result?.message);
       return result;
     });
   };

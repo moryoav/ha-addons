@@ -16,6 +16,7 @@
 !message-dedupe.js
 !message-retry-cache.js
 !offline-sync.js
+!poll-store.js
 !receipts.js
 !package.json
 !package-lock.json

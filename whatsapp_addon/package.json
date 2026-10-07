@@ -1,6 +1,6 @@
 {
   "name": "whatsapp_hass_addon",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "WhatsApp bridge for Home Assistant",
   "main": "index.js",
   "scripts": {

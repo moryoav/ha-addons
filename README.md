@@ -58,7 +58,7 @@ for states, account removal, and an alert example.
 
 | Event | Fires when |
 | --- | --- |
-| `new_whatsapp_message` | A message is received, optionally with its [decrypted media](https://moryoav.github.io/ha-addons/examples/incoming-media/) and the chat's archive state. |
+| `new_whatsapp_message` | A message is received, optionally with its [decrypted media](https://moryoav.github.io/ha-addons/examples/incoming-media/), the chat's archive state, and the choice in a [poll vote](https://moryoav.github.io/ha-addons/reference/events/#poll-votes). |
 | `whatsapp_message_sent` | This account sends a message, from Home Assistant, the phone, or another device. |
 | `whatsapp_message_status` | A sent message is delivered, read, or played. |
 | `whatsapp_chat_read` | You read or play received messages on another device, such as the phone. |
@@ -302,6 +302,17 @@ For `whatsapp_message_sent`, the field describes the destination chat.
 See the
 [archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
 
+The event for a poll vote
+(`type: pollUpdateMessage`) includes a `poll_vote` object with `status`,
+`poll_id`, `poll_name`, and `selected_options`, the names of the options the
+voter has selected now. An empty list means the vote was withdrawn. WhatsApp
+encrypts votes with a secret carried only by the poll's own message, so the
+add-on keeps the newest 100 polls per account for 30 days, across restarts, to
+decode later votes. A vote on a poll it does not have still fires, with
+`poll_vote.status: error`. No HACS integration update is needed. See the
+[poll vote fields and limits](https://moryoav.github.io/ha-addons/reference/events/#poll-votes)
+and the [automation example](https://moryoav.github.io/ha-addons/examples/messages/#react-to-a-poll-vote).
+
 `whatsapp_message_sent` fires for messages with
 `key.fromMe: true`, including messages sent from the phone, other linked
 devices, and the add-on itself when reported by WhatsApp. For this event,
@@ -508,6 +519,9 @@ updates the existing alert instead of accumulating duplicates.
   than during setup.
 - If an action is unsupported or its endpoint is missing, update both the
   add-on and HACS integration, then restart Home Assistant.
+- A vote with `poll_vote.error: unknown_poll` belongs to a poll the add-on does
+  not have: one sent before the update, more than 30 days ago, or pushed out by
+  100 newer polls.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If the add-on reports that its clients are paused, open its Web UI. Try Retry
   connection first. If the same failure returns, use Reset and re-pair for the
