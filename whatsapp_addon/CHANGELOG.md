@@ -1,3 +1,13 @@
+## 2.9.0
+
+- Added `whatsapp_contacts_sync` with the account ID, original Baileys event
+  source, and available contact records from history and contact updates.
+- Preserved partial updates and contact fields, including saved names,
+  profile names, LIDs, and phone identifiers, without extra lookups or a cache.
+- Bounded contact-event HTTP requests to 10 seconds without delaying messages.
+- Kept contact values out of app delivery logs and retained compatibility
+  with the existing HACS integration.
+
 ## 2.8.0
 
 - Added the voter's decoded choices to a WhatsApp poll vote. The vote's

@@ -322,6 +322,7 @@ const removeSessionDirectory = async ({
   await fsPromises.rm(sessionPath, { recursive: true, force: true });
 };
 
+/** Connect configured accounts to Home Assistant events and the local app API. */
 const createAddonRuntime = ({
   clientIds,
   apiToken,
@@ -404,8 +405,9 @@ const createAddonRuntime = ({
     }
   };
 
-  const postSupervisor = async (path, payload, operation) => {
-    const result = await requestSupervisor(path, payload);
+  /** Post an event or service request with an optional HTTP timeout and private failure logs. */
+  const postSupervisor = async (path, payload, operation, timeout) => {
+    const result = await requestSupervisor(path, payload, timeout);
     if (!result.delivered) {
       logger.warn?.(`Supervisor ${operation} failed.`, {
         runId,
@@ -991,6 +993,15 @@ const createAddonRuntime = ({
     client.on("msg_sent", (message) =>
       onMsg(message, clientId, "whatsapp_message_sent")
     );
+    /** Deliver decoded contact batches through the existing Home Assistant event path. */
+    client.on("contacts_sync", ({ source, contacts }) => {
+      void postSupervisor(
+        "/core/api/events/whatsapp_contacts_sync",
+        { clientId, source, contacts },
+        "contact event delivery",
+        CALL_EVENT_REQUEST_TIMEOUT_MS
+      );
+    });
     client.on("msg_upsert", (upsert) => onMsgUpsert(upsert, clientId));
     client.on("msg_ignored", (ignored) => onIgnoredMsg(ignored, clientId));
     client.on("msg_duplicate", (duplicate) =>

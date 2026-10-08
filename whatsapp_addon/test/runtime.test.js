@@ -23,6 +23,76 @@ class FakeClient extends EventEmitter {
   async disconnect() {}
 }
 
+test("contact delivery preserves account identity and keeps contact values out of logs", async () => {
+  for (const delivered of [true, false]) {
+    const clients = new Map();
+    const requests = [];
+    const logs = [];
+    createAddonRuntime({
+      clientIds: ["default", "backup_1"],
+      supervisorToken: "fictional-supervisor-token", logLevel: "debug",
+      clientFactory: ({ path: sessionPath }) => {
+        const client = new FakeClient();
+        clients.set(path.basename(sessionPath), client);
+        return client;
+      },
+      httpClient: { post: async (...args) => {
+        requests.push(args);
+        if (!delivered) {
+          const error = new Error("Fictional private contact response");
+          error.response = { status: 502, data: "Fictional private contact response" };
+          throw error;
+        }
+      } },
+      logger: { debug: (...args) => logs.push(args), warn: (...args) => logs.push(args) },
+    });
+    const contacts = [{ id: FICTIONAL_LID, lid: FICTIONAL_LID, jid: FICTIONAL_JID,
+      name: "Example private saved name", notify: "Example private profile name" }];
+    for (const client of clients.values()) {
+      client.emit("contacts_sync", { clientId: "spoofed-account", source: "contacts.upsert", contacts });
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(requests.map(([, body]) => body.clientId), ["default", "backup_1"]);
+    for (const [url, body, options] of requests) {
+      assert.equal(url, "http://supervisor/core/api/events/whatsapp_contacts_sync");
+      assert.deepEqual(body.contacts, contacts);
+      assert.equal(body.source, "contacts.upsert");
+      assert.equal(options.headers.Authorization, "Bearer fictional-supervisor-token");
+      assert.equal(options.timeout, 10_000);
+    }
+    assert.equal(logs.length, delivered ? 0 : 2);
+    if (!delivered) assert.ok(logs.every(([, details]) => details.status === 502));
+    const serializedLogs = JSON.stringify(logs);
+    for (const value of [FICTIONAL_JID, FICTIONAL_LID, "Example private", "backup_1",
+      "fictional-supervisor-token", "Fictional private"]) {
+      assert.ok(!serializedLogs.includes(value));
+    }
+  }
+});
+
+test("a pending contact event request does not delay message event delivery", async () => {
+  const client = new FakeClient();
+  const requests = [];
+  let finishContacts;
+  createAddonRuntime({ clientIds: ["default"], clientFactory: () => client, logger: {},
+    httpClient: { post: (url, body) => {
+      requests.push({ url, body });
+      if (url.endsWith("/whatsapp_contacts_sync")) {
+        return new Promise((resolve) => { finishContacts = resolve; });
+      }
+      return Promise.resolve();
+    } } });
+  client.emit("contacts_sync", { source: "contacts.update", contacts: [{ id: FICTIONAL_LID }] });
+  client.emit("msg", { type: "conversation", key: { id: "fictional-incoming-id", fromMe: false },
+    message: { conversation: "Example message" } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(requests.map(({ url }) => url), [
+    "http://supervisor/core/api/events/whatsapp_contacts_sync",
+    "http://supervisor/core/api/events/new_whatsapp_message",
+  ]);
+  finishContacts();
+});
+
 test("options parsing validates client IDs and optional bearer tokens", () => {
   assert.deepEqual(
     parseOptions(
