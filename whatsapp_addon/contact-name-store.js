@@ -128,6 +128,13 @@ class ContactNameStore {
     this.#changed();
   }
 
+  /** Capture an account boundary for asynchronous event enrichment. */
+  captureAccountScope() {
+    const owner = this.#owner;
+    const generation = this.#generation;
+    return () => owner === this.#owner && generation === this.#generation;
+  }
+
   /** Return a saved name or profile-name fallback and explicitly linked identifiers. */
   get(id) {
     const entry = this.#entries.get(normalizeId(id));
@@ -174,21 +181,22 @@ class ContactNameStore {
 
   /** Resolve missing names with one shared, throttled read of current metadata. */
   async resolve(id, { socket, baileys, keys, isCurrent = () => true }) {
-    if (this.get(id)?.name || !normalizeId(id) || !this.#owner) return this.get(id);
+    const owner = this.#owner;
+    const generation = this.#generation;
+    const previous = this.get(id);
+    if (previous?.name || !normalizeId(id) || !this.#owner) return this.get(id);
     const supported = typeof socket?.query === "function" && typeof keys?.get === "function"
       && ["newLTHashState", "extractSyncdPatches", "decodeSyncdSnapshot", "decodePatches"]
         .every((key) => typeof baileys?.[key] === "function");
     if (!supported) return this.get(id);
     if (!this.#refresh && Date.now() - this.#lastRefresh >= REFRESH_INTERVAL_MS) {
       this.#lastRefresh = Date.now();
-      const owner = this.#owner;
-      const generation = this.#generation;
       this.#refresh = fetchContactNames(socket, baileys, keys).then((contacts) => {
         if (isCurrent() && owner === this.#owner && generation === this.#generation) this.update(contacts);
       }).catch(() => this.#warn()).finally(() => { this.#refresh = undefined; });
     }
     if (this.#refresh) await this.#refresh;
-    return this.get(id);
+    return owner === this.#owner && generation === this.#generation ? this.get(id) : previous;
   }
 
   /** Clear names immediately and invalidate any lookup already in progress. */

@@ -846,6 +846,7 @@ class WhatsappClient extends EventEmitter {
         }
 
         const outgoing = message.key?.fromMe === true;
+        const sameAccount = this.#contactStore.captureAccountScope();
         const current = this.#conn === socket && !this.#status.disconnected;
         if (outgoing && !current) continue;
         const chatArchived = this.#archiveStore.get(message.key?.remoteJid);
@@ -856,9 +857,9 @@ class WhatsappClient extends EventEmitter {
           try {
             const resolved = await withTimeout(this.#contactStore.resolve(message.key?.remoteJid, {
               socket, baileys: this.#baileys, keys: this.#contactKeys,
-              isCurrent: () => this.#conn === socket && !this.#status.disconnected,
+              isCurrent: () => this.#conn === socket && !this.#status.disconnected && sameAccount(),
             }), "recipient contact lookup");
-            if (this.#conn === socket && !this.#status.disconnected) contact = resolved;
+            if (this.#conn === socket && !this.#status.disconnected && sameAccount()) contact = resolved;
           } catch {
             this.#socketLogger.warn?.("Recipient contact name is unavailable.");
           }
@@ -866,7 +867,8 @@ class WhatsappClient extends EventEmitter {
         this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
           type: pollVote ? "pollUpdateMessage" : messageType,
           ...message,
-          chat_archived: chatArchived,
+          chat_archived: this.#conn === socket && !this.#status.disconnected && sameAccount()
+            ? this.#archiveStore.get(message.key?.remoteJid) : chatArchived,
           ...(outgoing ? { recipient_name: contact?.name || null,
             recipient_identifiers: contact?.identifiers || [] } : {}),
           ...(pollVote ? { poll_vote: pollVote } : {}),

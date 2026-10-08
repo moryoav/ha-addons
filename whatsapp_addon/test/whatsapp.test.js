@@ -1795,3 +1795,45 @@ test("disconnect during recipient lookup keeps the observed sent event and its a
   assert.equal(message.recipient_name, null);
   assert.equal(message.chat_archived, true);
 });
+
+
+test("archive updates received during a name lookup are reflected in the sent event", async (t) => {
+  const baileys = await import("@whiskeysockets/baileys");
+  let release;
+  const { client, ev } = await createHarness({ account: "12025550125@s.whatsapp.net",
+    authKeys: { get: async () => ({}) }, baileysOverrides: {
+      newLTHashState: baileys.newLTHashState, decodeSyncdSnapshot: baileys.decodeSyncdSnapshot,
+      decodePatches: baileys.decodePatches, extractSyncdPatches: async () => ({}) },
+    configureSocket: (socket) => { socket.query = () => new Promise((resolve) => { release = resolve; }); } });
+  t.after(() => client.disconnect());
+  ev.emit("chats.update", [{ id: FICTIONAL_LID, archived: false }]);
+  const delivered = once(client, "msg_sent");
+  emitContactMessage(ev);
+  ev.emit("chats.update", [{ id: FICTIONAL_LID, archived: true }]);
+  release({});
+  const [message] = await delivered;
+  assert.equal(message.chat_archived, true);
+});
+
+
+test("an observed sent event keeps its own account when credentials change during lookup", async (t) => {
+  const baileys = await import("@whiskeysockets/baileys");
+  let release;
+  const { client, ev } = await createHarness({ account: "12025550125@s.whatsapp.net",
+    authKeys: { get: async () => ({}) }, baileysOverrides: {
+      newLTHashState: baileys.newLTHashState, decodeSyncdSnapshot: baileys.decodeSyncdSnapshot,
+      decodePatches: baileys.decodePatches, extractSyncdPatches: async () => ({}) },
+    configureSocket: (socket) => { socket.query = () => new Promise((resolve) => { release = resolve; }); } });
+  t.after(() => client.disconnect());
+  ev.emit("chats.update", [{ id: FICTIONAL_LID, archived: true }]);
+  const delivered = once(client, "msg_sent");
+  emitContactMessage(ev);
+  ev.emit("creds.update", { me: { id: "12025550126@s.whatsapp.net" } });
+  await new Promise((resolve) => setImmediate(resolve));
+  ev.emit("chats.update", [{ id: FICTIONAL_LID, archived: false }]);
+  ev.emit("contacts.upsert", [{ id: FICTIONAL_LID, name: "Replacement account contact" }]);
+  release({});
+  const [message] = await delivered;
+  assert.equal(message.recipient_name, null);
+  assert.equal(message.chat_archived, true);
+});

@@ -20,6 +20,8 @@ All notable changes to this repository are documented here.
   profile name as a fallback. Kept unknown names `null` and never used the
   account owner's outgoing `pushName` as the recipient name.
 - Kept recipients separate when a phone number becomes linked to a different LID.
+- Kept pending events with their original account and reflected archive updates
+  received during recipient lookup.
 - Matched known phone-number and LID identifiers and retained contact metadata
   alongside each account's session, across restarts. Cleared it on logout or
   account replacement.

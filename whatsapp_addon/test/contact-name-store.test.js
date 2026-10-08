@@ -259,3 +259,17 @@ for (const savedName of [undefined, "New saved name"]) {
     assert.deepEqual(store.get(nextLid), store.get(PN));
   });
 }
+
+
+test("a pending lookup never returns names learned by a replacement account", async (t) => {
+  const { store } = await fixture(t);
+  const f = await encryptedFixture();
+  let release;
+  const source = metadataSource(f, () => new Promise((resolve) => { release = resolve; }));
+  const lookup = store.resolve(PN, source);
+  store.setOwner("12025550126@s.whatsapp.net");
+  store.update([{ id: PN, name: "Replacement account contact" }]);
+  release({});
+  assert.equal(await lookup, null);
+  assert.equal(store.get(PN).name, "Replacement account contact");
+});
