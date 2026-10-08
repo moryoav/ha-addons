@@ -4,6 +4,7 @@
   source, and available contact records from history and contact updates.
 - Preserved partial updates and contact fields, including saved names,
   profile names, LIDs, and phone identifiers, without extra lookups or a cache.
+- Bounded contact-event HTTP requests to 10 seconds without delaying messages.
 - Kept contact values out of app delivery logs and retained compatibility
   with the existing HACS integration.
 

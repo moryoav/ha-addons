@@ -405,8 +405,9 @@ const createAddonRuntime = ({
     }
   };
 
-  const postSupervisor = async (path, payload, operation) => {
-    const result = await requestSupervisor(path, payload);
+  /** Post an event or service request with an optional HTTP timeout and private failure logs. */
+  const postSupervisor = async (path, payload, operation, timeout) => {
+    const result = await requestSupervisor(path, payload, timeout);
     if (!result.delivered) {
       logger.warn?.(`Supervisor ${operation} failed.`, {
         runId,
@@ -997,7 +998,8 @@ const createAddonRuntime = ({
       void postSupervisor(
         "/core/api/events/whatsapp_contacts_sync",
         { clientId, source, contacts },
-        "contact event delivery"
+        "contact event delivery",
+        CALL_EVENT_REQUEST_TIMEOUT_MS
       );
     });
     client.on("msg_upsert", (upsert) => onMsgUpsert(upsert, clientId));

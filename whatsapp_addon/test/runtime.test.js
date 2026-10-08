@@ -58,6 +58,7 @@ test("contact delivery preserves account identity and keeps contact values out o
       assert.deepEqual(body.contacts, contacts);
       assert.equal(body.source, "contacts.upsert");
       assert.equal(options.headers.Authorization, "Bearer fictional-supervisor-token");
+      assert.equal(options.timeout, 10_000);
     }
     assert.equal(logs.length, delivered ? 0 : 2);
     if (!delivered) assert.ok(logs.every(([, details]) => details.status === 502));

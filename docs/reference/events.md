@@ -91,8 +91,8 @@ This is a stream of available batches, not a complete address-book snapshot.
 Startup synchronization and later contact updates can supply different records.
 The app does not resolve missing identifiers, cache contacts, replay prior
 batches, or wait for contact metadata before delivering messages. Delivery uses
-the existing Home Assistant event path; a failed delivery is logged without
-contact values and is not retried. Historical messages, authentication data,
+the existing Home Assistant event path with a 10-second HTTP timeout. A failed
+delivery is logged without contact values and is not retried. Historical messages, authentication data,
 and unrelated synchronization fields are not included.
 
 Listen for `whatsapp_contacts_sync` in Home Assistant Developer Tools > Events

@@ -16,7 +16,8 @@ All notable changes to this repository are documented here.
 - Added `whatsapp_contacts_sync` with available contact names, LIDs, and phone
   identifiers from WhatsApp history and contact updates, scoped by account.
 - Forwarded contact batches and partial updates without extra lookups or a
-  contact cache. The event requires only the app update.
+  contact cache. Each request has a bounded HTTP timeout, and the event requires
+  only the app update.
 
 ## 2.8.0
 
