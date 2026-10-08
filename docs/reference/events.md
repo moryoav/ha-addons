@@ -14,6 +14,7 @@ filters, text extraction, media types, and conversation replies.
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
 | `whatsapp_call_log` | One record per finished call, incoming or outgoing. |
 | `whatsapp_presence_update` | A contact presence update. |
+| `whatsapp_contacts_sync` | Available contact records from WhatsApp synchronization or contact updates. |
 | `whatsapp_send_message_result` | Result event after a successful send action. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
@@ -54,6 +55,48 @@ each direction separately. Media dedupe ignores wrapper-only fields such as
 thumbnails, CDN paths, scan sidecars, and media key timestamp representation
 because WhatsApp can vary those between phone-number and LID deliveries of the
 same message.
+
+## Contact metadata
+
+Starting with app 2.9.0, `whatsapp_contacts_sync` forwards each non-empty contact
+batch supplied by Baileys. The app sends it directly to Home Assistant, so no
+HACS integration update is needed.
+
+| Field | Meaning |
+| --- | --- |
+| `clientId` | The configured WhatsApp account ID. |
+| `source` | `messaging-history.set`, `contacts.upsert`, or `contacts.update`. |
+| `contacts` | The decoded contact records from that Baileys event. |
+
+For `messaging-history.set`, only its `contacts` array is forwarded. For the
+other sources, the complete contact array is forwarded. Contact fields are
+preserved as supplied, including:
+
+| Contact field | Meaning |
+| --- | --- |
+| `id` | The record's identifier, which can be a phone JID, LID, or group JID. |
+| `jid` | The phone JID, when available. |
+| `lid` | The LID, when available. |
+| `name` | The saved contact name; history contacts use the chat's name. |
+| `notify` | The person's own WhatsApp profile name. |
+| `verifiedName`, `imgUrl`, `status` | Additional name, picture, or status fields when supplied. |
+
+`contacts.update` records can contain only an ID and the changed fields. Merge
+updates by identifier and preserve existing values when a field is absent. A
+single record may not contain both a name and a LID. Group records in the
+history contact array can include the group ID and name; the event does not
+fetch group participants or query the address book.
+
+This is a stream of available batches, not a complete address-book snapshot.
+Startup synchronization and later contact updates can supply different records.
+The app does not resolve missing identifiers, cache contacts, replay prior
+batches, or wait for contact metadata before delivering messages. Delivery uses
+the existing Home Assistant event path; a failed delivery is logged without
+contact values and is not retried. Historical messages, authentication data,
+and unrelated synchronization fields are not included.
+
+Listen for `whatsapp_contacts_sync` in Home Assistant Developer Tools > Events
+to inspect the batches supplied by your account.
 
 ## Chat archive state
 

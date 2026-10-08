@@ -65,6 +65,7 @@ for states, account removal, and an alert example.
 | `whatsapp_call_update` | An incoming call rings, is answered, declined, or stops ringing. |
 | `whatsapp_call_log` | A call ends, incoming or made from the phone. |
 | `whatsapp_presence_update` | A followed contact's presence changes. |
+| `whatsapp_contacts_sync` | WhatsApp supplies contact names and identifiers through synchronization or contact updates. |
 | `whatsapp_send_message_result` | `send_message` finishes. |
 | `whatsapp_addon_health_failure` | The add-on restarts after its health checks failed. |
 
@@ -285,6 +286,7 @@ The add-on fires these Home Assistant events:
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
 | `whatsapp_call_log` | One record per finished call, incoming or outgoing. |
 | `whatsapp_presence_update` | A contact presence update. |
+| `whatsapp_contacts_sync` | Available contact records from WhatsApp synchronization or contact updates. |
 | `whatsapp_send_message_result` | Compatibility result event after sending a message. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
@@ -324,6 +326,14 @@ The add-on sends this event directly to Home Assistant. Logging automations can
 listen to both events, as in the [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages).
 Reply and mark-as-read automations should listen only to `new_whatsapp_message`
 to avoid acting on own sends.
+
+`whatsapp_contacts_sync` includes `clientId`, `source`, and a `contacts` array
+containing the contact records supplied by Baileys. It forwards history contacts,
+saved-contact records, and partial updates with their available names, LIDs, and
+phone identifiers. Fields can be missing, and a batch is not a complete address
+book. The app sends these events directly to Home Assistant without a contact
+cache or extra lookups. No HACS integration update is needed. See the
+[contact event fields and limits](https://moryoav.github.io/ha-addons/reference/events/#contact-metadata).
 
 `whatsapp_message_status` fires when a message this account sent, from Home
 Assistant or the phone, is delivered, read, or played. Its data contains

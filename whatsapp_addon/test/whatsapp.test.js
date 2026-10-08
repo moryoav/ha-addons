@@ -99,6 +99,94 @@ const createHarness = async ({
   return { baileys, calls, client, ev, socket, ws };
 };
 
+test("Baileys contact batches reach Home Assistant with names, identifiers and partial fields", async (t) => {
+  const { makeEventBuffer, processHistoryMessage, processSyncAction, proto } =
+    await import("@whiskeysockets/baileys");
+  const logger = { trace() {}, debug() {}, info() {}, warn() {}, error() {} };
+  const { client, ev, calls } = await createHarness({ eventEmitter: makeEventBuffer(logger) });
+  t.after(() => client.disconnect());
+  const requests = [];
+  createAddonRuntime({ clientIds: ["default"], clientFactory: () => client,
+    logger: {}, httpClient: { post: async (...args) => requests.push(args) } });
+  const before = JSON.stringify(calls);
+  const history = processHistoryMessage({
+    syncType: proto.HistorySync.HistorySyncType.RECENT, progress: 100,
+    conversations: [
+      { id: FICTIONAL_JID, name: "Example saved contact", lidJid: FICTIONAL_LID },
+      { id: FICTIONAL_GROUP_JID, name: "Example group" },
+    ],
+  });
+  ev.buffer();
+  ev.emit("messaging-history.set", history);
+  ev.flush();
+  processSyncAction({ index: ["contact", FICTIONAL_JID], syncAction: { value: {
+    contactAction: { fullName: "Updated saved contact", lidJid: FICTIONAL_LID },
+  } } }, ev, undefined, undefined, logger);
+  const update = { id: FICTIONAL_LID, notify: "Example profile name", imgUrl: "changed",
+    status: "Example about text", verifiedName: "Example business name" };
+  ev.emit("contacts.update", [update]);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(requests.map(([url]) => url), Array(3).fill(
+    "http://supervisor/core/api/events/whatsapp_contacts_sync"));
+  assert.deepEqual(requests.map(([, body]) => body), [
+    { clientId: "default", source: "messaging-history.set", contacts: history.contacts },
+    { clientId: "default", source: "contacts.upsert", contacts: [{
+      id: FICTIONAL_JID, name: "Updated saved contact", lid: FICTIONAL_LID, jid: FICTIONAL_JID,
+    }] },
+    { clientId: "default", source: "contacts.update", contacts: [update] },
+  ]);
+  assert.equal(JSON.stringify(calls), before);
+  assert.equal(Object.hasOwn(requests[2][1].contacts[0], "name"), false);
+  assert.equal(Object.hasOwn(requests[2][1].contacts[0], "lid"), false);
+  assert.equal(Object.hasOwn(requests[0][1], "messages"), false);
+  assert.equal(Object.hasOwn(requests[0][1], "chats"), false);
+});
+
+test("contact batches are detached and empty payloads are ignored", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const received = [];
+  client.on("contacts_sync", (batch) => received.push(batch));
+  const contacts = [{ id: FICTIONAL_LID, name: "Example contact",
+    extraMetadata: { label: "Original value" } }];
+  ev.emit("contacts.upsert", contacts);
+  contacts[0].name = "Later value";
+  contacts[0].extraMetadata.label = "Later value";
+  contacts.push({ id: FICTIONAL_JID });
+  for (const payload of [undefined, null, {}, []]) {
+    ev.emit("contacts.upsert", payload);
+    ev.emit("contacts.update", payload);
+    ev.emit("messaging-history.set", { contacts: payload });
+  }
+  assert.deepEqual(received, [{ source: "contacts.upsert", contacts: [{
+    id: FICTIONAL_LID, name: "Example contact", extraMetadata: { label: "Original value" },
+  }] }]);
+});
+
+test("retired sockets cannot forward contacts and reconnects replace their listeners", async (t) => {
+  const { client, ev, baileys, socket } = await createHarness();
+  t.after(() => client.disconnect());
+  const received = [];
+  client.on("contacts_sync", (batch) => received.push(batch));
+  const retiredListener = ev.listeners("contacts.upsert")[0];
+  await client.disconnect();
+  for (const source of ["messaging-history.set", "contacts.upsert", "contacts.update"]) {
+    assert.equal(ev.listenerCount(source), 0);
+  }
+  retiredListener([{ id: FICTIONAL_LID, name: "Retired contact" }]);
+  const nextEv = new EventEmitter();
+  baileys.default = () => ({ ...socket, ev: nextEv, ws: new EventEmitter() });
+  await client.connect();
+  nextEv.emit("connection.update", { connection: "open" });
+  retiredListener([{ id: FICTIONAL_LID, name: "Retired contact" }]);
+  assert.equal(nextEv.listenerCount("contacts.upsert"), 1);
+  nextEv.emit("contacts.upsert", [{ id: FICTIONAL_LID, name: "Current contact" }]);
+  assert.deepEqual(received, [{ source: "contacts.upsert", contacts: [{
+    id: FICTIONAL_LID, name: "Current contact",
+  }] }]);
+});
+
 for (const fromMe of [false, true]) {
   test(`${fromMe ? "sent" : "incoming"} Home Assistant events use cached archive state with no extra socket calls`, async (t) => {
     const { client, ev, calls } = await createHarness();

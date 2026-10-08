@@ -28,6 +28,11 @@ See the [incoming media guide](https://moryoav.github.io/ha-addons/examples/inco
 the linked phone. The add-on sends this event directly to Home Assistant. See the
 [event details and logging example](https://github.com/moryoav/ha-addons#events).
 
+`whatsapp_contacts_sync` forwards the contact records WhatsApp supplies, with
+available names, LIDs, and phone identifiers. Each batch includes its account ID
+and original Baileys event source. See the
+[contact event reference](https://moryoav.github.io/ha-addons/reference/events/#contact-metadata).
+
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
 
 ![Supports aarch64 Architecture][aarch64-shield]

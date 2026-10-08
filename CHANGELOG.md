@@ -9,6 +9,15 @@ All notable changes to this repository are documented here.
 - Updated the main and add-on READMEs to describe current features and setup
   without release history or version-specific upgrade instructions.
 
+## 2.9.0
+
+### Contact metadata events
+
+- Added `whatsapp_contacts_sync` with available contact names, LIDs, and phone
+  identifiers from WhatsApp history and contact updates, scoped by account.
+- Forwarded contact batches and partial updates without extra lookups or a
+  contact cache. The event requires only the app update.
+
 ## 2.8.0
 
 ### Decoded poll votes

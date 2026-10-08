@@ -257,6 +257,7 @@ class WhatsappClient extends EventEmitter {
   #serverSync;
   #archiveStore;
   #archiveListeners;
+  #contactListeners;
   #pollStore;
 
   #status = {
@@ -332,6 +333,7 @@ class WhatsappClient extends EventEmitter {
     }
   };
 
+  /** Connect the account and attach handlers to its current Baileys socket. */
   #connect = async () => {
     const baileys = await this.#baileys;
     this.#baileys = baileys;
@@ -401,6 +403,22 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
     this.#closeSocketWatchers();
+    const contactListeners = new Map();
+    for (const source of ["messaging-history.set", "contacts.upsert", "contacts.update"]) {
+      /** Forward a detached contact batch from the active socket without lookups. */
+      const listener = (payload) => {
+        const contacts = source === "messaging-history.set" ? payload?.contacts : payload;
+        if (this.#conn !== socket || this.#status.disconnected ||
+            !Array.isArray(contacts) || contacts.length === 0) return;
+        this.emit("contacts_sync", { source, contacts: structuredClone(contacts) });
+      };
+      contactListeners.set(source, listener);
+      socket.ev.on(source, listener);
+    }
+    /** Remove contact listeners when their socket is retired. */
+    this.#contactListeners = () => {
+      for (const [source, listener] of contactListeners) socket.ev.off(source, listener);
+    };
     const updateArchives = (chats) => {
       if (this.#conn === socket && !this.#status.disconnected) this.#archiveStore.update(chats);
     };
@@ -699,7 +717,10 @@ class WhatsappClient extends EventEmitter {
     this.#lidSenderReceipts = undefined;
   };
 
+  /** Release the contact, archive, and synchronization listeners for this socket. */
   #closeSocketWatchers = () => {
+    this.#contactListeners?.();
+    this.#contactListeners = undefined;
     this.#archiveListeners?.();
     this.#archiveListeners = undefined;
     this.#eventBufferFlush?.close();
