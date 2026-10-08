@@ -1,3 +1,21 @@
+## 2.9.0
+
+### Recipient names in sent events
+
+- Added `recipient_name` and `recipient_identifiers` to outgoing
+  `whatsapp_message_sent` events for direct chats, including messages sent from
+  the phone and other linked devices.
+- Used the saved contact name when available, with the contact's synchronized
+  profile name as a fallback. Kept unknown names `null` and never used the
+  account owner's outgoing `pushName` as the recipient name.
+- Matched known phone-number and LID identifiers and retained contact metadata
+  alongside each account's session, across restarts. Cleared it on logout or
+  account replacement.
+- Added a bounded read of current WhatsApp contact metadata for missing names,
+  without scanning past messages or replaying unrelated account actions.
+- Kept incoming events and group-member information unchanged. Sent-message
+  events still fire if recipient lookup fails.
+
 ## 2.8.0
 
 - Added the voter's decoded choices to a WhatsApp poll vote. The vote's

@@ -13,6 +13,7 @@ const {
 } = require("./app-state-sync");
 const { attachEventBufferFlush } = require("./event-buffer-flush");
 const { ChatArchiveStore } = require("./chat-archive-store");
+const { ContactNameStore } = require("./contact-name-store");
 const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
@@ -256,6 +257,9 @@ class WhatsappClient extends EventEmitter {
   #offlineSync;
   #serverSync;
   #archiveStore;
+  #contactStore;
+  #contactListeners;
+  #contactKeys;
   #archiveListeners;
   #pollStore;
 
@@ -308,6 +312,10 @@ class WhatsappClient extends EventEmitter {
     this.#archiveStore = new ChatArchiveStore({
       directory: path,
       onError: () => this.#socketLogger.warn?.("Chat archive cache could not be loaded or saved."),
+    });
+    this.#contactStore = new ContactNameStore({
+      directory: path,
+      onError: () => this.#socketLogger.warn?.("Recipient contact metadata could not be loaded or saved."),
     });
     this.#pollStore = new PollStore({
       directory: path,
@@ -372,6 +380,8 @@ class WhatsappClient extends EventEmitter {
       codec: proto?.Message,
     }));
     await this.#archiveStore.load(authResult.state.creds?.me?.id);
+    await this.#contactStore.load(authResult.state.creds?.me?.id);
+    this.#contactKeys = authResult.state.keys;
     await this.#pollStore.load(authResult.state.creds?.me?.id);
     const socket = (this.#conn = makeWASocket({
       version: versionResult.version,
@@ -401,6 +411,18 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
     this.#closeSocketWatchers();
+    const updateContacts = (contacts) => {
+      if (this.#conn === socket && !this.#status.disconnected) this.#contactStore.update(contacts);
+    };
+    const contactListeners = {
+      "messaging-history.set": (history) => updateContacts(history?.contacts),
+      "contacts.upsert": updateContacts,
+      "contacts.update": updateContacts,
+    };
+    for (const [event, listener] of Object.entries(contactListeners)) socket.ev.on(event, listener);
+    this.#contactListeners = () => {
+      for (const [event, listener] of Object.entries(contactListeners)) socket.ev.off(event, listener);
+    };
     const updateArchives = (chats) => {
       if (this.#conn === socket && !this.#status.disconnected) this.#archiveStore.update(chats);
     };
@@ -471,6 +493,7 @@ class WhatsappClient extends EventEmitter {
       if (state?.me?.id) {
         if (this.#conn === socket) {
           this.#archiveStore.setOwner(state.me.id);
+          this.#contactStore.setOwner(state.me.id);
           this.#pollStore.setOwner(state.me.id);
         }
         this.emit("pair", {
@@ -525,6 +548,7 @@ class WhatsappClient extends EventEmitter {
       await this.#conn.end();
     }
     await this.#archiveStore.flush();
+    await this.#contactStore.flush();
     await this.#pollStore.flush();
   };
 
@@ -700,6 +724,8 @@ class WhatsappClient extends EventEmitter {
   };
 
   #closeSocketWatchers = () => {
+    this.#contactListeners?.();
+    this.#contactListeners = undefined;
     this.#archiveListeners?.();
     this.#archiveListeners = undefined;
     this.#eventBufferFlush?.close();
@@ -771,7 +797,8 @@ class WhatsappClient extends EventEmitter {
       });
     }
 
-    const me = () => this.#conn?.authState?.creds?.me || this.#conn?.user;
+    const socket = this.#conn;
+    const me = () => socket?.authState?.creds?.me || socket?.user;
     this.#conn.ev.on("messages.upsert", async ({ messages, type, requestId }) => {
       if (this.#decryptionDiagnostics) {
         for (const message of messages || []) {
@@ -818,11 +845,30 @@ class WhatsappClient extends EventEmitter {
           this.emit("msg_dedupe_collision", dedupeResult);
         }
 
+        const outgoing = message.key?.fromMe === true;
+        const current = this.#conn === socket && !this.#status.disconnected;
+        if (outgoing && !current) continue;
+        const chatArchived = this.#archiveStore.get(message.key?.remoteJid);
         const pollVote = this.#decodePollVote(message, me());
+        let contact = outgoing && current ? this.#contactStore.get(message.key?.remoteJid) : null;
+        if (outgoing && current && !contact?.name && typeof socket.query === "function"
+            && typeof this.#contactKeys?.get === "function") {
+          try {
+            const resolved = await withTimeout(this.#contactStore.resolve(message.key?.remoteJid, {
+              socket, baileys: this.#baileys, keys: this.#contactKeys,
+              isCurrent: () => this.#conn === socket && !this.#status.disconnected,
+            }), "recipient contact lookup");
+            if (this.#conn === socket && !this.#status.disconnected) contact = resolved;
+          } catch {
+            this.#socketLogger.warn?.("Recipient contact name is unavailable.");
+          }
+        }
         this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
           type: pollVote ? "pollUpdateMessage" : messageType,
           ...message,
-          chat_archived: this.#archiveStore.get(message.key?.remoteJid),
+          chat_archived: chatArchived,
+          ...(outgoing ? { recipient_name: contact?.name || null,
+            recipient_identifiers: contact?.identifiers || [] } : {}),
           ...(pollVote ? { poll_vote: pollVote } : {}),
         });
       }
@@ -854,7 +900,6 @@ class WhatsappClient extends EventEmitter {
 
     // Started only now, after the listeners above exist, so released events
     // always reach Home Assistant.
-    const socket = this.#conn;
     this.#eventBufferFlush?.close();
     this.#eventBufferFlush = attachEventBufferFlush({
       socket,
@@ -876,6 +921,7 @@ class WhatsappClient extends EventEmitter {
     const statusCode = Number.isInteger(upstreamCode) ? upstreamCode : null;
     if (statusCode === this.#baileys.DisconnectReason?.loggedOut) {
       this.#archiveStore.clear();
+      this.#contactStore.clear();
       this.#pollStore.clear();
       this.#clearRetryCache();
       this.#lidDelivered = undefined;

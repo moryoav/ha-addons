@@ -28,6 +28,16 @@ See the [incoming media guide](https://moryoav.github.io/ha-addons/examples/inco
 the linked phone. The add-on sends this event directly to Home Assistant. See the
 [event details and logging example](https://github.com/moryoav/ha-addons#events).
 
+For individual contacts, outgoing events include `recipient_name` and known
+phone/LID `recipient_identifiers`. Saved contact names take priority over
+synchronized profile names. Unknown names stay `null`; the sender's outgoing
+`pushName` is never used as the recipient name. Cached names survive restarts
+and stay separate between accounts. A missing name can take up to eight seconds
+to resolve from current contact metadata. Failures still deliver the event, and
+group members are never included. The existing HACS integration receives these
+fields without an update. See the
+[recipient-name reference](https://moryoav.github.io/ha-addons/reference/events/#recipient-names-in-outgoing-events).
+
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
 
 ![Supports aarch64 Architecture][aarch64-shield]

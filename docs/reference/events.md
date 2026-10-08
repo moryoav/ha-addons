@@ -55,6 +55,42 @@ thumbnails, CDN paths, scan sidecars, and media key timestamp representation
 because WhatsApp can vary those between phone-number and LID deliveries of the
 same message.
 
+## Recipient names in outgoing events
+
+Starting with app 2.9.0, `whatsapp_message_sent` also includes:
+
+| Field | Meaning |
+| --- | --- |
+| `recipient_name` | The direct-chat recipient's saved contact name, or synchronized profile name when no saved name is known. `null` if unknown. |
+| `recipient_identifiers` | Known WhatsApp phone-number and LID identifiers for this recipient. An empty list if no contact metadata is available. |
+
+The destination remains `key.remoteJid`. Outgoing `pushName` belongs to the
+sending account and must not be used as the recipient's name. Incoming events
+keep their existing fields.
+
+The app remembers names and explicitly linked identifiers from WhatsApp contact
+updates. Missing names can trigger a read of the current address-book metadata,
+shared by pending lookups and attempted at most once every five minutes per
+account. It does not search past messages, change synchronization versions, or
+replay unrelated WhatsApp account actions. Only the recipient's metadata is
+included in the sent event; it does not publish a full contact list.
+
+Cached names add no network request. An uncached name can delay the sent event
+by up to eight seconds. If lookup fails, times out, or cannot match the
+recipient, the event still fires with `recipient_name: null`; known identifiers
+remain available. Names and identifiers reflect the latest metadata the app has
+received and may be unavailable until WhatsApp synchronizes them.
+
+The private cache retains at most 20,000 identifiers and 16 MiB per account,
+alongside its session data. It survives restarts and is cleared on logout,
+session reset, or account replacement. Evicted metadata becomes unknown until
+it is synchronized again.
+
+For groups and broadcasts, `recipient_name` is `null` and
+`recipient_identifiers` is empty. Use `whatsapp.get_group_info` for a group's
+name. Group members are never included in these fields. No HACS integration
+update is needed: the app sends these event fields directly to Home Assistant.
+
 ## Chat archive state
 
 Starting with add-on 2.2.0, every `new_whatsapp_message` event includes

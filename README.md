@@ -320,6 +320,16 @@ devices, and the add-on itself when reported by WhatsApp. For this event,
 Duplicate-message checks apply to both directions. The event reports a sent
 message observed by the session; it is not a delivery or read receipt.
 
+Outgoing events also include `recipient_name` and `recipient_identifiers` for
+individual contacts. The name comes from saved WhatsApp contact metadata, with
+the contact's synchronized profile name as a fallback; unknown names are `null`.
+The identifiers link a known phone-number JID and LID. Outgoing `pushName`
+identifies the sending account. Groups keep their existing ID and do not expose
+member names through these fields. Missing names can take up to eight seconds
+to resolve, and lookup failures still deliver the event. No HACS integration
+update is needed. See the
+[recipient-name fields and limits](https://moryoav.github.io/ha-addons/reference/events/#recipient-names-in-outgoing-events).
+
 The add-on sends this event directly to Home Assistant. Logging automations can
 listen to both events, as in the [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages).
 Reply and mark-as-read automations should listen only to `new_whatsapp_message`

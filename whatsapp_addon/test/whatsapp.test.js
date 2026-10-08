@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { EventEmitter } = require("node:events");
+const { EventEmitter, once } = require("node:events");
 const path = require("node:path");
 const test = require("node:test");
 
@@ -28,6 +28,8 @@ const createHarness = async ({
   eventEmitter,
   sessionPath = "session-test",
   account,
+  authKeys = {},
+  baileysOverrides = {},
 } = {}) => {
   const ev = eventEmitter || new EventEmitter();
   const ws = new EventEmitter();
@@ -81,10 +83,11 @@ const createHarness = async ({
     },
     fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
     useMultiFileAuthState: async () => ({
-      state: { creds: account ? { me: { id: account } } : {}, keys: {} },
+      state: { creds: account ? { me: { id: account } } : {}, keys: authKeys },
       saveCreds: async () => {},
     }),
   };
+  Object.assign(baileys, baileysOverrides);
   const client = new WhatsappClient({
     path: sessionPath,
     baileys,
@@ -478,6 +481,7 @@ test("mixed message batches reach separate Home Assistant events", async (t) => 
       type: index === 2 ? "imageMessage" : "conversation",
       ...message,
       chat_archived: null,
+      ...(message.key.fromMe ? { recipient_name: null, recipient_identifiers: [] } : {}),
     });
   }
 });
@@ -1622,4 +1626,171 @@ test("remembered polls decode votes after a restart and are forgotten on logout"
     { status: "error", error: "unknown_poll", poll_id: "fictional-poll-id" },
     { status: "error", error: "unknown_poll", poll_id: "fictional-late-id" },
   ]);
+});
+
+const emitContactMessage = (ev, { id = "contact-message", jid = FICTIONAL_LID, fromMe = true } = {}) => {
+  ev.emit("messages.upsert", { type: "notify", messages: [{
+    key: { id, remoteJid: jid, fromMe }, pushName: fromMe ? "Account owner" : "Sender profile",
+    message: { conversation: "Fictional text" },
+  }] });
+};
+
+test("outgoing Home Assistant events include the saved recipient name and PN/LID aliases", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const requests = [];
+  createAddonRuntime({ clientIds: ["default"], clientFactory: () => client,
+    logger: {}, httpClient: { post: async (...args) => requests.push(args) } });
+  ev.emit("messaging-history.set", { contacts: [{ id: FICTIONAL_JID, lid: FICTIONAL_LID,
+    name: "Recipient Example", notify: "Recipient profile" }], messages: [] });
+  ev.emit("contacts.update", [{ id: FICTIONAL_LID, notify: "New profile" }]);
+  emitContactMessage(ev);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(requests[0][0].endsWith("/whatsapp_message_sent"));
+  assert.equal(requests[0][1].recipient_name, "Recipient Example");
+  assert.deepEqual(requests[0][1].recipient_identifiers, [FICTIONAL_JID, FICTIONAL_LID]);
+  assert.equal(requests[0][1].pushName, "Account owner");
+});
+
+test("unknown outgoing recipients never use own pushName and incoming events keep their fields", async (t) => {
+  const { client, ev } = await createHarness();
+  t.after(() => client.disconnect());
+  const sent = [];
+  const incoming = [];
+  client.on("msg_sent", (message) => sent.push(message));
+  client.on("msg", (message) => incoming.push(message));
+  emitContactMessage(ev);
+  ev.emit("contacts.upsert", [{ id: FICTIONAL_LID, notify: "Recipient profile" }]);
+  emitContactMessage(ev, { id: "known-recipient" });
+  emitContactMessage(ev, { id: "incoming-contact", fromMe: false });
+  assert.equal(sent[0].recipient_name, null);
+  assert.deepEqual(sent[0].recipient_identifiers, []);
+  assert.equal(sent[1].recipient_name, "Recipient profile");
+  assert.equal(Object.hasOwn(incoming[0], "recipient_name"), false);
+  assert.equal(Object.hasOwn(incoming[0], "recipient_identifiers"), false);
+  assert.equal(incoming[0].pushName, "Sender profile");
+});
+
+test("group sends never expose a member name or enumerate group participants", async (t) => {
+  let queries = 0;
+  const { client, ev, calls } = await createHarness({ account: "12025550125@s.whatsapp.net",
+    authKeys: { get: async () => ({}) },
+    configureSocket: (socket) => { socket.query = async () => { queries += 1; }; } });
+  t.after(() => client.disconnect());
+  const sent = [];
+  client.on("msg_sent", (message) => sent.push(message));
+  ev.emit("contacts.upsert", [{ id: FICTIONAL_JID, lid: FICTIONAL_LID, name: "Group member" }]);
+  emitContactMessage(ev, { jid: FICTIONAL_GROUP_JID });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent[0].recipient_name, null);
+  assert.deepEqual(sent[0].recipient_identifiers, []);
+  assert.equal(queries, 0);
+  assert.deepEqual(calls.groupMetadata, []);
+});
+
+test("recipient metadata persists between clients and retired sockets cannot change it", async (t) => {
+  const fs = require("node:fs/promises");
+  const os = require("node:os");
+  const sessionPath = await fs.mkdtemp(path.join(os.tmpdir(), "whatsapp-recipient-client-"));
+  const clients = [];
+  t.after(async () => {
+    for (const client of clients) await client.disconnect();
+    await fs.rm(sessionPath, { recursive: true, force: true });
+  });
+  const settings = { sessionPath, account: "12025550125:1@s.whatsapp.net" };
+  const first = await createHarness(settings);
+  clients.push(first.client);
+  first.ev.emit("contacts.upsert", [{ id: FICTIONAL_JID, lid: FICTIONAL_LID, name: "Recipient Example" }]);
+  await first.client.disconnect();
+  first.ev.emit("contacts.update", [{ id: FICTIONAL_JID, name: "Retired socket" }]);
+  const second = await createHarness(settings);
+  clients.push(second.client);
+  const sent = [];
+  second.client.on("msg_sent", (message) => sent.push(message));
+  emitContactMessage(second.ev);
+  assert.equal(sent[0].recipient_name, "Recipient Example");
+  second.ev.emit("connection.update", { connection: "close",
+    lastDisconnect: { error: { output: { statusCode: 401 } } } });
+  second.ev.emit("contacts.update", [{ id: FICTIONAL_JID, name: "Logged out" }]);
+  await second.client.disconnect();
+  const third = await createHarness(settings);
+  clients.push(third.client);
+  third.client.on("msg_sent", (message) => sent.push(message));
+  emitContactMessage(third.ev);
+  assert.equal(sent[1].recipient_name, null);
+});
+
+test("outgoing events resolve missing names from current verified contact metadata", async (t) => {
+  const baileys = await import("@whiskeysockets/baileys");
+  const keyId = Buffer.from("fictional-key").toString("base64");
+  const key = { keyData: Buffer.alloc(32, 7) };
+  const { patch, state } = await baileys.encodeSyncdPatch({ type: "critical_unblock_low",
+    index: ["contact", FICTIONAL_JID], syncAction: { contactAction: { fullName: "Recipient Example",
+      lidJid: FICTIONAL_LID } }, apiVersion: 2, operation: baileys.proto.SyncdMutation.SyncdOperation.SET },
+  keyId, baileys.newLTHashState(), async () => key);
+  const snapshot = { version: { version: state.version }, keyId: patch.keyId,
+    mac: patch.snapshotMac, records: patch.mutations.map((mutation) => mutation.record) };
+  let queries = 0;
+  const { client, ev } = await createHarness({ account: "12025550125@s.whatsapp.net",
+    authKeys: { get: async (_kind, ids) => Object.fromEntries(ids.map((id) => [id, key])),
+      set() { throw new Error("Must not modify authentication"); } },
+    baileysOverrides: { newLTHashState: baileys.newLTHashState,
+      decodeSyncdSnapshot: baileys.decodeSyncdSnapshot, decodePatches: baileys.decodePatches,
+      extractSyncdPatches: async () => ({ critical_unblock_low: { snapshot, patches: [] } }) },
+    configureSocket: (socket) => { socket.query = async () => { queries += 1; return {}; }; } });
+  t.after(() => client.disconnect());
+  const sent = [];
+  client.on("msg_sent", (message) => sent.push(message));
+  const delivered = once(client, "msg_sent");
+  emitContactMessage(ev);
+  await delivered;
+  assert.equal(sent[0].recipient_name, "Recipient Example");
+  assert.deepEqual(sent[0].recipient_identifiers, [FICTIONAL_JID, FICTIONAL_LID]);
+  emitContactMessage(ev, { id: "cached-recipient" });
+  assert.equal(sent.length, 2);
+  assert.equal(queries, 1);
+});
+
+test("failed contact lookup still forwards the sent event with no recipient name", async (t) => {
+  const baileys = await import("@whiskeysockets/baileys");
+  let queries = 0;
+  const { client, ev } = await createHarness({ account: "12025550125@s.whatsapp.net",
+    authKeys: { get: async () => ({}) }, baileysOverrides: {
+      newLTHashState: baileys.newLTHashState, decodeSyncdSnapshot: baileys.decodeSyncdSnapshot,
+      decodePatches: baileys.decodePatches, extractSyncdPatches: baileys.extractSyncdPatches },
+    configureSocket: (socket) => { socket.query = async () => {
+      queries += 1; throw new Error("Fictional private failure");
+    }; } });
+  t.after(() => client.disconnect());
+  const sent = [];
+  client.on("msg_sent", (message) => sent.push(message));
+  emitContactMessage(ev);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent[0].recipient_name, null);
+  assert.equal(sent[0].pushName, "Account owner");
+  emitContactMessage(ev, { id: "second-unknown" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.length, 2);
+  assert.equal(queries, 1);
+});
+
+
+test("disconnect during recipient lookup keeps the observed sent event and its archive state", async (t) => {
+  const baileys = await import("@whiskeysockets/baileys");
+  let release;
+  const { client, ev } = await createHarness({ account: "12025550125@s.whatsapp.net",
+    authKeys: { get: async () => ({}) }, baileysOverrides: {
+      newLTHashState: baileys.newLTHashState, decodeSyncdSnapshot: baileys.decodeSyncdSnapshot,
+      decodePatches: baileys.decodePatches, extractSyncdPatches: async () => ({}) },
+    configureSocket: (socket) => { socket.query = () => new Promise((resolve) => { release = resolve; }); } });
+  t.after(() => client.disconnect());
+  ev.emit("chats.update", [{ id: FICTIONAL_LID, archived: true }]);
+  const delivered = once(client, "msg_sent");
+  emitContactMessage(ev);
+  ev.emit("connection.update", { connection: "close",
+    lastDisconnect: { error: { output: { statusCode: 401 } } } });
+  release({});
+  const [message] = await delivered;
+  assert.equal(message.recipient_name, null);
+  assert.equal(message.chat_archived, true);
 });
