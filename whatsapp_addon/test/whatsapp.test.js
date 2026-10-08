@@ -1628,6 +1628,7 @@ test("remembered polls decode votes after a restart and are forgotten on logout"
   ]);
 });
 
+/** Emit a fictional message with distinct account-owner and sender profile names. */
 const emitContactMessage = (ev, { id = "contact-message", jid = FICTIONAL_LID, fromMe = true } = {}) => {
   ev.emit("messages.upsert", { type: "notify", messages: [{
     key: { id, remoteJid: jid, fromMe }, pushName: fromMe ? "Account owner" : "Sender profile",

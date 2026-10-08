@@ -11,6 +11,7 @@ const LID = "999999999999999@lid";
 const GROUP = "120363000000000000@g.us";
 const COLLECTION = "critical_unblock_low";
 
+/** Create an isolated account cache and remove its files after the test. */
 async function fixture(t, options = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "whatsapp-contact-names-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -20,6 +21,7 @@ async function fixture(t, options = {}) {
   return { store, directory };
 }
 
+/** Build a signed contact snapshot using the installed Baileys cryptography. */
 async function encryptedFixture() {
   const baileys = await import("@whiskeysockets/baileys");
   const keyId = Buffer.from("fictional-contact-key").toString("base64");
@@ -46,6 +48,7 @@ async function encryptedFixture() {
   return { baileys, snapshot, keys, reads, state, keyId, key };
 }
 
+/** Feed a signed fixture through the same snapshot decoder used at runtime. */
 function metadataSource(fixture, query = async () => ({})) {
   return { socket: { query }, keys: fixture.keys,
     baileys: { ...fixture.baileys, extractSyncdPatches: async () => ({
@@ -242,3 +245,17 @@ test("snapshot reading stops after the total lookup time budget", async (t) => {
   const source = metadataSource(f, async () => { t.mock.timers.tick(8000); return {}; });
   await assert.rejects(fetchContactNames(source.socket, source.baileys, source.keys), /timed out/);
 });
+
+
+for (const savedName of [undefined, "New saved name"]) {
+  test(`reassigned phone numbers keep old and new LIDs separate with ${savedName ? "a saved name" : "a profile fallback"}`, async (t) => {
+    const { store } = await fixture(t);
+    const nextLid = "888888888888888@lid";
+    store.update([{ id: PN, lid: LID, name: "Original contact" },
+      { id: nextLid, notify: "New profile" }]);
+    store.update([{ id: PN, lid: nextLid, name: savedName }]);
+    assert.deepEqual(store.get(LID), { name: "Original contact", identifiers: [LID] });
+    assert.deepEqual(store.get(PN), { name: savedName || "New profile", identifiers: [PN, nextLid] });
+    assert.deepEqual(store.get(nextLid), store.get(PN));
+  });
+}

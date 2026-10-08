@@ -6,16 +6,21 @@ const MAX_ENTRIES = 20_000;
 const MAX_BYTES = 16 * 1024 * 1024;
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const QUERY_TIMEOUT_MS = 8_000;
+/** Normalize a supported personal WhatsApp identifier without inferring aliases. */
 const normalizeId = (value) => {
   if (typeof value !== "string") return null;
   const id = value.replace(/:\d+@/, "@");
   return /^(?:[1-9]\d{4,14}@s\.whatsapp\.net|[1-9]\d{4,30}@lid)$/.test(id) ? id : null;
 };
+/** Keep a bounded display name while preserving its language and spelling. */
 const cleanName = (value) => typeof value === "string"
   ? value.replace(/[\r\n]+/g, " ").trim().slice(0, 256) || null : null;
 
-// Read only the current address-book collection. No auth versions, message
-// history, or unrelated synchronization actions are changed or replayed.
+/**
+ * Read and authenticate current address-book metadata within a shared time budget.
+ * Auth versions, message history, and unrelated sync actions are never changed
+ * or replayed. Incomplete or unauthenticated collections are rejected.
+ */
 async function fetchContactNames(socket, baileys, keys) {
   const getKey = async (id) => (await keys.get("app-state-sync-key", [id]))[id];
   const deadline = Date.now() + QUERY_TIMEOUT_MS;
@@ -63,6 +68,7 @@ async function fetchContactNames(socket, baileys, keys) {
   throw new Error("Contact metadata incomplete");
 }
 
+/** Keep bounded contact metadata private to one linked WhatsApp account. */
 class ContactNameStore {
   #file;
   #entries = new Map();
@@ -78,6 +84,7 @@ class ContactNameStore {
   #generation = 0;
   #lastRefresh = -Infinity;
 
+  /** Store the cache beside existing session data; never recreate a deleted session. */
   constructor({ directory, onError = () => {}, maxEntries = MAX_ENTRIES, maxBytes = MAX_BYTES }) {
     this.#file = path.join(directory, "contact-name-cache.json");
     this.#warn = onError;
@@ -85,6 +92,7 @@ class ContactNameStore {
     this.#maxBytes = maxBytes;
   }
 
+  /** Restore validated metadata only for the same normalized account owner. */
   async load(account) {
     if (this.#loaded) { this.setOwner(account); return; }
     this.#loaded = true;
@@ -109,6 +117,7 @@ class ContactNameStore {
     }
   }
 
+  /** Discard cached and pending metadata when the linked account changes. */
   setOwner(account) {
     const owner = normalizeId(account);
     if (owner === this.#owner) return;
@@ -119,17 +128,31 @@ class ContactNameStore {
     this.#changed();
   }
 
+  /** Return a saved name or profile-name fallback and explicitly linked identifiers. */
   get(id) {
     const entry = this.#entries.get(normalizeId(id));
     return entry ? { name: entry.name || entry.notify || null, identifiers: [...entry.ids].sort() } : null;
   }
 
+  /** Merge contact updates, preserving omitted fields and current LID identity. */
   update(contacts) {
     if (!Array.isArray(contacts)) return;
     for (const contact of contacts) {
       if (!contact || !normalizeId(contact.id)) continue;
       const ids = new Set([contact.id, contact.jid, contact.lid].map(normalizeId).filter(Boolean));
-      const old = [...ids].map((id) => this.#entries.get(id)).filter(Boolean);
+      const lids = new Set([...ids].filter((id) => id.endsWith("@lid")));
+      const old = [];
+      for (const entry of new Set([...ids].map((id) => this.#entries.get(id)).filter(Boolean))) {
+        const conflictingLid = lids.size && [...entry.ids].some((id) => id.endsWith("@lid") && !lids.has(id));
+        if (conflictingLid) {
+          // A reassigned phone number must not rename or merge its previous LID.
+          for (const id of ids) {
+            if (entry.ids.delete(id)) this.#entries.delete(id);
+          }
+        } else {
+          old.push(entry);
+        }
+      }
       for (const entry of old) for (const id of entry.ids) ids.add(id);
       const entry = { ids, name: old.find((item) => item.name)?.name || null,
         notify: old.find((item) => item.notify)?.notify || null };
@@ -141,6 +164,7 @@ class ContactNameStore {
     }
   }
 
+  /** Evict complete contacts so no alias points to a partially removed record. */
   #evict() {
     while (this.#entries.size > this.#maxEntries) {
       const oldest = this.#entries.values().next().value;
@@ -148,6 +172,7 @@ class ContactNameStore {
     }
   }
 
+  /** Resolve missing names with one shared, throttled read of current metadata. */
   async resolve(id, { socket, baileys, keys, isCurrent = () => true }) {
     if (this.get(id)?.name || !normalizeId(id) || !this.#owner) return this.get(id);
     const supported = typeof socket?.query === "function" && typeof keys?.get === "function"
@@ -166,8 +191,10 @@ class ContactNameStore {
     return this.get(id);
   }
 
+  /** Clear names immediately and invalidate any lookup already in progress. */
   clear() { this.#generation += 1; this.#entries.clear(); this.#lastRefresh = -Infinity; this.#changed(); }
 
+  /** Coalesce writes without keeping the process alive for persistence alone. */
   #changed() {
     this.#dirty = true;
     if (this.#timer || !this.#owner) return;
@@ -175,6 +202,7 @@ class ContactNameStore {
     this.#timer.unref?.();
   }
 
+  /** Persist a bounded snapshot atomically without recreating session directories. */
   async flush() {
     clearTimeout(this.#timer);
     this.#timer = undefined;

@@ -69,7 +69,8 @@ sending account and must not be used as the recipient's name. Incoming events
 keep their existing fields.
 
 The app remembers names and explicitly linked identifiers from WhatsApp contact
-updates. Missing names can trigger a read of the current address-book metadata,
+updates. If a phone number becomes linked to a different LID, the previous LID
+keeps its own name and loses that phone alias. Missing names can trigger a read of the current address-book metadata,
 shared by pending lookups and attempted at most once every five minutes per
 account. It does not search past messages, change synchronization versions, or
 replay unrelated WhatsApp account actions. Only the recipient's metadata is
