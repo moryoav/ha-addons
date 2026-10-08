@@ -76,8 +76,10 @@ account. It does not search past messages, change synchronization versions, or
 replay unrelated WhatsApp account actions. Only the recipient's metadata is
 included in the sent event; it does not publish a full contact list.
 
-Cached names add no network request. An uncached name can delay the sent event
-by up to eight seconds. If lookup fails, times out, or cannot match the
+Cached names add no network request. Uncached names share one lookup deadline
+of up to eight seconds per message batch. Events in that batch keep their original
+order, so incoming messages and cached recipients in the batch can also wait for
+the lookup. If lookup fails, times out, or cannot match the
 recipient, the event still fires with `recipient_name: null`; known identifiers
 remain available. Names and identifiers reflect the latest metadata the app has
 received and may be unavailable until WhatsApp synchronizes them.

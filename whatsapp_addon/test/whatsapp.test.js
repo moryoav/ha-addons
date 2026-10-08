@@ -1743,12 +1743,17 @@ test("outgoing events resolve missing names from current verified contact metada
   const sent = [];
   client.on("msg_sent", (message) => sent.push(message));
   const delivered = once(client, "msg_sent");
-  emitContactMessage(ev);
+  ev.emit("messages.upsert", { type: "notify", messages: [FICTIONAL_LID, FICTIONAL_JID]
+    .map((remoteJid, index) => ({ key: { id: `resolved-batch-${index}`, remoteJid, fromMe: true },
+      message: { conversation: "Fictional text" } })) });
   await delivered;
-  assert.equal(sent[0].recipient_name, "Recipient Example");
-  assert.deepEqual(sent[0].recipient_identifiers, [FICTIONAL_JID, FICTIONAL_LID]);
+  assert.deepEqual(sent.map((message) => message.key.id), ["resolved-batch-0", "resolved-batch-1"]);
+  for (const message of sent) {
+    assert.equal(message.recipient_name, "Recipient Example");
+    assert.deepEqual(message.recipient_identifiers, [FICTIONAL_JID, FICTIONAL_LID]);
+  }
   emitContactMessage(ev, { id: "cached-recipient" });
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 3);
   assert.equal(queries, 1);
 });
 
@@ -1836,4 +1841,45 @@ test("an observed sent event keeps its own account when credentials change durin
   const [message] = await delivered;
   assert.equal(message.recipient_name, null);
   assert.equal(message.chat_archived, true);
+});
+
+
+test("a mixed message batch has one recipient lookup deadline and preserves event order", async (t) => {
+  const baileys = await import("@whiskeysockets/baileys");
+  let queries = 0;
+  const { client, ev } = await createHarness({ account: "12025550125@s.whatsapp.net",
+    authKeys: { get: async () => ({}) }, baileysOverrides: {
+      newLTHashState: baileys.newLTHashState, decodeSyncdSnapshot: baileys.decodeSyncdSnapshot,
+      decodePatches: baileys.decodePatches, extractSyncdPatches: async () => ({}) },
+    configureSocket: (socket) => { socket.query = () => { queries += 1; return new Promise(() => {}); }; } });
+  t.after(() => client.disconnect());
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  ev.emit("contacts.upsert", [{ id: FICTIONAL_JID, lid: FICTIONAL_LID },
+    { id: "777777777777777@lid", name: "Known recipient" }]);
+  const received = [];
+  for (const event of ["msg_sent", "msg"]) client.on(event, (message) => received.push({ event, message }));
+  const messages = [
+    { id: "batch-first", jid: FICTIONAL_LID, fromMe: true },
+    { id: "batch-second", jid: "888888888888888@lid", fromMe: true },
+    { id: "batch-cached", jid: "777777777777777@lid", fromMe: true },
+    { id: "batch-incoming", jid: FICTIONAL_JID, fromMe: false },
+  ].map(({ id, jid, fromMe }) => ({ key: { id, remoteJid: jid, fromMe },
+    message: { conversation: "Fictional text" } }));
+  ev.emit("messages.upsert", { type: "notify", messages });
+  assert.equal(received.length, 0);
+  t.mock.timers.tick(7_999);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(received.length, 0);
+  t.mock.timers.tick(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(received.map(({ event, message }) => [event, message.key.id]), [
+    ["msg_sent", "batch-first"], ["msg_sent", "batch-second"],
+    ["msg_sent", "batch-cached"], ["msg", "batch-incoming"],
+  ]);
+  assert.equal(queries, 1);
+  assert.equal(received[0].message.recipient_name, null);
+  assert.deepEqual(received[0].message.recipient_identifiers, [FICTIONAL_JID, FICTIONAL_LID]);
+  assert.equal(received[1].message.recipient_name, null);
+  assert.equal(received[2].message.recipient_name, "Known recipient");
+  assert.equal(Object.hasOwn(received[3].message, "recipient_name"), false);
 });

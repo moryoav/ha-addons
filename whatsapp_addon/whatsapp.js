@@ -816,6 +816,8 @@ class WhatsappClient extends EventEmitter {
         ),
       });
 
+      const pendingEvents = [];
+      const lookups = [];
       for (const message of messages || []) {
         if (!message?.message) {
           this.emit("msg_ignored", {
@@ -851,19 +853,27 @@ class WhatsappClient extends EventEmitter {
         if (outgoing && !current) continue;
         const chatArchived = this.#archiveStore.get(message.key?.remoteJid);
         const pollVote = this.#decodePollVote(message, me());
-        let contact = outgoing && current ? this.#contactStore.get(message.key?.remoteJid) : null;
+        const contact = outgoing && current ? this.#contactStore.get(message.key?.remoteJid) : null;
+        const pending = { message, messageType, outgoing, sameAccount, chatArchived, pollVote, contact };
+        pendingEvents.push(pending);
         if (outgoing && current && !contact?.name && typeof socket.query === "function"
             && typeof this.#contactKeys?.get === "function") {
-          try {
-            const resolved = await withTimeout(this.#contactStore.resolve(message.key?.remoteJid, {
-              socket, baileys: this.#baileys, keys: this.#contactKeys,
-              isCurrent: () => this.#conn === socket && !this.#status.disconnected && sameAccount(),
-            }), "recipient contact lookup");
-            if (this.#conn === socket && !this.#status.disconnected && sameAccount()) contact = resolved;
-          } catch {
-            this.#socketLogger.warn?.("Recipient contact name is unavailable.");
-          }
+          lookups.push(this.#contactStore.resolve(message.key?.remoteJid, {
+            socket, baileys: this.#baileys, keys: this.#contactKeys,
+            isCurrent: () => this.#conn === socket && !this.#status.disconnected && sameAccount(),
+          }).then((resolved) => {
+            if (this.#conn === socket && !this.#status.disconnected && sameAccount()) pending.contact = resolved;
+          }).catch(() => this.#socketLogger.warn?.("Recipient contact name is unavailable.")));
         }
+      }
+      if (lookups.length) {
+        try {
+          await withTimeout(Promise.all(lookups), "recipient contact lookup");
+        } catch {
+          this.#socketLogger.warn?.("Recipient contact name is unavailable.");
+        }
+      }
+      for (const { message, messageType, outgoing, sameAccount, chatArchived, pollVote, contact } of pendingEvents) {
         this.emit(message.key?.fromMe ? "msg_sent" : "msg", {
           type: pollVote ? "pollUpdateMessage" : messageType,
           ...message,

@@ -22,6 +22,8 @@ All notable changes to this repository are documented here.
 - Kept recipients separate when a phone number becomes linked to a different LID.
 - Kept pending events with their original account and reflected archive updates
   received during recipient lookup.
+- Bounded recipient lookup waits to eight seconds per message batch while
+  preserving event order.
 - Matched known phone-number and LID identifiers and retained contact metadata
   alongside each account's session, across restarts. Cleared it on logout or
   account replacement.
