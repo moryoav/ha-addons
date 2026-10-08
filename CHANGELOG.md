@@ -18,6 +18,7 @@ All notable changes to this repository are documented here.
 - Forwarded contact batches and partial updates without extra lookups or a
   contact cache. Each request has a bounded HTTP timeout, and the event requires
   only the app update.
+- Updated the HACS package version to 2.9.0 for the shared release.
 
 ## 2.8.0
 
