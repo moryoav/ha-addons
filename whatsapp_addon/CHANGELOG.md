@@ -1,3 +1,8 @@
+## Unreleased
+
+- Renamed the public add-on name from `WhatsappV2` to `WhatsApp` while keeping
+  the existing installation identifiers and saved sessions.
+
 ## 2.10.0
 
 - Added `POST /contacts` and the `get_contacts` capability for fresh saved-contact

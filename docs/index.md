@@ -3,7 +3,7 @@
 Send WhatsApp messages from Home Assistant automations and receive message,
 receipt, call, contact, and presence events.
 
-This project has two parts: the **WhatsappV2 add-on** runs the local WhatsApp
+This project has two parts: the **WhatsApp add-on** runs the local WhatsApp
 Web bridge, and the **WhatsApp integration** connects it to Home Assistant.
 Install both parts before using the examples in this knowledge base.
 

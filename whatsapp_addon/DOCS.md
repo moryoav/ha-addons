@@ -1,4 +1,4 @@
-# Home Assistant Add-on: WhatsappV2
+# Home Assistant Add-on: WhatsApp
 
 This add-on runs a local WhatsApp Web bridge for Home Assistant. The companion
 WhatsApp integration provides account devices, status sensors, actions, and

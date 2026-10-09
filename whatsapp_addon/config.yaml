@@ -1,4 +1,4 @@
-name: WhatsappV2
+name: WhatsApp
 version: "2.10.0"
 slug: whatsapp_addon
 description: WhatsApp Web bridge for Home Assistant actions and events

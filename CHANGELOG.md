@@ -4,6 +4,11 @@ All notable changes to this repository are documented here.
 
 ## Unreleased
 
+### Add-on name
+
+- Renamed the public add-on name from `WhatsappV2` to `WhatsApp` while keeping
+  the existing installation identifiers and saved sessions.
+
 ### Documentation
 
 - Organized the READMEs, add-on guide, and knowledge base around first-time
