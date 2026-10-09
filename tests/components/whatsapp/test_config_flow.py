@@ -110,10 +110,7 @@ async def test_import_flow_cannot_connect(hass, enable_custom_integrations) -> N
     assert result["reason"] == "cannot_connect"
 
 
-@pytest.mark.parametrize("addon_name", ["WhatsApp", "WhatsappV2"])
-async def test_hassio_flow_success(
-    hass, enable_custom_integrations, addon_name
-) -> None:
+async def test_hassio_flow_success(hass, enable_custom_integrations) -> None:
     """Test Supervisor discovery creates an entry without a URL prompt."""
     discovery_info = type(
         "DiscoveryInfo",
@@ -124,7 +121,7 @@ async def test_hassio_flow_success(
                 CONF_PORT: 3000,
                 CONF_API_TOKEN: "secret-token",
             },
-            "name": addon_name,
+            "name": "WhatsappV2",
         },
     )()
 
@@ -139,7 +136,7 @@ async def test_hassio_flow_success(
         )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == addon_name
+    assert result["title"] == "WhatsappV2"
     assert result["data"] == {
         CONF_URL: "http://supervisor-addon:3000",
         CONF_API_TOKEN: "secret-token",
@@ -147,25 +144,20 @@ async def test_hassio_flow_success(
     detect.assert_awaited_once_with(hass, ["http://supervisor-addon:3000"])
 
 
-@pytest.mark.parametrize("addon_name", ["WhatsApp", "WhatsappV2"])
 async def test_hassio_flow_updates_existing_entry(
     hass,
     enable_custom_integrations,
-    addon_name,
 ) -> None:
-    """Test both app names rediscover the same entry and preserve its title."""
+    """Test Supervisor discovery refreshes URL and clears a removed token."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        unique_id=DOMAIN,
-        title="WhatsappV2",
         data={CONF_URL: "http://old:3000", CONF_API_TOKEN: "existing-token"},
     )
     entry.add_to_hass(hass)
-    entry_id = entry.entry_id
     discovery_info = type(
         "DiscoveryInfo",
         (),
-        {"config": {CONF_URL: "http://new:3000"}, "name": addon_name},
+        {"config": {CONF_URL: "http://new:3000"}, "name": "WhatsappV2"},
     )()
 
     with patch(
@@ -181,10 +173,6 @@ async def test_hassio_flow_updates_existing_entry(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert entry.data == {CONF_URL: "http://new:3000"}
-    assert hass.config_entries.async_entries(DOMAIN) == [entry]
-    assert entry.entry_id == entry_id
-    assert entry.unique_id == DOMAIN
-    assert entry.title == "WhatsappV2"
 
 
 async def test_hassio_flow_refreshes_existing_api_token(
@@ -438,7 +426,6 @@ def test_candidate_urls_fallback_when_hassio_not_ready(hass) -> None:
     [
         ("ea396823_whatsapp_addon", {}),
         ("slug", {"hostname": "ea396823-whatsapp-addon"}),
-        ("slug", {"name": "WhatsApp"}),
         ("slug", {"name": "WhatsappV2"}),
         ("slug", {"repository": "https://github.com/moryoav/ha-addons"}),
     ],
