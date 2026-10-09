@@ -935,11 +935,14 @@ test("contact snapshots use the shared per-client lookup rate limit", async () =
 });
 
 test("contact snapshot failures redact private upstream details", async () => {
-  for (const error of [new WhatsappDisconnectedError(), new WhatsappUpstreamError("contacts", 408)]) {
+  for (const [error, status] of [
+    [new WhatsappDisconnectedError(), 503],
+    [new WhatsappUpstreamError("contacts", 408), 502],
+  ]) {
     await withApp({ logger: {}, clients: { default: createClient({ getContacts: async () => { throw error; } }) } },
       async (baseUrl) => {
         const response = await request(baseUrl, "/contacts", { body: { clientId: "default" } });
-        assert.ok([409, 503, 502].includes(response.status));
+        assert.equal(response.status, status);
         assert.equal(JSON.stringify(response.payload).includes(FICTIONAL_JID), false);
       });
   }
