@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const express = require("express");
+const { ContactSnapshotError, validateContactList } = require("./contact-snapshot");
 
 const {
   WhatsappDisconnectedError,
@@ -32,6 +33,7 @@ const API_CAPABILITIES = Object.freeze([
   "reject_call",
   "get_profile",
   "list_groups",
+  "get_contacts",
   "get_status",
 ]);
 const PRESENCE_TYPES = new Set([
@@ -571,6 +573,26 @@ const createApiApp = ({
 
       const groups = await client.listGroups();
       res.json({ groups: validateGroupListResult(groups) });
+    })
+  );
+
+  app.post(
+    "/contacts",
+    asyncRoute(async (req, res) => {
+      const body = requirePlainObject(req.body);
+      const { client, clientId } = requireClient(clients, body, clientStates);
+      const limit = checkLookupLimit(clientId);
+      if (!limit.allowed) {
+        res.set("Retry-After", String(limit.retryAfterSeconds));
+        throw new ApiError(429, "rate_limited", "Too many lookups. Try again later.");
+      }
+      const contacts = await client.getContacts();
+      try {
+        res.json({ contacts: validateContactList(contacts) });
+      } catch (error) {
+        if (error instanceof ContactSnapshotError) throw new WhatsappProtocolError();
+        throw error;
+      }
     })
   );
 

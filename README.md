@@ -53,6 +53,7 @@ for states, account removal, and an alert example.
 | `reject_call` | Decline an incoming call. |
 | `get_profile` | Get a contact's profile picture, about text, and business profile, or a group's picture. |
 | `list_groups` | List every group the account belongs to. |
+| `get_contacts` | Fetch saved contact names and identifiers from WhatsApp. |
 
 **Events:**
 
@@ -266,6 +267,9 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   and business profile, or a group's picture.
 - `whatsapp.list_groups`: list every group the linked account belongs to, with
   its JID, name, description, and settings.
+- `whatsapp.get_contacts`: fetch a fresh saved-contact snapshot for the selected
+  account, with original contact fields including names and LIDs when supplied.
+  Requires `response_variable`. See the [saved contact example](https://moryoav.github.io/ha-addons/examples/recipients/#get-saved-contacts).
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event

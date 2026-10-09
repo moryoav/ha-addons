@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import voluptuous as vol
 import yaml
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import (
@@ -683,3 +684,62 @@ async def test_get_profile_rejects_invalid_target(
         )
     assert exc_info.value.translation_key == "invalid_profile_target"
     client.async_get_profile.assert_not_awaited()
+
+
+async def test_get_contacts_action_requires_response_and_explicit_account(
+    hass, enable_custom_integrations
+) -> None:
+    """Test the contact action routes only the selected account and returns its data."""
+    client = AsyncMock(spec=WhatsappClient)
+    contacts = {
+        "contacts": [
+            {
+                "id": "12025550123@s.whatsapp.net",
+                "fields": {
+                    "fullName": "Example Contact",
+                    "lidJid": "999999999999999@lid",
+                },
+            }
+        ]
+    }
+    client.async_get_contacts.return_value = contacts
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+    assert (
+        await hass.services.async_call(
+            DOMAIN,
+            "get_contacts",
+            {"clientId": "personal"},
+            blocking=True,
+            return_response=True,
+        )
+        == contacts
+    )
+    client.async_get_contacts.assert_awaited_once_with({"clientId": "personal"})
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "get_contacts", {"clientId": "personal"}, blocking=True
+        )
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN, "get_contacts", {}, blocking=True, return_response=True
+        )
+
+
+async def test_get_contacts_action_translates_older_app(
+    hass, enable_custom_integrations
+) -> None:
+    """Test older apps produce the existing translated update-required error."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_get_contacts.side_effect = WhatsappUnsupportedCapability()
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await hass.services.async_call(
+            DOMAIN,
+            "get_contacts",
+            {"clientId": "personal"},
+            blocking=True,
+            return_response=True,
+        )
+    assert exc_info.value.translation_key == "addon_too_old"

@@ -134,6 +134,10 @@
           "description": "The from value of the whatsapp_call_update event: the caller's phone JID or LID."
         }
       }
+    },
+    "get_contacts": {
+      "name": "Get contacts",
+      "description": "Fetches saved contacts from a fresh WhatsApp app-state snapshot, including names and LIDs when supplied. Returns the original contact fields. Requires response_variable."
     }
   },
   "exceptions": {

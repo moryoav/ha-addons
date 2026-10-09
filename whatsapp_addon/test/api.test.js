@@ -892,3 +892,64 @@ test("profile and group list lookups share the per-client rate limit", async () 
   assert.ok(API_CAPABILITIES.includes("get_profile"));
   assert.ok(API_CAPABILITIES.includes("list_groups"));
 });
+
+
+test("contact snapshot action requires authentication and uses the selected account", async () => {
+  const contacts = [{ id: FICTIONAL_JID, fields: { fullName: "Example Saved Name",
+    lidJid: FICTIONAL_LID, saveOnPrimaryAddressbook: false, extra: { supplied: true } } }];
+  let calls = 0;
+  await withApp({ sharedSecret: "fictional-token", logger: {}, clients: {
+    default: createClient({ getContacts: async () => assert.fail("Wrong account") }),
+    personal: createClient({ getContacts: async () => { calls++; return contacts; } }),
+  } }, async (baseUrl) => {
+    const denied = await request(baseUrl, "/contacts", { body: { clientId: "personal" } });
+    assert.equal(denied.status, 401);
+    assert.equal(calls, 0);
+    const headers = { authorization: "Bearer fictional-token" };
+    const response = await request(baseUrl, "/contacts", { body: { clientId: "personal" }, headers });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.payload, { contacts });
+    const missing = await request(baseUrl, "/contacts", { body: {}, headers });
+    assert.equal(missing.status, 400);
+    const unknown = await request(baseUrl, "/contacts", { body: { clientId: "missing" }, headers });
+    assert.equal(unknown.status, 404);
+    assert.equal(unknown.payload.error.code, "client_not_found");
+    assert.equal(calls, 1);
+  });
+});
+
+test("contact snapshots use the shared per-client lookup rate limit", async () => {
+  let calls = 0;
+  await withApp({ logger: {}, lookupRateLimit: { limit: 1 }, clients: {
+    default: createClient({ getContacts: async () => { calls++; return []; } }),
+  } }, async (baseUrl) => {
+    assert.equal((await request(baseUrl, "/contacts", { body: { clientId: "default" } })).status, 200);
+    const limited = await request(baseUrl, "/groups", { body: { clientId: "default" } });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.payload.error.code, "rate_limited");
+    assert.ok(Number(limited.headers.get("retry-after")) > 0);
+    const contactsLimited = await request(baseUrl, "/contacts", { body: { clientId: "default" } });
+    assert.equal(contactsLimited.status, 429);
+    assert.equal(calls, 1);
+  });
+});
+
+test("contact snapshot failures redact private upstream details", async () => {
+  for (const [error, status] of [
+    [new WhatsappDisconnectedError(), 503],
+    [new WhatsappUpstreamError("contacts", 408), 502],
+  ]) {
+    await withApp({ logger: {}, clients: { default: createClient({ getContacts: async () => { throw error; } }) } },
+      async (baseUrl) => {
+        const response = await request(baseUrl, "/contacts", { body: { clientId: "default" } });
+        assert.equal(response.status, status);
+        assert.equal(JSON.stringify(response.payload).includes(FICTIONAL_JID), false);
+      });
+  }
+  await withApp({ logger: {}, clients: { default: createClient({ getContacts: async () =>
+    [{ id: FICTIONAL_JID, fields: { fullName: 123 } }] }) } }, async (baseUrl) => {
+      const response = await request(baseUrl, "/contacts", { body: { clientId: "default" } });
+      assert.equal(response.status, 502);
+      assert.equal(response.payload.error.code, "upstream_error");
+    });
+});

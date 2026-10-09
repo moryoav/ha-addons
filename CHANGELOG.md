@@ -9,6 +9,18 @@ All notable changes to this repository are documented here.
 - Updated the main and add-on READMEs to describe current features and setup
   without release history or version-specific upgrade instructions.
 
+## 2.10.0
+
+### Saved contact snapshots
+
+- Added `whatsapp.get_contacts` to fetch saved contact names and identifiers
+  for an explicitly selected connected account without waiting for messages.
+- Returned original contact fields, including LIDs when supplied, through an
+  authenticated, rate-limited API and Home Assistant action response.
+- Verified contact snapshots and pending updates without resetting normal
+  sync state or replaying events. Bounded requests and rejected incomplete data.
+- Added action documentation, docstrings, and encrypted Baileys regression tests.
+
 ## 2.9.0
 
 ### Contact metadata events

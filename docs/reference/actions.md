@@ -18,9 +18,12 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   and business profile, or a group's picture.
 - `whatsapp.list_groups`: list every group the linked account belongs to, with
   its JID, name, description, and settings.
+- `whatsapp.get_contacts`: fetch a fresh saved-contact snapshot with original
+  contact fields, including saved names and LIDs when supplied.
 
-The lookup actions `check_number`, `get_group_info`, `get_profile`, and
-`list_groups` require `response_variable` and share a per-client rate limit.
+The lookup actions `check_number`, `get_group_info`, `get_profile`,
+`list_groups`, and `get_contacts` require `response_variable` and share a
+per-client rate limit.
 
 | Action | Add-on and integration version |
 | --- | --- |
@@ -28,6 +31,7 @@ The lookup actions `check_number`, `get_group_info`, `get_profile`, and
 | `get_group_info` | 2.1.0 |
 | `reject_call` | 2.3.0 |
 | `get_profile`, `list_groups` | 2.5.0 |
+| `get_contacts` | 2.10.0 |
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the compatibility event

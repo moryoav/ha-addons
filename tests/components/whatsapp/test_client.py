@@ -1082,6 +1082,7 @@ async def test_list_groups_rejects_malformed_response(payload) -> None:
     [
         ("async_get_profile", {"clientId": "default", "to": "12025550123"}),
         ("async_list_groups", {"clientId": "default"}),
+        ("async_get_contacts", {"clientId": "default"}),
     ],
 )
 async def test_lookups_require_capability_or_endpoint(method, data) -> None:
@@ -1111,3 +1112,89 @@ async def test_lookups_require_capability_or_endpoint(method, data) -> None:
         await getattr(client, method)(data)
     assert not isinstance(exc_info.value, WhatsappUnsupportedCapability)
     assert exc_info.value.code == "client_not_found"
+
+
+async def test_get_contacts_preserves_original_fields_and_selects_account() -> None:
+    """Test saved names, LIDs and optional raw fields survive the action response."""
+    contact = {
+        "id": "12025550123@s.whatsapp.net",
+        "fields": {
+            "fullName": "Example Saved Contact",
+            "firstName": "Example",
+            "lidJid": "999999999999999@lid",
+            "pnJid": "12025550123@s.whatsapp.net",
+            "saveOnPrimaryAddressbook": False,
+            "username": "example",
+            "futureField": {"present": True},
+        },
+    }
+    session = FakeSession(FakeResponse(json_data={"contacts": [contact]}))
+    client = WhatsappClient(session, "http://addon", api_token="test-token")
+    assert await client.async_get_contacts({"clientId": "personal"}) == {
+        "contacts": [contact]
+    }
+    method, url, kwargs = session.calls[0]
+    assert (method, url) == ("POST", "http://addon/contacts")
+    assert kwargs["json"] == {"clientId": "personal"}
+    assert kwargs["headers"]["Authorization"] == "Bearer test-token"
+    assert kwargs["timeout"].total == 70
+
+
+@pytest.mark.parametrize(
+    "contacts",
+    [
+        [],
+        [{"id": "999999999999999@lid", "fields": {}}],
+        [{"id": "12025550123@s.whatsapp.net", "fields": {"fullName": None}}],
+    ],
+)
+async def test_get_contacts_accepts_empty_and_partial_records(contacts) -> None:
+    """Test empty snapshots and absent optional names remain valid responses."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_data={"contacts": contacts})), "http://addon"
+    )
+    assert await client.async_get_contacts({"clientId": "personal"}) == {
+        "contacts": contacts
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {},
+        {"contacts": None},
+        {"contacts": [None]},
+        {"contacts": [{"id": "invalid", "fields": {}}]},
+        {"contacts": [{"id": 5, "fields": {}}]},
+        {"contacts": [{"id": "12025550123@s.whatsapp.net", "fields": []}]},
+        {"contacts": [{"id": "12025550123@s.whatsapp.net", "fields": {"fullName": 5}}]},
+        {
+            "contacts": [
+                {
+                    "id": "12025550123@s.whatsapp.net",
+                    "fields": {"saveOnPrimaryAddressbook": 1},
+                }
+            ]
+        },
+        {"contacts": [{"id": "12025550123@s.whatsapp.net", "fields": {}}] * 2},
+    ],
+)
+async def test_get_contacts_rejects_invalid_responses(payload) -> None:
+    """Test malformed snapshots fail without passing private data to errors."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_data=payload)), "http://addon"
+    )
+    with pytest.raises(WhatsappApiError) as exc_info:
+        await client.async_get_contacts({"clientId": "personal"})
+    assert exc_info.value.code == "invalid_response"
+
+
+async def test_get_contacts_translates_response_body_timeout() -> None:
+    """Test a timeout while reading a large contact response becomes a connection error."""
+    client = WhatsappClient(
+        FakeSession(FakeResponse(json_error=TimeoutError())), "http://addon"
+    )
+    with pytest.raises(WhatsappCannotConnect):
+        await client.async_get_contacts({"clientId": "personal"})

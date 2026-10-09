@@ -20,6 +20,7 @@ from .const import (
     ATTR_FROM,
     ATTR_TO,
     CAPABILITY_CHECK_NUMBER,
+    CAPABILITY_GET_CONTACTS,
     CAPABILITY_GET_GROUP_INFO,
     CAPABILITY_GET_PROFILE,
     CAPABILITY_GET_STATUS,
@@ -267,6 +268,40 @@ def _validate_group_list(payload: Any) -> list[dict[str, Any]] | None:
     return groups
 
 
+def _validate_contacts(payload: Any) -> list[dict[str, Any]] | None:
+    """Validate saved-contact records while retaining their original fields."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("contacts"), list):
+        return None
+    contacts = []
+    seen = set()
+    for contact in payload["contacts"]:
+        if not isinstance(contact, dict):
+            return None
+        identifier = contact.get("id")
+        fields = contact.get("fields")
+        if (
+            not isinstance(identifier, str)
+            or not (
+                _PHONE_JID_PATTERN.fullmatch(identifier)
+                or _LID_PATTERN.fullmatch(identifier)
+            )
+            or identifier in seen
+            or not isinstance(fields, dict)
+        ):
+            return None
+        for key in ("fullName", "firstName", "lidJid", "pnJid", "username"):
+            if fields.get(key) is not None and not isinstance(fields[key], str):
+                return None
+        if (
+            fields.get("saveOnPrimaryAddressbook") is not None
+            and type(fields["saveOnPrimaryAddressbook"]) is not bool
+        ):
+            return None
+        seen.add(identifier)
+        contacts.append({"id": identifier, "fields": dict(fields)})
+    return contacts
+
+
 def normalize_api_token(value: Any) -> str | None:
     """Validate an optional RFC 6750-style bearer token."""
     if value is None or value == "":
@@ -491,12 +526,30 @@ class WhatsappClient:
             )
         return {"groups": groups}
 
+    async def async_get_contacts(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Fetch saved contact names and identifiers from a fresh app-state snapshot."""
+        payload = await self._post_lookup(
+            "contacts",
+            data,
+            "get contacts",
+            CAPABILITY_GET_CONTACTS,
+            timeout=ClientTimeout(total=70),
+        )
+        contacts = _validate_contacts(payload)
+        if contacts is None:
+            raise WhatsappApiError(
+                "get contacts returned an invalid response", code="invalid_response"
+            )
+        return {"contacts": contacts}
+
     async def _post_lookup(
         self,
         endpoint: str,
         data: dict[str, Any],
         action: str,
         capability: str,
+        *,
+        timeout: ClientTimeout | None = None,
     ) -> Any:
         """Post a lookup that needs an add-on capability and return its JSON."""
         if self._capabilities is not None and capability not in self._capabilities:
@@ -505,7 +558,9 @@ class WhatsappClient:
                 code="unsupported_capability",
             )
 
-        response = await self._request("POST", endpoint, json=data)
+        response = await self._request(
+            "POST", endpoint, json=data, timeout=timeout or self._timeout
+        )
         if response.status >= 400:
             try:
                 await self._raise_for_error(response, action)
@@ -660,7 +715,7 @@ class WhatsappClient:
             return await self._session.request(
                 method,
                 url,
-                timeout=self._timeout,
+                timeout=kwargs.pop("timeout", self._timeout),
                 **kwargs,
             )
         except (TimeoutError, ClientError) as err:
@@ -681,7 +736,7 @@ class WhatsappClient:
                 status=response.status,
                 code="invalid_response",
             ) from err
-        except ClientError as err:
+        except (TimeoutError, ClientError) as err:
             raise WhatsappCannotConnect(str(err)) from err
 
     @staticmethod

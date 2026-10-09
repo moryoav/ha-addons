@@ -1711,3 +1711,76 @@ test("remembered polls decode votes after a restart and are forgotten on logout"
     { status: "error", error: "unknown_poll", poll_id: "fictional-late-id" },
   ]);
 });
+
+
+test("getContacts requires a connected client", async (t) => {
+  const { client } = await createHarness();
+  t.after(() => client.disconnect());
+  await client.disconnect();
+  await assert.rejects(client.getContacts(), WhatsappDisconnectedError);
+});
+
+test("getContacts shares concurrent snapshots and starts fresh after completion", async (t) => {
+  const { client, socket, baileys } = await createHarness();
+  t.after(() => client.disconnect());
+  const real = await import("@whiskeysockets/baileys");
+  for (const key of ["newLTHashState", "getBinaryNodeChild", "getBinaryNodeChildren"]) {
+    baileys[key] = real[key];
+  }
+  const contact = { id: FICTIONAL_JID, fields: { fullName: "Example Saved Name", lidJid: FICTIONAL_LID } };
+  baileys.extractSyncdPatches = async () => ({ critical_unblock_low: {
+    snapshot: {}, patches: [], hasMorePatches: false,
+  } });
+  baileys.decodeSyncdSnapshot = async () => ({ state: { version: 1 }, mutationMap: {
+    contact: { index: ["contact", contact.id], syncAction: { value: { contactAction: contact.fields } } },
+  } });
+  let resolve;
+  let queries = 0;
+  const response = { tag: "iq", attrs: {}, content: [{ tag: "sync", attrs: {}, content: [
+    { tag: "collection", attrs: { name: "critical_unblock_low" } },
+  ] }] };
+  socket.query = () => { queries++; return new Promise((done) => { resolve = done; }); };
+  const first = client.getContacts();
+  const second = client.getContacts();
+  assert.equal(queries, 1);
+  resolve(response);
+  assert.deepEqual(await first, [contact]);
+  assert.deepEqual(await second, [contact]);
+  const third = client.getContacts();
+  assert.equal(queries, 2);
+  resolve(response);
+  assert.deepEqual(await third, [contact]);
+});
+
+test("getContacts sanitizes failures and clears failed in-progress requests", async (t) => {
+  const { client, socket, baileys } = await createHarness();
+  t.after(() => client.disconnect());
+  Object.assign(baileys, {
+    newLTHashState: () => ({ version: 0 }),
+    getBinaryNodeChild: () => undefined,
+    getBinaryNodeChildren: () => [],
+  });
+  socket.query = async () => { throw Object.assign(new Error(FICTIONAL_JID), { statusCode: 408 }); };
+  await assert.rejects(client.getContacts(), (error) => {
+    assert.ok(error instanceof WhatsappUpstreamError);
+    assert.equal(error.upstreamCode, 408);
+    assert.equal(error.message.includes(FICTIONAL_JID), false);
+    return true;
+  });
+  socket.query = async () => ({});
+  await assert.rejects(client.getContacts(), WhatsappProtocolError);
+});
+
+
+test("getContacts has an overall timeout even if an upstream query hangs", async (t) => {
+  const { client, socket, baileys } = await createHarness();
+  t.after(() => client.disconnect());
+  baileys.newLTHashState = () => ({ version: 0 });
+  socket.query = () => new Promise(() => {});
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const request = client.getContacts();
+  const rejected = assert.rejects(request, (error) =>
+    error instanceof WhatsappUpstreamError && error.upstreamCode === 408);
+  t.mock.timers.tick(60_000);
+  await rejected;
+});
