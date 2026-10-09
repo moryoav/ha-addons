@@ -1,4 +1,4 @@
-## Unreleased
+## 2.10.1
 
 - Renamed the public add-on name from `WhatsappV2` to `WhatsApp` while keeping
   the existing installation identifiers and saved sessions.
