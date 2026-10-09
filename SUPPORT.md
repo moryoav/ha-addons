@@ -6,9 +6,10 @@ Thanks for using WhatsApp for Home Assistant.
 
 Start with the project documentation:
 
-- `README.md` for installation, setup, actions, events, limitations, troubleshooting, and removal.
-- `whatsapp_addon/DOCS.md` for additional action examples.
-- `whatsapp_addon/CHANGELOG.md` and `CHANGELOG.md` for release notes.
+- [README](README.md) for an overview, installation, configuration, and troubleshooting.
+- [Add-on guide](whatsapp_addon/DOCS.md) for options, pairing, media downloads, and diagnostics.
+- [Knowledge base](https://moryoav.github.io/ha-addons/) for action and automation examples and reference pages.
+- [Project changelog](CHANGELOG.md) and [add-on changelog](whatsapp_addon/CHANGELOG.md) for release history.
 
 ## Reporting Bugs
 

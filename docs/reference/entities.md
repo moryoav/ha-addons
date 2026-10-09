@@ -1,7 +1,6 @@
 # Devices and sensors
 
-Update both the WhatsApp app and the HACS integration to 2.7.0 and restart Home
-Assistant. The integration creates one shared **WhatsApp app** device and a
+The integration creates one shared **WhatsApp app** device and a
 separate **WhatsApp (account ID)** device for every account configured in the
 app's `clients` option. Account IDs come from that option, not phone numbers.
 
@@ -35,7 +34,7 @@ automation conditions; Home Assistant displays the translated name.
 ## Updates and availability
 
 One coordinator refreshes all devices every 30 seconds. It reads the local
-health probe and, on compatible apps, the account status API. These requests
+health probe and the account status API. These requests
 read the app's existing state and make no extra WhatsApp network requests.
 Message, receipt, call, and presence events continue to arrive through push.
 
@@ -45,10 +44,6 @@ When the app is unreachable, App connection shows disconnected and account
 entities become unavailable. A failed account status request, such as an
 authentication error, leaves App connection connected but makes account
 entities unavailable until status can be read again.
-
-Older app versions create only the shared App connection entity. Existing
-actions remain supported. Updating the app adds account devices on the next
-successful refresh, without reconfiguring the integration.
 
 ## Account devices
 

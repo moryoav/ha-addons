@@ -40,7 +40,7 @@ the same message twice with different `remoteJid` values.
 
 ## Find a group ID and send a notification
 
-The quickest way is `whatsapp.list_groups` (version 2.5.0 or newer), which
+The quickest way is `whatsapp.list_groups`, which
 [lists every group](#list-every-group) the account belongs to. You can also
 capture the group ID from an incoming event:
 
@@ -113,11 +113,9 @@ failure, and an upstream WhatsApp failure are reported as action errors. They
 are never collapsed into `exists: false`.
 
 `whatsapp.send_message` sends direct phone JIDs without a registration lookup;
-bare phone numbers retain the existing lookup before sending. Call
+bare phone numbers are looked up before sending. Call
 `whatsapp.check_number` when an automation needs an explicit preflight and a
 structured registration response.
-
-`whatsapp.check_number` requires add-on and integration version 1.4.31 or newer.
 
 ## Look up a group name
 
@@ -180,7 +178,36 @@ Each call queries WhatsApp and shares the per-client lookup rate limit with
 group. An unknown or disconnected client, a group the account has left, rate
 limiting, and an upstream WhatsApp failure are reported as action errors.
 
-`whatsapp.get_group_info` requires add-on and integration version 2.1.0 or newer.
+## List every group
+
+`whatsapp.list_groups` returns every group the linked account belongs to,
+sorted by name:
+
+```yaml
+- action: whatsapp.list_groups
+  data:
+    clientId: default
+  response_variable: groups
+```
+
+The response has this shape:
+
+```yaml
+groups:
+  - jid: 120363000000000000@g.us
+    subject: Family
+    description: Weekend plans and grocery lists
+    owner: 12025550123@s.whatsapp.net
+    created_at: "2023-04-18T09:12:44.000Z"
+    size: 4
+    announce_only: false
+    admins_only_settings: false
+    is_community: false
+    parent_community: null
+```
+
+Each group has the same fields as `whatsapp.get_group_info`, without
+`participants`. Call `whatsapp.get_group_info` for a group's member list.
 
 ## Get saved contacts
 
@@ -238,40 +265,8 @@ same connection share the in-progress fetch.
 The local API is `POST /contacts` with `{"clientId": "default"}` and advertises
 capability `get_contacts`. It uses the same optional bearer authentication and
 per-client lookup rate limit as the other lookup actions. Contact values are
-not included in app error logs. This action requires both the app and HACS
-integration at version 2.10.0 or newer, an established session with available
-app-state keys, an explicit `clientId`, and `response_variable`.
-
-## List every group
-
-`whatsapp.list_groups` returns every group the linked account belongs to,
-sorted by name:
-
-```yaml
-- action: whatsapp.list_groups
-  data:
-    clientId: default
-  response_variable: groups
-```
-
-The response has this shape:
-
-```yaml
-groups:
-  - jid: 120363000000000000@g.us
-    subject: Family
-    description: Weekend plans and grocery lists
-    owner: 12025550123@s.whatsapp.net
-    created_at: "2023-04-18T09:12:44.000Z"
-    size: 4
-    announce_only: false
-    admins_only_settings: false
-    is_community: false
-    parent_community: null
-```
-
-Each group has the same fields as `whatsapp.get_group_info`, without
-`participants`. Call `whatsapp.get_group_info` for a group's member list.
+not included in app error logs. This action requires an established session
+with available app-state keys, an explicit `clientId`, and `response_variable`.
 
 ## Look up a contact's profile
 
@@ -304,5 +299,5 @@ and `address`.
 `picture_url` is a temporary WhatsApp link. Use it soon, for example as the
 image of a notification, and look it up again later instead of storing it.
 
-Both actions require `response_variable`, share the per-client lookup rate
-limit, and require add-on and integration version 2.5.0 or newer.
+Both actions require `response_variable` and share the per-client lookup rate
+limit.

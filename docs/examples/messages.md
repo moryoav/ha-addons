@@ -39,67 +39,6 @@ receipt, or that the recipient read the message.
 See [the send-result event example](../reference/events.md#capture-a-send-result-event)
 to collect results in a separate event listener.
 
-## Edit a sent text message
-
-I use the original `sent_message.key` to update a notification after a task
-finishes.
-
-```yaml
-- action: whatsapp.send_message
-  data:
-    clientId: default
-    to: 999000111222333@lid
-    body:
-      text: "The task is running."
-  response_variable: task_message
-- delay: "00:00:05"
-- action: whatsapp.send_message
-  data:
-    clientId: default
-    to: "{{ task_message.sent_message.key.remoteJid }}"
-    body:
-      text: "The task has finished."
-      edit: "{{ task_message.sent_message.key }}"
-```
-
-Replace the delay with your task. Use the same client session and the original
-key, including `id`, `remoteJid`, and `fromMe`. Editing is subject to WhatsApp's
-editing window and message eligibility; this example edits a text message
-sent by the linked account. An accepted action is not proof that the recipient
-has received the edit.
-
-## Delete a sent message
-
-This sends a new temporary notification, then requests its deletion for
-everyone. Use it only when removal is the intended behavior:
-
-```yaml
-- action: whatsapp.send_message
-  data:
-    clientId: default
-    to: 999000111222333@lid
-    body:
-      text: "Temporary test notification."
-  response_variable: temporary_message
-- delay: "00:00:10"
-- action: whatsapp.send_message
-  data:
-    clientId: default
-    to: "{{ temporary_message.sent_message.key.remoteJid }}"
-    body:
-      delete: "{{ temporary_message.sent_message.key }}"
-```
-
-`body.delete` is a full message key, not just an ID. WhatsApp applies its own
-deletion limits, and recipients may already have seen the message. For a later
-automation run, use the [saved-key pattern](scripts.md#save-a-message-key-for-another-run).
-Keep the original key when chaining edits, reactions, or deletion; a response
-to an edit/delete operation identifies that protocol operation.
-
-These payloads are supported by the pinned Baileys 6.7.23 message types and
-passed through by `whatsapp.send_message`. They do not use separate edit or
-delete Home Assistant actions.
-
 ## Send an image
 
 ```yaml
@@ -137,27 +76,6 @@ data:
     location:
       degreesLatitude: 24.121231
       degreesLongitude: 55.1121221
-```
-
-## React to an incoming message
-
-```yaml
-- alias: React to message
-  description: ""
-  trigger:
-    - platform: event
-      event_type: new_whatsapp_message
-  condition: []
-  action:
-    - action: whatsapp.send_message
-      data:
-        clientId: "{{ trigger.event.data.clientId }}"
-        to: "{{ trigger.event.data.key.remoteJid }}"
-        body:
-          react:
-            text: "👍🏻" # Use an empty string to remove the reaction
-            key: "{{ trigger.event.data.key }}"
-  mode: single
 ```
 
 ## Send a sticker
@@ -226,8 +144,7 @@ URLs, a Home Assistant `repeat.for_each` can send one video per URL.
 
 ## Create a poll
 
-I verified this three-option poll with a live send and a returned vote event.
-This payload allowed the recipient to select multiple options.
+This three-option poll lets the recipient select multiple options.
 
 ```yaml
 action: whatsapp.send_message
@@ -247,12 +164,12 @@ The existing pattern also builds `values` from JSON stored in a text helper:
 `values: "{{ states('input_text.report_choices') | from_json }}"`.
 That helper must contain a valid JSON array of strings.
 
-In the live test, `new_whatsapp_message` carried a `message.pollUpdateMessage`
-object whose `pollCreationMessageKey.id` matched the sent poll's message ID.
+A vote arrives in `new_whatsapp_message` with a `message.pollUpdateMessage`
+object whose `pollCreationMessageKey.id` matches the sent poll's message ID.
 
 ## React to a poll vote
 
-Starting with add-on 2.8.0, the event for a vote also carries a `poll_vote`
+The event for a vote also carries a `poll_vote`
 object with the names of the options the voter has selected. This automation
 answers when someone picks the weekly report in the poll above:
 
@@ -293,6 +210,27 @@ automation if you need them. Polls are remembered for 30 days; see
 [Poll votes](../reference/events.md#poll-votes) for the fields, limits, and
 error codes.
 
+## React to an incoming message
+
+```yaml
+- alias: React to message
+  description: ""
+  trigger:
+    - platform: event
+      event_type: new_whatsapp_message
+  condition: []
+  action:
+    - action: whatsapp.send_message
+      data:
+        clientId: "{{ trigger.event.data.clientId }}"
+        to: "{{ trigger.event.data.key.remoteJid }}"
+        body:
+          react:
+            text: "👍🏻" # Use an empty string to remove the reaction
+            key: "{{ trigger.event.data.key }}"
+  mode: single
+```
+
 ## React to a message sent earlier
 
 I capture the send response so a later action can react to the original
@@ -321,6 +259,65 @@ The delay stands in for your task. The YAML escape `\u2705` is a check-mark
 emoji. Use an empty reaction text to remove it. The same client session must
 perform both sends. See [saving a message key](scripts.md#save-a-message-key-for-another-run)
 when the completion action belongs to another automation run.
+
+## Edit a sent text message
+
+I use the original `sent_message.key` to update a notification after a task
+finishes.
+
+```yaml
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: 999000111222333@lid
+    body:
+      text: "The task is running."
+  response_variable: task_message
+- delay: "00:00:05"
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: "{{ task_message.sent_message.key.remoteJid }}"
+    body:
+      text: "The task has finished."
+      edit: "{{ task_message.sent_message.key }}"
+```
+
+Replace the delay with your task. Use the same client session and the original
+key, including `id`, `remoteJid`, and `fromMe`. Editing is subject to WhatsApp's
+editing window and message eligibility; this example edits a text message
+sent by the linked account. An accepted action is not proof that the recipient
+has received the edit.
+
+## Delete a sent message
+
+This sends a new temporary notification, then requests its deletion for
+everyone. Use it only when removal is the intended behavior:
+
+```yaml
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: 999000111222333@lid
+    body:
+      text: "Temporary test notification."
+  response_variable: temporary_message
+- delay: "00:00:10"
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: "{{ temporary_message.sent_message.key.remoteJid }}"
+    body:
+      delete: "{{ temporary_message.sent_message.key }}"
+```
+
+`body.delete` is a full message key, not just an ID. WhatsApp applies its own
+deletion limits, and recipients may already have seen the message. For a later
+automation run, use the [saved-key pattern](scripts.md#save-a-message-key-for-another-run).
+Keep the original key when chaining edits, reactions, or deletion; a response
+to an edit/delete operation identifies that protocol operation.
+
+Use `whatsapp.send_message` for both edit and delete payloads.
 
 ## Reply to a notification with a sticker
 

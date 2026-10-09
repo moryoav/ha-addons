@@ -1,88 +1,33 @@
-# Home Assistant Add-on: WhatsappV2
-
-Write WhatsApp messages from Home Assistant and receive events for sent and
-received messages, incoming calls, and presence updates.
-
-## App and account status sensors
-
-The integration creates one shared WhatsApp app device and a separate device
-for every configured account. The app device has an **App connection**
-binary sensor; each account has a **WhatsApp connection** binary sensor and a
-**Session state** sensor. The integration reads existing local connection state
-every 30 seconds without extra WhatsApp requests. See
-[Devices and sensors](https://moryoav.github.io/ha-addons/reference/entities/).
-
-## Decrypted incoming media
-
-Automatically download and decrypt incoming images, voice notes, audio, videos,
-documents, and stickers. Each attachment gets a unique temporary file and an
-authenticated link in `new_whatsapp_message`, ready for OCR, transcription, or
-other processing in Home Assistant.
-
-Enable **Download incoming media** in the add-on configuration. Downloads are
-off by default. Files are kept for 24 hours by default, with configurable
-retention and storage limits.
-See the [incoming media guide](https://moryoav.github.io/ha-addons/examples/incoming-media/).
-
-`whatsapp_message_sent` reports outgoing messages, including messages sent from
-the linked phone. The add-on sends this event directly to Home Assistant. See the
-[event details and logging example](https://github.com/moryoav/ha-addons#events).
-
-`whatsapp_contacts_sync` forwards the contact records WhatsApp supplies, with
-available names, LIDs, and phone identifiers. Each batch includes its account ID
-and original Baileys event source. See the
-[contact event reference](https://moryoav.github.io/ha-addons/reference/events/#contact-metadata).
-
-`whatsapp.get_contacts` fetches a fresh saved-contact snapshot for the selected
-connected account. It returns the original contact fields, including saved
-names and LIDs when supplied, without waiting for messages. See the
-[saved contact action](https://moryoav.github.io/ha-addons/examples/recipients/#get-saved-contacts).
-
-<img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
+<img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" alt="WhatsApp" width="400"/>
 
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
 
-[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
-[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
+# Home Assistant Add-on: WhatsappV2
 
-Supported architectures are `aarch64` and `amd64`.
+Send WhatsApp messages from Home Assistant and receive message, receipt, call,
+contact, and presence events.
 
-This add-on runs the local WhatsApp Web bridge used by the `whatsapp` Home Assistant integration in this repository.
+This add-on runs the local WhatsApp Web bridge. Install the companion
+**WhatsApp** integration through HACS to use account devices, status sensors,
+actions, and diagnostics in Home Assistant.
+
+## What it can do
+
+- Send text, images, videos, documents, stickers, voice messages, locations,
+  contacts, polls, reactions, edits, deletions, and quoted replies.
+- Receive incoming and outgoing messages, delivery and read receipts, calls,
+  presence changes, contact updates, and decoded poll votes.
+- Download and decrypt received attachments for Home Assistant automations.
+- Look up saved contacts, phone numbers, profiles, and groups.
+- Monitor the app and each account with connection and session sensors.
+- Pair and manage multiple WhatsApp accounts through the web UI.
 
 ## Important limitation
 
-This project uses WhatsApp Web through an unofficial client library. WhatsApp does not officially support bots or unofficial clients, so account restrictions or blocking are possible. Use a dedicated account if that risk matters to you.
-
-## Security notes
-
-- No HTTP port is published to the LAN.
-- The local bridge API is used from the Home Assistant add-on network and can
-  optionally require a bearer token.
-- The bridge API does not enable cross-origin browser access.
-- A custom AppArmor profile gives the trusted base-image bootstrap its standard
-  startup permissions, then runs the network-facing Node bridge in a restricted
-  child profile where packaged code and dependencies are read-only and writes
-  are limited to temporary and persistent session data.
-- No Docker API access, host network, host PID, host UTS, `full_access`, privileged capabilities, or elevated Supervisor role are used.
-- The add-on has no `/config` mount and cannot install, overwrite, or remove
-  custom integrations.
-- A native container health check uses the public local `/health` endpoint,
-  whose response contains only non-sensitive status, version, capability, and
-  client count metadata.
-- Home Assistant Ingress is enabled for the add-on web UI.
-- The web UI listener only accepts the Supervisor ingress proxy address, and no HTTP port is published to the LAN.
-- QR pairing is shown in the add-on web UI and through Home Assistant persistent notifications.
-
-## Stable and canary builds
-
-Use the default repository URL for stable releases:
-
-```text
-https://github.com/moryoav/ha-addons
-```
-
-This repository does not currently publish a separate canary or `next` branch. If a canary channel is introduced later, it will be documented with its `#branch` repository URL and a distinct add-on name.
+This project uses WhatsApp Web through an unofficial client library. WhatsApp
+may restrict or block accounts that use unofficial clients. Use a dedicated
+account if that risk matters to you.
 
 ## Installation
 
@@ -161,6 +106,9 @@ The add-on advertises its local API through Supervisor discovery, so the integra
 
 ## Add-on options
 
+See the [complete option reference](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md#configuration)
+for media downloads, retention, diagnostics, and experimental options.
+
 - `clients`: one or more unique WhatsApp session names. The default is
   `default`. Names must start with a letter or digit, may contain letters,
   digits, `_`, and `-`, and may be at most 64 characters long.
@@ -171,8 +119,8 @@ The add-on advertises its local API through Supervisor discovery, so the integra
   and message IDs, retry activity, and encrypted payload fingerprints. Keep it
   disabled during normal operation.
 - `api_token`: optional bearer token for the internal API. Set it to a strong
-  random value for defense in depth, or leave it unset for compatibility with
-  existing internal-network installations. It may contain `A-Z`, `a-z`, `0-9`,
+  random value for defense in depth, or leave it unset to use the internal API
+  without bearer authentication. It may contain `A-Z`, `a-z`, `0-9`,
   `-`, `.`, `_`, `~`, `+`, and `/`, followed by optional `=` padding, and may be
   at most 512 characters total. Random hex or URL-safe Base64 is recommended;
   spaces, `:`, and other characters make startup fail validation.
@@ -180,6 +128,74 @@ The add-on advertises its local API through Supervisor discovery, so the integra
 Token-enabled installations require Supervisor discovery; manual or fallback
 URL detection cannot provide the token. Restart the add-on and reload the
 integration after adding, changing, or removing `api_token`.
+
+Each client gets its own persisted session and must be referenced by `clientId` in service calls.
+
+## Web UI and pairing
+
+The add-on page includes an Open Web UI action through Home Assistant Ingress.
+The web UI shows each configured session, its connection state, and the current
+QR code when a session is waiting for pairing. If a sustained burst of
+libsignal decryption failures is detected, all WhatsApp clients are paused to
+protect the host while the add-on and Web UI remain available. Use Retry
+connection to keep the saved sessions, or use the confirmation-gated Reset and
+re-pair control for one client to delete its local session and display a new QR
+code. Remove the old add-on entry from WhatsApp Linked Devices before scanning
+the new code.
+
+## App and account status sensors
+
+The integration creates one shared WhatsApp app device and a separate device
+for every configured account. The app device has an **App connection**
+binary sensor; each account has a **WhatsApp connection** binary sensor and a
+**Session state** sensor. The integration reads existing local connection state
+every 30 seconds without extra WhatsApp requests. See
+[Devices and sensors](https://moryoav.github.io/ha-addons/reference/entities/).
+
+## Decrypted incoming media
+
+Automatically download and decrypt incoming images, voice notes, audio, videos,
+documents, and stickers. Each attachment gets a unique temporary file and an
+authenticated link in `new_whatsapp_message`, ready for OCR, transcription, or
+other processing in Home Assistant.
+
+Enable **Download incoming media** in the add-on configuration. Downloads are
+off by default. Files are kept for 24 hours by default, with configurable
+retention and storage limits.
+See the [incoming media guide](https://moryoav.github.io/ha-addons/examples/incoming-media/).
+
+## Actions and events
+
+`whatsapp_message_sent` reports outgoing messages, including messages sent from
+the linked phone. The add-on sends this event directly to Home Assistant. See the
+[event details and logging example](https://github.com/moryoav/ha-addons#events).
+
+`whatsapp_contacts_sync` forwards the contact records WhatsApp supplies, with
+available names, LIDs, and phone identifiers. Each batch includes its account ID
+and original Baileys event source. See the
+[contact event reference](https://moryoav.github.io/ha-addons/reference/events/#contact-metadata).
+
+`whatsapp.get_contacts` fetches a fresh saved-contact snapshot for the selected
+connected account. It returns the original contact fields, including saved
+names and LIDs when supplied, without waiting for messages. See the
+[saved contact action](https://moryoav.github.io/ha-addons/examples/recipients/#get-saved-contacts).
+
+## Security notes
+
+The bridge API runs on Home Assistant's internal add-on network and supports
+optional bearer-token authentication through `api_token`. Supervisor discovery
+provides the local API address and token to the integration. Restart the add-on
+and reload the integration after changing that token.
+
+The web UI uses Home Assistant Ingress. AppArmor restricts the Node bridge's
+writes to temporary files, persistent session data, and attachments under
+`/media/whatsapp`. Container health checks use the local `/health` endpoint.
+
+Redact API tokens, pairing QR codes, session data, phone JIDs, LIDs, and message
+content before sharing logs, diagnostics, screenshots, or automation traces.
+Decryption Diagnostics records private message data when enabled.
+
+## Diagnostics
 
 Debug logging periodically summarizes event-loop responsiveness, process and
 container resource use, API activity, health state, reconnects, and aggregate
@@ -206,37 +222,6 @@ mode only, it creates a deduplicated persistent notification containing the
 same diagnostic summary. Normal `info` operation never creates this health
 notification.
 
-Each client gets its own persisted session and must be referenced by `clientId` in service calls.
-
-The add-on page includes an Open Web UI action through Home Assistant Ingress.
-The web UI shows each configured session, its connection state, and the current
-QR code when a session is waiting for pairing. If a sustained burst of
-libsignal decryption failures is detected, all WhatsApp clients are paused to
-protect the host while the add-on and Web UI remain available. Use Retry
-connection to keep the saved sessions, or use the confirmation-gated Reset and
-re-pair control for one client to delete its local session and display a new QR
-code. Remove the old add-on entry from WhatsApp Linked Devices before scanning
-the new code.
-
-## Integration compatibility
-
-The add-on and integration are separate installations. Updating or
-uninstalling the add-on does not change an existing
-`/config/custom_components/whatsapp` directory.
-
-Install the WhatsApp integration from the default HACS catalog, then restart
-Home Assistant.
-
-The add-on registers a Supervisor discovery message on startup so Home
-Assistant can create or update the integration connection. When `api_token` is
-set, the token is conveyed through that internal discovery record rather than
-entered in the setup flow. A stale token appears as an authorization error on
-the first protected action because the health-check `/health` route remains
-public.
-
-API tokens, pairing QR codes, session data, phone JIDs, and LIDs are sensitive.
-Redact them from logs, issue reports, screenshots, and automation traces.
-
 ## Documentation
 
 See [the repository README](https://github.com/moryoav/ha-addons/blob/main/README.md) for HACS integration setup, actions, events, troubleshooting, and removal instructions.
@@ -244,3 +229,6 @@ See [the repository README](https://github.com/moryoav/ha-addons/blob/main/READM
 I keep the action and automation examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
 
 See [the add-on documentation](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md) for add-on options and the web UI, and [the add-on changelog](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/CHANGELOG.md) for release notes.
+
+[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
+[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg

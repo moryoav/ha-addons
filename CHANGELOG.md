@@ -6,8 +6,12 @@ All notable changes to this repository are documented here.
 
 ### Documentation
 
-- Updated the main and add-on READMEs to describe current features and setup
-  without release history or version-specific upgrade instructions.
+- Organized the READMEs, add-on guide, and knowledge base around first-time
+  installation, configuration, features, examples, and diagnostics.
+- Removed feature version requirements, release-history wording, canary-channel
+  notes, and legacy integration migration instructions from user guides.
+- Placed the logo and architecture badges first in the READMEs, grouped related
+  examples, and separated incoming media guidance from other actions and events.
 
 ## 2.10.0
 
