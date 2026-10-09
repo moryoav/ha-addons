@@ -2,9 +2,6 @@
 
 The add-on fires these Home Assistant events:
 
-See [incoming message examples](../examples/incoming-messages.md) for chat
-filters, text extraction, media types, and conversation replies.
-
 | Event type | Description |
 | --- | --- |
 | `new_whatsapp_message` | A received WhatsApp message. |
@@ -18,6 +15,9 @@ filters, text extraction, media types, and conversation replies.
 | `whatsapp_send_message_result` | Result event after a successful send action. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
+See [incoming message examples](../examples/incoming-messages.md) for chat
+filters, text extraction, media types, and conversation replies.
+
 ## Message events
 
 `new_whatsapp_message` and `whatsapp_message_sent` include the configured
@@ -25,20 +25,20 @@ filters, text extraction, media types, and conversation replies.
 `message` payload. Other fields, such as `messageTimestamp`, are passed through
 when present.
 
-With incoming media downloads enabled in add-on 2.0.0 or newer,
+With incoming media downloads enabled,
 `new_whatsapp_message` also includes a `media` object with `status: ready`,
 a decrypted `local_path`, an authenticated `url`, MIME type, size, and expiry.
 The event waits until its file is ready. Failures still deliver the message
 with `media.status: error` and a safe error code. Ordinary text and outgoing
-events are unchanged. The download endpoint requires integration 2.0.0 or newer.
+events keep their usual fields.
 See [Decrypt incoming media](../examples/incoming-media.md) for setup,
 the full event contract, retention, and processing examples.
 
-Starting with add-on 2.8.0, the event for a poll vote also includes a
+The event for a poll vote also includes a
 `poll_vote` object with the voter's selected options. See
 [Poll votes](#poll-votes).
 
-`whatsapp_message_sent` requires add-on 1.4.39 or newer. It fires for messages with
+`whatsapp_message_sent` fires for messages with
 `key.fromMe: true`, including messages sent from the phone, other linked
 devices, and the add-on itself when reported by WhatsApp. For this event,
 `key.remoteJid` identifies the destination chat or group and can be a LID.
@@ -56,11 +56,93 @@ thumbnails, CDN paths, scan sidecars, and media key timestamp representation
 because WhatsApp can vary those between phone-number and LID deliveries of the
 same message.
 
+## Chat archive state
+
+Both `new_whatsapp_message` and `whatsapp_message_sent` include
+`chat_archived`. For sent messages, it describes the destination chat:
+
+| Value | Meaning |
+| --- | --- |
+| `true` | The latest known chat state is archived. |
+| `false` | The latest known chat state is unarchived. |
+| `null` | The add-on does not know this chat's archive state yet. |
+
+The add-on listens to WhatsApp chat history and archive updates and looks up
+the message's `key.remoteJid` in a local cache. There is no additional network
+request or wait for chat synchronization when a message arrives. Changes on
+the phone or another linked device take effect after WhatsApp synchronizes
+them. If WhatsApp automatically unarchives a chat on a new message, the flag
+follows that update; it does not describe the chat before the message arrived.
+
+The cache stores only chat identifiers and archive flags alongside the account's
+session data. Known flags survive restarts, remain separate between accounts,
+and are cleared when the session is reset or logged out. Deleted chats are
+removed. Up to 50,000 chat flags are retained; an evicted chat becomes unknown
+until its state is received again.
+
+A chat's archive state remains `null` until WhatsApp supplies it through
+synchronization.
+An absent archive flag is never treated as `false`. Chat identifiers are matched
+exactly, so a phone-number JID does not imply a matching LID. A later state update
+does not change an event that was already delivered. For media, the flag is
+captured when the message is received, before the download finishes.
+
+I use this condition to act only when the chat is known to be unarchived:
+
+```yaml
+conditions:
+  - condition: template
+    value_template: "{{ trigger.event.data.get('chat_archived') is sameas false }}"
+```
+
+This condition also skips unknown states and works with either message event.
+
+## Poll votes
+
+WhatsApp encrypts a poll vote with a secret that only the poll's own message
+carries, so a vote by itself shows which poll it belongs to but not the choice.
+The add-on remembers the polls it sees and adds a
+`poll_vote` object to each vote's message event (`type: pollUpdateMessage`):
+
+| Field | Meaning |
+| --- | --- |
+| `status` | `ready` when the vote was decoded, `error` when it was not. |
+| `poll_id` | Message ID of the poll. For a poll sent from Home Assistant, this is the `message_id` returned by `whatsapp.send_message`. |
+| `poll_name` | The poll's question. Present with `ready`. |
+| `selected_options` | Names of the options the voter has selected now, in the poll's own order. Present with `ready`. |
+| `error` | Why the vote was not decoded. Present with `error`. |
+
+Each vote event carries the voter's complete current selection, not a change.
+A multiple-choice vote lists every selected option, and an empty list means the
+voter withdrew the vote. The add-on does not keep totals. The voter is
+`key.participant` in a group and `key.remoteJid` in a direct chat. Votes this
+account casts on the phone arrive in `whatsapp_message_sent` with the same
+object. Other message types have no `poll_vote` field.
+
+This works for polls sent from Home Assistant, from the phone, and by other
+people, in direct chats and groups, once the add-on has received the poll.
+
+For each account, the add-on keeps the secret, question, and option names of
+the newest 100 polls, each for 30 days, alongside the account's session data.
+Remembered polls survive restarts, remain separate between accounts, and are
+cleared when the session is reset or logged out. The secret is never sent to
+Home Assistant, including in wrapped message events and send results. Wrapped
+votes use the same `pollUpdateMessage` event type as unwrapped votes.
+
+| `error` | Meaning |
+| --- | --- |
+| `unknown_poll` | The add-on does not have this poll: it was not received by the connected add-on, is more than 30 days old, or is no longer among the newest 100. Also reported for a vote that arrives in a different chat than its poll. |
+| `decrypt_failed` | The poll is known, but the vote could not be decrypted with it. |
+| `unknown_option` | The vote selects an option that is not in the remembered poll. |
+
+See
+[React to a poll vote](../examples/messages.md#react-to-a-poll-vote) for an
+automation.
+
 ## Contact metadata
 
-Starting with app 2.9.0, `whatsapp_contacts_sync` forwards each non-empty contact
-batch supplied by Baileys. The app sends it directly to Home Assistant, so no
-HACS integration update is needed.
+`whatsapp_contacts_sync` forwards each non-empty contact batch supplied by
+Baileys. The app sends it directly to Home Assistant.
 
 | Field | Meaning |
 | --- | --- |
@@ -97,92 +179,6 @@ and unrelated synchronization fields are not included.
 
 Listen for `whatsapp_contacts_sync` in Home Assistant Developer Tools > Events
 to inspect the batches supplied by your account.
-
-## Chat archive state
-
-Starting with add-on 2.2.0, every `new_whatsapp_message` event includes
-`chat_archived`. Starting with add-on 2.2.1, `whatsapp_message_sent` includes
-the same field for the destination chat:
-
-| Value | Meaning |
-| --- | --- |
-| `true` | The latest known chat state is archived. |
-| `false` | The latest known chat state is unarchived. |
-| `null` | The add-on does not know this chat's archive state yet. |
-
-The add-on listens to WhatsApp chat history and archive updates and looks up
-the message's `key.remoteJid` in a local cache. There is no additional network
-request or wait for chat synchronization when a message arrives. Changes on
-the phone or another linked device take effect after WhatsApp synchronizes
-them. If WhatsApp automatically unarchives a chat on a new message, the flag
-follows that update; it does not describe the chat before the message arrived.
-
-The cache stores only chat identifiers and archive flags alongside the account's
-session data. Known flags survive restarts, remain separate between accounts,
-and are cleared when the session is reset or logged out. Deleted chats are
-removed. Up to 50,000 chat flags are retained; an evicted chat becomes unknown
-until its state is received again.
-
-After upgrading an existing session, unchanged chats can remain `null` until
-WhatsApp supplies their state. The add-on does not force a full resync.
-An absent archive flag is never treated as `false`. Chat identifiers are matched
-exactly, so a phone-number JID does not imply a matching LID. A later state update
-does not change an event that was already delivered. For media, the flag is
-captured when the message is received, before the download finishes.
-
-I use this condition to act only when the chat is known to be unarchived:
-
-```yaml
-conditions:
-  - condition: template
-    value_template: "{{ trigger.event.data.get('chat_archived') is sameas false }}"
-```
-
-This condition also skips unknown states and works with either message event.
-Only the add-on needs updating; no HACS integration update is required.
-
-## Poll votes
-
-WhatsApp encrypts a poll vote with a secret that only the poll's own message
-carries, so a vote by itself shows which poll it belongs to but not the choice.
-Starting with add-on 2.8.0, the add-on remembers the polls it sees and adds a
-`poll_vote` object to each vote's message event (`type: pollUpdateMessage`):
-
-| Field | Meaning |
-| --- | --- |
-| `status` | `ready` when the vote was decoded, `error` when it was not. |
-| `poll_id` | Message ID of the poll. For a poll sent from Home Assistant, this is the `message_id` returned by `whatsapp.send_message`. |
-| `poll_name` | The poll's question. Present with `ready`. |
-| `selected_options` | Names of the options the voter has selected now, in the poll's own order. Present with `ready`. |
-| `error` | Why the vote was not decoded. Present with `error`. |
-
-Each vote event carries the voter's complete current selection, not a change.
-A multiple-choice vote lists every selected option, and an empty list means the
-voter withdrew the vote. The add-on does not keep totals. The voter is
-`key.participant` in a group and `key.remoteJid` in a direct chat. Votes this
-account casts on the phone arrive in `whatsapp_message_sent` with the same
-object. Other message types have no `poll_vote` field.
-
-This works for polls sent from Home Assistant, from the phone, and by other
-people, in direct chats and groups, once the add-on has received the poll on
-version 2.8.0 or newer.
-
-For each account, the add-on keeps the secret, question, and option names of
-the newest 100 polls, each for 30 days, alongside the account's session data.
-Remembered polls survive restarts, remain separate between accounts, and are
-cleared when the session is reset or logged out. The secret is never sent to
-Home Assistant, including in wrapped message events and send results. Wrapped
-votes use the same `pollUpdateMessage` event type as unwrapped votes.
-
-| `error` | Meaning |
-| --- | --- |
-| `unknown_poll` | The add-on does not have this poll: it was sent before the update to 2.8.0, more than 30 days ago, or is no longer among the newest 100. Also reported for a vote that arrives in a different chat than its poll. |
-| `decrypt_failed` | The poll is known, but the vote could not be decrypted with it. |
-| `unknown_option` | The vote selects an option that is not in the remembered poll. |
-
-Only the add-on needs updating; no HACS integration update is required. See
-[React to a poll vote](../examples/messages.md#react-to-a-poll-vote) for an
-automation.
 
 ## Capture a send-result event
 
@@ -247,7 +243,7 @@ events of at most 100 IDs. Check `messageIds` for the message you care about,
 for example to dismiss its Home Assistant notification once you have read it on
 the phone.
 
-Both events need add-on version 2.5.0 or newer. See the
+See the
 [unread-alert escalation](../examples/automations.md#escalate-when-an-alert-is-not-read) and
 [notification dismissal](../examples/automations.md#dismiss-a-notification-after-reading-the-chat-on-the-phone)
 examples.
@@ -272,7 +268,7 @@ device, not the end of the call. WhatsApp sends a linked device nothing more
 about an answered call, so there is no update when it ends. `ringing` can fire
 once for each of your devices; trigger on `offer` to act once per call.
 
-Starting with version 2.3.0, `whatsapp.reject_call` declines an incoming call.
+`whatsapp.reject_call` declines an incoming call.
 Pass the `callId` and `from` values of its `offer` event, as in the
 [night-time example](../examples/automations.md#decline-calls-at-night-and-reply-with-a-message).
 WhatsApp does not let a linked device start calls, and it does not report calls

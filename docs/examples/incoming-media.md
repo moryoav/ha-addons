@@ -1,7 +1,7 @@
 # Decrypt incoming media
 
-Version 2.0.0 brings incoming WhatsApp attachments directly into Home Assistant
-automations. Images, voice notes, audio, videos, documents, and stickers can be
+Use incoming WhatsApp attachments in Home Assistant automations.
+Images, voice notes, audio, videos, documents, and stickers can be
 downloaded, decrypted, and saved automatically. Each attachment gets its own
 temporary file and an authenticated download link in `new_whatsapp_message`.
 
@@ -12,13 +12,11 @@ integration or service for OCR, transcription, conversion, or AI processing.
 
 ## Enable incoming media
 
-1. Update **both** the WhatsApp add-on and HACS integration to **2.0.0 or newer**.
-2. Restart Home Assistant after updating the integration.
-3. Enable **Download incoming media** in the add-on configuration, then save
+1. [Install and configure the add-on and integration](https://github.com/moryoav/ha-addons#installation).
+2. Enable **Download incoming media** in the add-on configuration, then save
    and restart the add-on.
 
-The option is off by default, so existing installations do not start saving
-private attachments unexpectedly. Enabling it applies to incoming media across
+Downloads are off by default. Enabling them applies to incoming media across
 all configured WhatsApp sessions and chats. Automation filters determine which
 files to process afterwards, not which files are downloaded.
 
@@ -39,8 +37,8 @@ media_max_storage_mb: 1024
 Home Assistant OS shares `/media` with the add-on. Files are stored under
 `/media/whatsapp/<unique-id>/file.<extension>`. The integration serves those
 same files. A custom container deployment must mount the same storage at
-`/media` in both containers. Installing only the add-on provides the files and
-event metadata; the 2.0.0 integration provides authenticated HTTP access.
+`/media` in both containers. The add-on saves the files and supplies event
+metadata; the integration provides authenticated HTTP access.
 
 ## Event data
 
@@ -170,8 +168,8 @@ Error events do not include a file path or download link. Incomplete files are
 removed, and interrupted-download leftovers are cleaned on startup. There is
 no separate automatic retry action after an error event.
 
-For a missing link, check that both components are updated, the integration is
-loaded, and both containers see the same `/media` directory. HTTP `401` means
+For a missing link, check that the integration is loaded and both containers
+see the same `/media` directory. HTTP `401` means
 authentication is required, `404` means the file or integration is unavailable,
 and `410` means the attachment has expired.
 

@@ -25,16 +25,8 @@ The lookup actions `check_number`, `get_group_info`, `get_profile`,
 `list_groups`, and `get_contacts` require `response_variable` and share a
 per-client rate limit.
 
-| Action | Add-on and integration version |
-| --- | --- |
-| `check_number` | 1.4.31 |
-| `get_group_info` | 2.1.0 |
-| `reject_call` | 2.3.0 |
-| `get_profile`, `list_groups` | 2.5.0 |
-| `get_contacts` | 2.10.0 |
-
 `whatsapp.send_message` can return response data when called with
-`response_variable`; it also fires the compatibility event
+`response_variable`; it also fires the event
 `whatsapp_send_message_result`. A successful response means the linked client
 accepted the send operation. It does not guarantee delivery, receipt, or that
 the recipient read the message.
