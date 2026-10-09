@@ -46,6 +46,7 @@ from .const import (
     DOMAIN,
     PRESENCE_TYPES,
     SERVICE_CHECK_NUMBER,
+    SERVICE_GET_CONTACTS,
     SERVICE_GET_GROUP_INFO,
     SERVICE_GET_PROFILE,
     SERVICE_LIST_GROUPS,
@@ -136,6 +137,8 @@ LIST_GROUPS_SCHEMA = vol.Schema(
         vol.Required(ATTR_CLIENT_ID): cv.string,
     }
 )
+
+GET_CONTACTS_SCHEMA = LIST_GROUPS_SCHEMA
 
 REJECT_CALL_SCHEMA = vol.Schema(
     {
@@ -291,6 +294,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             lambda client, data: client.async_list_groups(data),
         )
 
+    async def async_get_contacts(call: ServiceCall) -> dict[str, Any]:
+        """Return saved contacts for the explicitly selected WhatsApp account."""
+        return await _async_call_api(
+            hass,
+            SERVICE_GET_CONTACTS,
+            call.data,
+            lambda client, data: client.async_get_contacts(data),
+        )
+
     async def async_reject_call(call: ServiceCall) -> None:
         try:
             validate_call_reference(call.data[ATTR_CALL_ID], call.data[ATTR_FROM])
@@ -370,6 +382,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_LIST_GROUPS,
         async_list_groups,
         schema=LIST_GROUPS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_CONTACTS,
+        async_get_contacts,
+        schema=GET_CONTACTS_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(

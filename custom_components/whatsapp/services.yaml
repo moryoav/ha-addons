@@ -199,3 +199,13 @@ list_groups:
       example: default
       selector:
         text:
+
+get_contacts:
+  fields:
+    clientId:
+      name: Client ID
+      description: The connected app client session whose saved contacts to fetch.
+      required: true
+      example: default
+      selector:
+        text:

@@ -13,6 +13,7 @@ const {
 } = require("./app-state-sync");
 const { attachEventBufferFlush } = require("./event-buffer-flush");
 const { ChatArchiveStore } = require("./chat-archive-store");
+const { ContactSnapshotError, fetchContactSnapshot, SNAPSHOT_TIMEOUT_MS } = require("./contact-snapshot");
 const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
@@ -60,14 +61,14 @@ const QUERY_TIMEOUT_MS = 8_000;
 // WhatsApp answers lookups of hidden or missing profile data with these codes.
 const UNAVAILABLE_CODES = new Set([401, 403, 404]);
 
-const withTimeout = (promise, label) => {
+const withTimeout = (promise, label, timeoutMs = QUERY_TIMEOUT_MS) => {
   let timer;
   const timeout = new Promise((resolve, reject) => {
     timer = setTimeout(() => {
       reject(Object.assign(new Error(`${label} timed out.`), {
         statusCode: 408,
       }));
-    }, QUERY_TIMEOUT_MS);
+    }, timeoutMs);
     timer.unref?.();
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
@@ -258,6 +259,7 @@ class WhatsappClient extends EventEmitter {
   #archiveStore;
   #archiveListeners;
   #contactListeners;
+  #contactsRequest;
   #pollStore;
 
   #status = {
@@ -1022,6 +1024,29 @@ class WhatsappClient extends EventEmitter {
       about_set_at: aboutSetAt,
       business: normalizeBusinessProfile(value(business)),
     };
+  };
+
+  /** Return the saved-contact snapshot without replaying normal sync events. */
+  getContacts = async () => {
+    this.#assertConnected();
+    const socket = this.#conn;
+    if (this.#contactsRequest?.socket !== socket) {
+      const request = { socket };
+      request.promise = this.#runUpstream("contact snapshot", async () => {
+        try {
+          return await withTimeout(
+            fetchContactSnapshot(socket, this.#baileys), "Contact snapshot", SNAPSHOT_TIMEOUT_MS
+          );
+        } catch (error) {
+          if (error instanceof ContactSnapshotError) throw new WhatsappProtocolError();
+          throw error;
+        }
+      }).finally(() => {
+        if (this.#contactsRequest === request) this.#contactsRequest = undefined;
+      });
+      this.#contactsRequest = request;
+    }
+    return this.#contactsRequest.promise;
   };
 
   listGroups = async () => {

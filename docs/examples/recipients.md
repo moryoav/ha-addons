@@ -182,6 +182,66 @@ limiting, and an upstream WhatsApp failure are reported as action errors.
 
 `whatsapp.get_group_info` requires add-on and integration version 2.1.0 or newer.
 
+## Get saved contacts
+
+`whatsapp.get_contacts` requests a fresh saved-contact app-state snapshot for
+one connected account. It can retrieve saved contact names and LIDs without
+waiting for incoming messages or a new history sync.
+
+```yaml
+- action: whatsapp.get_contacts
+  data:
+    clientId: default
+  response_variable: saved_contacts
+```
+
+Example response (fictional contact):
+
+```json
+{
+  "contacts": [
+    {
+      "id": "12025550123@s.whatsapp.net",
+      "fields": {
+        "fullName": "Example Saved Contact",
+        "firstName": "Example",
+        "lidJid": "999999999999999@lid",
+        "saveOnPrimaryAddressbook": true
+      }
+    }
+  ]
+}
+```
+
+Each record contains the contact's app-state `id` and its original
+`ContactAction` in `fields`. The current Baileys schema supports `fullName`,
+`firstName`, `lidJid`, `pnJid`, `username`, and `saveOnPrimaryAddressbook`.
+Only fields supplied by WhatsApp are present; a name or LID is not guaranteed.
+Records are sorted by ID. An empty verified snapshot returns `contacts: []`.
+
+This action reads saved-contact records. People known only through group
+messages or profile updates are not added. Groups can be fetched separately
+with `whatsapp.list_groups`. `saveOnPrimaryAddressbook: false` must not be used
+to exclude a person: WhatsApp can store a contact without saving it to the
+phone's address book. The server controls the available snapshot, so this is
+not a guarantee of every contact in the phone's address book.
+
+The request uses a separate app-state cursor starting at version zero and
+verifies snapshot and patch MACs with Baileys. It does not reset the active
+connection's sync state, save a contact cache, or replay contact events. Pending
+updates and removals are applied before returning the list. Incomplete,
+unverifiable, or stalled responses fail the action instead of returning a
+partial list. Requests have a 60-second time budget and a 12-page limit; Home
+Assistant allows 70 seconds for the API response. Concurrent requests on the
+same connection share the in-progress fetch.
+
+The local API is `POST /contacts` with `{"clientId": "default"}` and advertises
+capability `get_contacts`. It uses the same optional bearer authentication and
+per-client lookup rate limit as the other lookup actions. Contact values are
+not included in app error logs. This action requires both the app and HACS
+integration at version 2.10.0 or newer, an established session with available
+app-state keys, an explicit `clientId`, and `response_variable`.
+
 ## List every group
 
 `whatsapp.list_groups` returns every group the linked account belongs to,

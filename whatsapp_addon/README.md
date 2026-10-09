@@ -33,6 +33,11 @@ available names, LIDs, and phone identifiers. Each batch includes its account ID
 and original Baileys event source. See the
 [contact event reference](https://moryoav.github.io/ha-addons/reference/events/#contact-metadata).
 
+`whatsapp.get_contacts` fetches a fresh saved-contact snapshot for the selected
+connected account. It returns the original contact fields, including saved
+names and LIDs when supplied, without waiting for messages. See the
+[saved contact action](https://moryoav.github.io/ha-addons/examples/recipients/#get-saved-contacts).
+
 <img src="https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/logo.png?raw=true" width="400"/>
 
 ![Supports aarch64 Architecture][aarch64-shield]

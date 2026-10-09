@@ -1,3 +1,12 @@
+## 2.10.0
+
+- Added `POST /contacts` and the `get_contacts` capability for fresh saved-contact
+  snapshots containing the original contact fields, names, and available LIDs.
+- Applied pending contact updates and removals with Baileys MAC verification
+  while leaving the active session's app-state cursor unchanged.
+- Shared concurrent fetches per connection, enforced bounded requests, and
+  reused lookup authentication, rate limits, and privacy-safe errors.
+
 ## 2.9.0
 
 - Added `whatsapp_contacts_sync` with the account ID, original Baileys event
