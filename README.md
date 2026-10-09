@@ -12,7 +12,7 @@ message, receipt, call, and presence events through the companion app.
 
 This project has two parts, installed separately:
 
-- **WhatsappV2 add-on:** runs the local WhatsApp Web client bridge.
+- **WhatsApp add-on:** runs the local WhatsApp Web client bridge.
 - **WhatsApp integration:** exposes account devices, status sensors, actions,
   diagnostics, and setup in Home Assistant.
 
@@ -52,9 +52,9 @@ Add this repository as a Home Assistant add-on repository:
 https://github.com/moryoav/ha-addons
 ```
 
-[![Open the WhatsappV2 add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
+[![Open the WhatsApp add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start the `WhatsappV2` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
+Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
 
 ### 2. Install the integration
 
@@ -86,7 +86,7 @@ Settings > Devices & services > Add integration > WhatsApp
 
 No URL is required. The add-on advertises itself through Supervisor discovery, and the integration stores the detected local add-on URL automatically.
 
-If the integration cannot detect the add-on yet, confirm the `WhatsappV2` add-on is installed and running, then submit the setup flow again or restart the add-on.
+If the integration cannot detect the add-on yet, confirm the `WhatsApp` add-on is installed and running, then submit the setup flow again or restart the add-on.
 
 ## Configuration parameters
 
@@ -492,7 +492,7 @@ for encryption recovery and experimental options.
 1. Delete the WhatsApp integration under **Settings > Devices & services**.
 2. Remove the integration through HACS, or delete
    `/config/custom_components/whatsapp` if you installed it manually.
-3. Remove the `WhatsappV2` add-on.
+3. Remove the `WhatsApp` add-on.
 4. Restart Home Assistant.
 
 ## ❤️ Help support this project
