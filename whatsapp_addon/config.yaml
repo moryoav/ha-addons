@@ -1,5 +1,5 @@
 name: WhatsApp
-version: "2.10.0"
+version: "2.10.1"
 slug: whatsapp_addon
 description: WhatsApp Web bridge for Home Assistant actions and events
 url: "https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon"
