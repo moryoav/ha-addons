@@ -3,7 +3,7 @@
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
 
-# Home Assistant Add-on: WhatsappV2
+# Home Assistant Add-on: WhatsApp
 
 Send WhatsApp messages from Home Assistant and receive message, receipt, call,
 contact, and presence events.
@@ -51,11 +51,11 @@ https://github.com/moryoav/ha-addons
 
 ### 2. Install and start the add-on
 
-[![Open the WhatsappV2 add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
+[![Open the WhatsApp add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Use the button above after adding the repository. It opens the `WhatsappV2` add-on page.
+Use the button above after adding the repository. It opens the `WhatsApp` add-on page.
 
-1. Install `WhatsappV2`.
+1. Install `WhatsApp`.
 2. Review the add-on options.
 3. Start the add-on.
 
@@ -102,7 +102,7 @@ In Home Assistant:
 1. Go to **Settings** -> **Devices & services**.
 2. Add integration **WhatsApp**.
 
-The add-on advertises its local API through Supervisor discovery, so the integration does not ask for a URL. If setup cannot detect the add-on yet, confirm `WhatsappV2` is running, then restart the add-on and submit the setup flow again.
+The add-on advertises its local API through Supervisor discovery, so the integration does not ask for a URL. If setup cannot detect the add-on yet, confirm `WhatsApp` is running, then restart the add-on and submit the setup flow again.
 
 ## Add-on options
 

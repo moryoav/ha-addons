@@ -53,7 +53,7 @@ For local Home Assistant testing, install or copy the integration into:
 /config/custom_components/whatsapp
 ```
 
-For add-on testing, add this repository as a Home Assistant add-on repository and install `WhatsappV2`.
+For add-on testing, add this repository as a Home Assistant add-on repository and install `WhatsApp`.
 
 ## Pull Request Guidelines
 
