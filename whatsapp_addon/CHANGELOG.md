@@ -6,6 +6,8 @@
   conversations and access to the selected Home Assistant OpenAI agent.
 - Reused the existing Baileys login and linked device for calls and messaging,
   with calling limited to one configured account and incoming caller allowlists.
+- Resolved allowed phone-number caller IDs automatically, with bounded lookups
+  and recovery after temporary lookup failures.
 - Added `whatsapp.make_call` and `whatsapp.hang_up` actions for automations,
   with optional per-call opening messages spoken after the recipient answers.
 - Added random, fixed, or disabled opening greetings after the call connects,

@@ -42,7 +42,7 @@ class CallController {
   constructor(options, {
     workerFactory = () => new JsonProcess("/usr/local/bin/whatsapp-call-worker", ["--allow-network"], { env: childEnvironment() }),
     bridgeFactory = () => new JsonProcess("python3", ["-u", path.join(__dirname, "bridge/bridge.py"), "--allow-network"], { env: childEnvironment(process.env, true) }),
-    logger = {}, recordings = null, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
+    logger = {}, recordings = null, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout, now = Date.now,
   } = {}) {
     this.options = options;
     this.workerFactory = workerFactory;
@@ -51,6 +51,7 @@ class CallController {
     this.recordings = recordings;
     this.setTimeout = setTimeoutFn;
     this.clearTimeout = clearTimeoutFn;
+    this.now = now;
     this.socket = null;
     this.baileys = null;
     this.connected = false;
@@ -62,6 +63,7 @@ class CallController {
     this.lastGreeting = null;
     this.privacy = new Map();
     this.callerLids = null;
+    this.callerLidsExpiresAt = 0;
     this.pendingOffers = new Map();
   }
 
@@ -200,10 +202,11 @@ class CallController {
   async allowedByPhone(info) {
     const phones = this.options.callers.filter(jid => jid.endsWith("@s.whatsapp.net"));
     if (!phones.length || !this.connected || !this.socket) return false;
-    if (!this.callerLids) {
+    if (!this.callerLids || this.now() >= this.callerLidsExpiresAt) {
+      this.callerLidsExpiresAt = this.now() + 60000;
       const socket = this.socket;
-      // Resolve only configured numbers, once per connection. Unknown callers
-      // cannot trigger repeated registration lookups or grow this cache.
+      // Resolve only configured numbers. A short cache bounds repeated lookups
+      // while allowing failed requests and changed number associations to recover.
       this.callerLids = (async () => {
         let timer;
         try {

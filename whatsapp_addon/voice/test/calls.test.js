@@ -204,7 +204,7 @@ test("a phone-number allowlist answers its resolved LID without admitting other 
   } finally { await h.controller.close(); }
 });
 
-test("caller mapping failures and unrequested results fail closed and are cached per connection",async()=>{
+test("caller mapping failures and unrequested results fail closed and share a cached lookup",async()=>{
   const phone="12025550124@s.whatsapp.net";
   for (const result of [undefined, [{exists:true,jid:"12025550125@s.whatsapp.net",lid:PEER}],
     [{exists:false,jid:phone,lid:PEER}], [{exists:true,jid:phone,lid:"invalid"}]]) {
@@ -215,6 +215,32 @@ test("caller mapping failures and unrequested results fail closed and are cached
     assert.equal(h.workers.length,0);assert.equal(lookups,1);
     await h.controller.close();
   }
+});
+
+test("a transient caller lookup failure recovers after the retry interval without reconnecting",async()=>{
+  const phone="12025550124@s.whatsapp.net",h=harness(testOptions({allowed_callers:[phone]}));
+  let now=1000,lookups=0;
+  h.controller.now=()=>now;
+  h.socket.onWhatsApp=async()=>{if(++lookups===1)throw Error("Synthetic lookup failure");return [{exists:true,jid:phone,lid:PEER}];};
+  const info={from:PEER_DEVICE,creator:PEER_DEVICE};
+  assert.equal(await h.controller.allowedByPhone(info),false);
+  now+=1000;assert.equal(await h.controller.allowedByPhone(info),false);assert.equal(lookups,1);
+  now+=60000;assert.equal(await h.controller.allowedByPhone(info),true);assert.equal(lookups,2);
+  assert.equal(h.controller.connected,true);
+  await h.controller.close();
+});
+
+test("changed phone-to-LID associations expire without retaining the previous caller",async()=>{
+  const phone="12025550124@s.whatsapp.net",h=harness(testOptions({allowed_callers:[phone]}));
+  let now=1000,lid=PEER,lookups=0;
+  h.controller.now=()=>now;
+  h.socket.onWhatsApp=async()=>{lookups++;return [{exists:true,jid:phone,lid}];};
+  assert.equal(await h.controller.allowedByPhone({from:PEER_DEVICE,creator:PEER_DEVICE}),true);
+  lid="333333333@lid";now+=60000;
+  assert.equal(await h.controller.allowedByPhone({from:PEER_DEVICE,creator:PEER_DEVICE}),false);
+  assert.equal(await h.controller.allowedByPhone({from:lid,creator:lid}),true);
+  assert.equal(lookups,2);
+  await h.controller.close();
 });
 
 test("a hang-up or reconnect during caller lookup cannot answer a stale offer",async()=>{
