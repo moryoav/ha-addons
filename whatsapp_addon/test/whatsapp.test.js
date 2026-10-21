@@ -469,7 +469,7 @@ test("Baileys call lifecycle arrays are forwarded to the runtime", async () => {
   await client.disconnect();
 });
 
-test("opt-in decryption diagnostics expose raw stanzas and complete upserts", async () => {
+test("retired diagnostic flags do not expose raw stanzas or complete upserts", async () => {
   const { client, ev, ws } = await createHarness({
     decryptionDiagnostics: true,
   });
@@ -510,15 +510,8 @@ test("opt-in decryption diagnostics expose raw stanzas and complete upserts", as
     ],
   });
 
-  assert.equal(diagnostics.length, 2);
-  assert.equal(diagnostics[0].source, "raw_message_stanza");
-  assert.equal(diagnostics[0].messageId, "fictional-message-id");
-  assert.equal(diagnostics[1].source, "messages_upsert");
-  assert.equal(diagnostics[1].remoteJid, FICTIONAL_JID);
-  assert.equal(diagnostics[1].pushName, "Fictional Sender");
-  assert.deepEqual(diagnostics[1].messageStubParameters, [
-    "No matching sessions found for message",
-  ]);
+  assert.deepEqual(diagnostics, []);
+  assert.equal(require.cache[require.resolve("../decryption-diagnostics")], undefined);
   await client.disconnect();
 });
 
@@ -830,12 +823,7 @@ test("retry retrieval preserves own-device messages before HA strips context", a
     await getMessage({ ...key, id: "fictional-missing-id" }),
     undefined
   );
-  assert.deepEqual(
-    diagnostics
-      .filter((entry) => entry.operation === "lookup")
-      .map((entry) => entry.hit),
-    [true, true, false]
-  );
+  assert.deepEqual(diagnostics, []);
   assert.equal(calls.sendMessage.length, 0);
 });
 
@@ -936,7 +924,7 @@ test("an in-flight send cannot refill a cache after the client stops", async () 
   assert.equal(await calls.socketOptions[0].getMessage(key), undefined);
 });
 
-test("receipt and acknowledgement diagnostics are opt-in and observational", async (t) => {
+test("receipt and acknowledgement tracing stays disabled with either legacy flag value", async (t) => {
   for (const enabled of [false, true]) {
     const { client, ws, calls } = await createHarness({
       decryptionDiagnostics: enabled,
@@ -954,17 +942,9 @@ test("receipt and acknowledgement diagnostics are opt-in and observational", asy
       tag: "ack",
       attrs: { id: "fictional-retry", from: FICTIONAL_LID, class: "message" },
     });
-    if (enabled) {
-      assert.deepEqual(
-        entries.map((entry) => entry.source),
-        ["incoming_receipt", "incoming_message_ack"]
-      );
-      assert.equal(entries[0].rawNode.content[0].attrs.count, "2");
-      assert.equal(entries[0].rawNode.attrs.from, FICTIONAL_LID);
-    } else {
-      assert.equal(ws.listenerCount("CB:receipt"), 0);
-      assert.deepEqual(entries, []);
-    }
+    assert.equal(ws.listenerCount("CB:receipt"), 0);
+    assert.equal(ws.listenerCount("CB:ack,class:message"), 0);
+    assert.deepEqual(entries, []);
     assert.equal(calls.sendMessage.length, 0);
   }
 });

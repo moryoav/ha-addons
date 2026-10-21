@@ -56,7 +56,7 @@ class ApiError extends Error {
 const hasOwn = (object, property) =>
   Object.prototype.hasOwnProperty.call(object, property);
 
-const createHealthSnapshot = (clients, clientStates) => {
+const createHealthSnapshot = (clients, clientStates, additionalCapabilities = []) => {
   const clientIds = new Set([
     ...Object.keys(clients || {}),
     ...Object.keys(clientStates || {}),
@@ -65,7 +65,7 @@ const createHealthSnapshot = (clients, clientStates) => {
     status: "ok",
     service: "ha-whatsapp-addon",
     api_version: API_VERSION,
-    capabilities: [...API_CAPABILITIES],
+    capabilities: [...API_CAPABILITIES, ...additionalCapabilities],
     client_count: clientIds.size,
   };
 };
@@ -363,6 +363,7 @@ const createApiApp = ({
   sharedSecret,
   lookupRateLimit,
   diagnostics,
+  additionalCapabilities = [],
 } = {}) => {
   if (!clients || typeof clients !== "object") {
     throw new TypeError("clients is required");
@@ -379,7 +380,7 @@ const createApiApp = ({
     if (req.get("x-ha-healthcheck") === "docker") {
       diagnostics?.recordNativeHealthProbe?.();
     }
-    res.json(createHealthSnapshot(clients, clientStates));
+    res.json(createHealthSnapshot(clients, clientStates, additionalCapabilities));
   });
 
   // Track only aggregate request timing. Routes, request data, addresses, and

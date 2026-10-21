@@ -2,6 +2,37 @@
 
 All notable changes to this repository are documented here.
 
+## 3.0.0
+
+### WhatsApp voice calls
+
+- Added incoming and outgoing WhatsApp voice calls with natural, two-way GPT-Live
+  conversations and access to the selected Home Assistant OpenAI agent.
+- Reused the existing Baileys login and linked device for calls and messaging,
+  with calling limited to one configured account and incoming caller allowlists.
+- Added `whatsapp.make_call` and `whatsapp.hang_up` actions for automations,
+  with optional per-call opening messages spoken after the recipient answers.
+- Added random, fixed, or disabled opening greetings after the call connects,
+  immediate hang-up after confirmed goodbyes, and configurable call limits.
+- Added Opus and MLOW audio, adaptive playback buffering, and background call
+  recording with protected playback and downloads. Recording is off by default
+  and recordings expire after 30 days unless another retention period is selected.
+- Added clear configuration labels and help for every field, including calling
+  account selection, the OpenAI conversation agent, and advanced audio settings.
+
+### Configuration and compatibility
+
+- Generated and persisted internal API credentials automatically and refreshed
+  the Home Assistant integration through discovery, preserving existing tokens.
+- Enabled supplemental own-device LID sender receipts for every account and
+  removed the experimental switch.
+- Disabled detailed decryption tracing and removed its configuration switch,
+  retaining commented hooks for future diagnostics.
+- Kept voice setup optional so existing messaging-only installations and new
+  account pairing continue to work without an OpenAI agent.
+- Kept the existing app identity, saved sessions, messaging behavior, and pinned
+  Baileys dependencies while integrating the native calling worker.
+
 ## 2.10.1
 
 ### Add-on name

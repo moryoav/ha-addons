@@ -19,6 +19,7 @@ nav:
       - Recipients and lookups: examples/recipients.md
       - Presence: examples/presence.md
       - Automations: examples/automations.md
+      - Voice calls: examples/voice-calls.md
       - Reusable scripts: examples/scripts.md
       - Incoming messages and agents: examples/incoming-messages.md
       - Decrypt incoming media: examples/incoming-media.md

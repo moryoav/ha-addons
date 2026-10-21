@@ -92,36 +92,42 @@ jobs:
     needs:
       - lint-addon
       - lint-dockerfile
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
             platform: linux/amd64
+            runner: ubuntu-24.04
           - arch: aarch64
             platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build add-on image
+      - name: Build add-on image and run native tests
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ env.ADDON_PATH }}
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_VERSION=ci
+          tags: whatsapp-addon:ci-${{ matrix.arch }}
+          load: true
+          cache-from: type=gha,scope=voice-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=voice-${{ matrix.arch }}
+
+      - name: Smoke-test voice workers and offline app startup
+        shell: pwsh
         run: >-
-          docker buildx build
-          --platform=${{ matrix.platform }}
-          --build-arg BUILD_ARCH=${{ matrix.arch }}
-          --build-arg BUILD_VERSION=ci
-          --tag whatsapp-addon:ci-${{ matrix.arch }}
-          --load
-          "${ADDON_PATH}"
+          ./whatsapp_addon/voice/test/image-tests.ps1
+          -Image whatsapp-addon:ci-${{ matrix.arch }}
 
       - name: Verify packaged Baileys and preview dependencies
         run: >-
@@ -129,9 +135,9 @@ jobs:
           --platform=${{ matrix.platform }}
           --entrypoint node
           whatsapp-addon:ci-${{ matrix.arch }}
-          -e "(async()=>{const app=require('/package.json');
+          -e "(async()=>{const app=require('/app/base/package.json');
           const installed=require(
-          '/node_modules/@whiskeysockets/baileys/package.json');
+          '/app/base/node_modules/@whiskeysockets/baileys/package.json');
           if(installed.version!==app.dependencies['@whiskeysockets/baileys'])
           throw new Error('Unexpected Baileys version');
           const baileys=await import('@whiskeysockets/baileys');
@@ -229,7 +235,7 @@ jobs:
             if(!profile.includes('whatsapp_addon//node'))
             throw new Error('Node child profile is inactive');
             let writeDenied=false;
-            try{fs.appendFileSync('/package.json','x')}
+            try{fs.appendFileSync('/app/base/package.json','x')}
             catch(error){writeDenied=['EACCES','EPERM'].includes(error.code)}
             if(!writeDenied)throw new Error('Packaged files are writable');
             fs.readFileSync('/etc/ssl/certs/ca-certificates.crt');
@@ -239,7 +245,7 @@ jobs:
             const mediaBytes=Buffer.from('Fictional attachment');
             const mediaHash=require('node:crypto').createHash('sha256')
             .update(mediaBytes).digest();
-            const mediaStore=new (require('/media-store').MediaStore)
+            const mediaStore=new (require('/app/base/media-store').MediaStore)
             ({enabled:true});
             await mediaStore.start();
             const attachment=await mediaStore.enrich({},
@@ -258,7 +264,11 @@ jobs:
             throw new Error('Unrelated media is writable');
             const baileys=await import('@whiskeysockets/baileys');
             if(typeof baileys.default!=='function')
-            throw new Error('Baileys unavailable')})()
+            throw new Error('Baileys unavailable');
+            await require('/app/voice/test/native-smoke.js').main();
+            await new Promise((resolve,reject)=>{
+            require('node:child_process').execFile('/opt/voice/bin/python3',
+            ['-c','import aiohttp; import ssl'],(error)=>error?reject(error):resolve())})})()
             .catch(error=>{console.error(error);process.exitCode=1})"
           timeout --signal=TERM --kill-after=5s 30s docker run --rm \
             --security-opt apparmor=whatsapp_addon \

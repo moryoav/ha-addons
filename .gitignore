@@ -11,3 +11,12 @@ __pycache__/
 
 # Local remote attachments
 /.codex-remote-attachments/
+
+# Native voice test build output belongs outside this checkout.
+**/target/
+whatsapp_addon/voice/.build/
+whatsapp_addon/voice/node_modules/
+
+# Automatically managed internal API credentials.
+.api-token
+.api-token.*.tmp

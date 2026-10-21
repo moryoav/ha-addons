@@ -1,13 +1,13 @@
 name: WhatsApp
-version: "2.10.1"
+version: 3.0.0
 slug: whatsapp_addon
-description: WhatsApp Web bridge for Home Assistant actions and events
-url: "https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon"
+description: WhatsApp messaging and AI voice calls for Home Assistant
+url: https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon
 image: ghcr.io/moryoav/whatsapp-addon
 homeassistant_api: true
 hassio_api: true
 ingress: true
-ingress_entry: /
+ingress_entry: voice/
 panel_icon: mdi:whatsapp
 panel_title: WhatsApp
 discovery:
@@ -17,26 +17,49 @@ arch:
   - amd64
 init: false
 map:
+  - type: homeassistant_config
+    read_only: true
+    path: /config
   - type: media
     read_only: false
 options:
   clients:
     - default
   log_level: info
-  decryption_diagnostics: false
-  experimental_lid_sender_receipts: false
-  download_media: false
-  media_retention_hours: 24
-  media_max_file_mb: 64
-  media_max_storage_mb: 1024
+  voice_calls:
+    calling_account: ''
+    allowed_callers: []
+    agent_id: ''
+    voice: gleam
+    max_call_seconds: 300
+    greeting_mode: random
+    greeting_text: ''
+    automatic_hangup: true
+    record_calls: false
+    recording_retention_days: 30
+    advanced:
+      audio_codec: opus
+      playback_buffer_ms: 180
 schema:
   clients:
     - str
   log_level: list(info|debug)
-  decryption_diagnostics: bool
-  experimental_lid_sender_receipts: bool
-  download_media: bool
-  media_retention_hours: int(1,720)
-  media_max_file_mb: int(1,1024)
-  media_max_storage_mb: int(1,102400)
-  api_token: password?
+  voice_calls:
+    calling_account: str
+    allowed_callers:
+      - str
+    agent_id: str
+    voice: list(gleam|meridian|marin|cedar|shimmer|alloy|ash|ballad|coral|echo|sage|verse|quartz|ripple|vesper|willow|stone|bossa|tempo|beacon|delta|cinder)
+    max_call_seconds: int(60,900)
+    greeting_mode: list(random|fixed|disabled)
+    greeting_text: str
+    automatic_hangup: bool
+    record_calls: bool
+    recording_retention_days: int(1,365)
+    advanced:
+      audio_codec: list(opus|mlow)
+      playback_buffer_ms: int(120,1500)
+  download_media: bool?
+  media_retention_hours: int(1,720)?
+  media_max_file_mb: int(1,1024)?
+  media_max_storage_mb: int(1,102400)?
