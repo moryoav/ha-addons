@@ -135,11 +135,17 @@ async def test_voice_service_rejects_group_before_calling_app(
     hass, enable_custom_integrations
 ):
     """Invalid group targets never reach the app."""
+    client = SimpleNamespace(async_make_call=AsyncMock())
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_URL: "http://addon:3000"})
+    entry.add_to_hass(hass)
+    entry.runtime_data = WhatsappRuntimeData(client=client)
     assert await async_setup(hass, {})
-    with pytest.raises(ServiceValidationError):
+    with pytest.raises(ServiceValidationError) as error:
         await hass.services.async_call(
             DOMAIN,
             "make_call",
             {"clientId": "default", "to": "120363000000000000@g.us"},
             blocking=True,
         )
+    assert error.value.translation_key == "invalid_voice_target"
+    client.async_make_call.assert_not_called()
