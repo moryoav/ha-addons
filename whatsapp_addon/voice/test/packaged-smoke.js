@@ -6,13 +6,8 @@ const { setTimeout:delay }=require("node:timers/promises");
 
 async function main(){
   const root="http://127.0.0.1:3000";
-  const token=fs.readFileSync("/data/.api-token","utf8").trim();
-  assert.match(token,/^[a-f0-9]{64}$/);
-  assert.equal(fs.statSync("/data/.api-token").mode & 0o777,0o600);
-  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync("/data/options.json","utf8")),"api_token"),false);
-  const headers={Authorization:`Bearer ${token}`,"Content-Type":"application/json"};
   let healthy=false;
-  for(let attempt=0;attempt<40;attempt++){
+  for(let attempt=0;attempt<120;attempt++){
     try{
       const response=await fetch(root+"/health",{headers:{"x-ha-healthcheck":"docker"}});
       healthy=response.ok && (await response.json()).status==="ok";
@@ -21,6 +16,12 @@ async function main(){
     await delay(250);
   }
   assert.equal(healthy,true,"Packaged app must boot and pass the original health route");
+  // Docker exec can run before S6 has started the app and published its token.
+  const token=fs.readFileSync("/data/.api-token","utf8").trim();
+  assert.match(token,/^[a-f0-9]{64}$/);
+  assert.equal(fs.statSync("/data/.api-token").mode & 0o777,0o600);
+  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync("/data/options.json","utf8")),"api_token"),false);
+  const headers={Authorization:`Bearer ${token}`,"Content-Type":"application/json"};
   assert.equal((await fetch(root+"/voice/status")).status,401);
   assert.equal((await fetch(root+"/voice/recordings")).status,401);
   const recordings=await(await fetch(root+"/voice/recordings",{headers})).json();

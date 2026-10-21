@@ -239,7 +239,13 @@ test("a hang-up or reconnect during caller lookup cannot answer a stale offer",a
 test("a stalled registration lookup has a bounded deadline and never answers",async()=>{
   const h=harness(testOptions({allowed_callers:["12025550124@s.whatsapp.net"]}));
   h.socket.onWhatsApp=()=>new Promise(()=>{});
-  h.controller.setTimeout=(callback,ms)=>{assert.equal(ms,10000);return setTimeout(callback,1);};
+  h.controller.setTimeout=(callback,ms)=>{
+    assert.equal(ms,10000);
+    const timer=setTimeout(callback,1);
+    // Keep this isolated test alive; production deliberately unreferences it.
+    timer.unref=()=>timer;
+    return timer;
+  };
   await h.controller.incoming(actionNode("offer",ID,PEER_DEVICE,PEER_DEVICE));
   assert.equal(h.workers.length,0);assert.equal(h.controller.pendingOffers.size,0);
   await h.controller.close();

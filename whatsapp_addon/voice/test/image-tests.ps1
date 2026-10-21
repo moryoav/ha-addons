@@ -45,6 +45,9 @@ try {
     $exitCode = & docker inspect $containerId --format '{{.State.ExitCode}}'
     if ($LASTEXITCODE -ne 0 -or $exitCode.Trim() -ne '0') { throw 'The packaged app did not shut down cleanly' }
     Write-Output 'Offline image validation passed, including a clean shutdown.'
+} catch {
+    if ($containerId -match '^[a-f0-9]{64}$') { & docker logs $containerId }
+    throw
 } finally {
     if ($containerId -match '^[a-f0-9]{64}$') {
         & docker stop --timeout 10 $containerId | Out-Null
