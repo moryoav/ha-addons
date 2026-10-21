@@ -15,8 +15,9 @@ COPY voice/native/Cargo.lock ./Cargo.lock
 COPY voice/patches ./patches
 RUN python3 patches/apply.py
 COPY voice/native/src ./src
-RUN --mount=type=cache,target=/build/target \
-    cargo test --locked --release && cargo build --locked --release \
+RUN --mount=type=cache,target=/build/target,sharing=locked \
+    cargo clean --locked --release -p whatsapp-rust \
+    && cargo test --locked --release && cargo build --locked --release \
     && cp target/release/whatsapp-call-worker /build/whatsapp-call-worker
 
 FROM scratch AS artifact

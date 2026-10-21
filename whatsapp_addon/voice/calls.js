@@ -61,6 +61,8 @@ class CallController {
     this.lastError = null;
     this.lastGreeting = null;
     this.privacy = new Map();
+    this.callerLids = null;
+    this.pendingOffers = new Map();
   }
 
   attach(socket, baileys) {
@@ -71,7 +73,11 @@ class CallController {
     const connection = update => {
       if (this.generation !== generation) return;
       this.connected = update.connection === "open" || (this.connected && update.connection !== "close");
-      if (update.connection === "close") void this.end(false, "disconnected");
+      if (update.connection === "close") {
+        this.callerLids = null;
+        this.pendingOffers.clear();
+        void this.end(false, "disconnected");
+      }
     };
     const raw = node => {
       if (this.generation !== generation || !this.connected || !this.options.live) return;
@@ -92,6 +98,8 @@ class CallController {
 
   detach() {
     this.connected = false;
+    this.callerLids = null;
+    this.pendingOffers.clear();
     for (const remove of this.listeners) remove();
     this.listeners = [];
     // Close old workers immediately before a reconnect can attach a new socket.
@@ -189,6 +197,33 @@ class CallController {
     return this.baileys.jidEncode(this.baileys.jidDecode(normalized).user, "lid", device);
   }
 
+  async allowedByPhone(info) {
+    const phones = this.options.callers.filter(jid => jid.endsWith("@s.whatsapp.net"));
+    if (!phones.length || !this.connected || !this.socket) return false;
+    if (!this.callerLids) {
+      const socket = this.socket;
+      // Resolve only configured numbers, once per connection. Unknown callers
+      // cannot trigger repeated registration lookups or grow this cache.
+      this.callerLids = (async () => {
+        let timer;
+        try {
+          const expired = new Promise(resolve => {
+            timer = this.setTimeout(() => resolve([]), 10000);
+            timer.unref?.();
+          });
+          const results = await Promise.race([socket.onWhatsApp(...phones), expired]);
+          return (results || []).flatMap(item => {
+            if (!item.exists || !phones.some(jid => sameUser(jid, item.jid))) return [];
+            try { return item.lid?.endsWith("@lid") ? [userJid(item.lid)] : []; }
+            catch { return []; }
+          });
+        } catch { return []; }
+        finally { this.clearTimeout(timer); }
+      })();
+    }
+    return (await this.callerLids).some(jid => sameUser(jid, info.from) || sameUser(jid, info.creator));
+  }
+
   async signal(call, operation) {
     this.check(call);
     const work = async () => { this.check(call); return operation(); };
@@ -256,7 +291,17 @@ class CallController {
     if (!info) return;
     if (info.action === "offer") {
       if (!this.options.live || !this.options.bridge.agent_id || this.active || info.child.attrs.type === "group" || info.child.attrs["group-jid"] || info.child.content?.some?.(child => child.tag === "video")) return;
-      if (!this.options.callers.some(jid => sameUser(jid, info.from) || sameUser(jid, info.creator))) return;
+      if (!this.options.callers.some(jid => sameUser(jid, info.from) || sameUser(jid, info.creator))) {
+        if (this.pendingOffers.size >= 8 || this.pendingOffers.has(info.id)) return;
+        const pending = { ...info, generation:this.generation };
+        this.pendingOffers.set(info.id, pending);
+        try {
+          if (!await this.allowedByPhone(info) || this.pendingOffers.get(info.id) !== pending ||
+            pending.generation !== this.generation || !this.connected || this.active || this.endTask) return;
+        } finally {
+          if (this.pendingOffers.get(info.id) === pending) this.pendingOffers.delete(info.id);
+        }
+      }
       const call = this.reserve(info.id, info.from, info.creator, "incoming");
       try {
         await this.workers(call);
@@ -281,6 +326,10 @@ class CallController {
         throw error;
       }
       return;
+    }
+    if (["terminate", "reject"].includes(info.action)) {
+      const pending = this.pendingOffers.get(info.id);
+      if (pending && sameUser(info.creator, pending.creator) && sameUser(info.from, pending.from)) this.pendingOffers.delete(info.id);
     }
     const call = this.active;
     if (!call || info.id !== call.id || !sameUser(info.creator, call.creator) || !sameUser(info.from, call.peer)) return;

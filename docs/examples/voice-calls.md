@@ -23,8 +23,9 @@ handling authentication and messages; a native worker handles call audio.
    device page or under **Developer tools > States**.
 6. Add the people who may call under **Allowed incoming callers**. Use their
    WhatsApp user JIDs, such as `12025550123@s.whatsapp.net` or a `@lid` returned
-   by `whatsapp.check_number`. An empty list answers nobody. Phone and LID
-   identifiers are distinct; use the identifier WhatsApp reports for that caller.
+   by `whatsapp.check_number`. An empty list answers nobody. Configured phone
+   JIDs are resolved to LIDs through the selected account. A failed or missing
+   lookup leaves the caller unanswered.
 7. Save and restart the WhatsApp app. Open its web UI to check calling status.
 
 The app uses the API key belonging to the selected OpenAI conversation agent.

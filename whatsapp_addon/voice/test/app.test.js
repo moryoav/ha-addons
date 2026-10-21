@@ -50,6 +50,19 @@ test("grouped settings migration preserves messaging, caller restrictions, and a
   assert.equal("openai_entry_title" in migrated.voice_calls.advanced,false);
 });
 
+test("legacy voice options never select an account that is missing or choose an unrelated account",()=>{
+  for (const clients of [["house"], ["house", "other"]]) {
+    for (const voice of [{voice_agent_id:"conversation.synthetic"}, {voice_calls:{agent_id:"conversation.synthetic"}}]) {
+      const raw={clients,...voice}, migrated=migrateVoiceOptions(raw), settings=parseVoiceOptions(raw);
+      assert.equal(settings.clientId, "");
+      assert.deepEqual(settings.messaging.clientIds, clients);
+      assert.deepEqual(migrateVoiceOptions(migrated), migrated);
+    }
+  }
+  assert.equal(parseVoiceOptions({clients:["house"],voice_agent_id:"conversation.synthetic",voice_client:"house"}).clientId,"house");
+  assert.equal(parseVoiceOptions({clients:["house","default"],voice_agent_id:"conversation.synthetic"}).clientId,"default");
+});
+
 test("moving calling account out of advanced preserves its value and honors an explicit replacement",()=>{
   const raw={clients:["default","secondary"],voice_calls:{agent_id:"conversation.selected",
     allowed_callers:["222222222@lid"],record_calls:true,recording_retention_days:45,
@@ -148,6 +161,24 @@ test("the offline app starts its existing API and never loads Baileys or contact
   await runtime.close();
   assert.equal(path.dirname(path.resolve(dir)),path.resolve(os.tmpdir()));
   await fs.rm(dir,{recursive:true,force:true});
+});
+
+test("API and ingress routing uses the explicit listener role even with arbitrary ports",async()=>{
+  const apps=[],express=baseRequire("express");
+  const runtime=await startVoiceApp({rawOptions:{clients:["default"]}, simulation:true,
+    recordingStore:{start:async()=>{},close(){},status:()=>({enabled:false})},
+    listenFn:async(app,port)=>{apps.push({app,port});return {};},
+    startAddonFn:async options=>{
+      await options.listenFn(express(),0,{apiToken:"synthetic-token"});
+      await options.listenFn(express(),0);
+      return {close:async()=>{}};
+    },
+  });
+  try {
+    assert.equal((await request(apps[0].app,"/voice/status")).status,401);
+    assert.equal((await request(apps[0].app,"/voice/status",{headers:{Authorization:"Bearer synthetic-token"}})).status,200);
+    assert.equal((await request(apps[1].app,"/voice/status")).status,403);
+  } finally { await runtime.close(); }
 });
 
 test("live messaging always publishes discovery and events; offline mode blocks both",async()=>{

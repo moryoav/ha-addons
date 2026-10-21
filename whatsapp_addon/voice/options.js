@@ -29,9 +29,10 @@ function migrateVoiceOptions(raw) {
   const advanced = object(voice.advanced ?? {}, "voice_calls.advanced");
   const pick = (group, name, legacy, fallback) => Object.hasOwn(group, name) ? group[name] : raw[legacy] ?? fallback;
   const greetingMode = voice.greeting_mode ?? (raw.greeting_text === "" ? "disabled" : raw.randomize_greeting === false ? "fixed" : "random");
+  const legacyAccount = (raw.voice_agent_id || voice.agent_id) && (raw.clients ?? ["default"]).includes("default") ? "default" : "";
   result.voice_calls = {
     ...voice,
-    calling_account:Object.hasOwn(voice, "calling_account") ? voice.calling_account : pick(advanced, "calling_account", "voice_client", raw.voice_agent_id || voice.agent_id ? "default" : ""),
+    calling_account:Object.hasOwn(voice, "calling_account") ? voice.calling_account : pick(advanced, "calling_account", "voice_client", legacyAccount),
     allowed_callers:pick(voice, "allowed_callers", "allowed_callers", []),
     agent_id:pick(voice, "agent_id", "voice_agent_id", ""),
     voice:pick(voice, "voice", "voice", "gleam"),

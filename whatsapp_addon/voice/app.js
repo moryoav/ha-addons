@@ -62,10 +62,11 @@ async function startVoiceApp({
         const selected = !!options.bridge.agent_id && path.basename(clientOptions.path) === options.clientId;
         return new WhatsappClient({ ...clientOptions, ...(selected ? { baileys:withCalls(baileysLoader(),controller) } : {}) });
       },
-      listenFn:(app,port,{apiToken}={}) => {
+      listenFn:(app,port,listenerOptions={}) => {
         const outer = express();
         outer.disable("x-powered-by");
-        if (port === (runtimeOptions.apiPort || 3000)) {
+        if (Object.hasOwn(listenerOptions, "apiToken")) {
+          const { apiToken } = listenerOptions;
           if (!apiToken) throw new Error("Internal API authentication is required.");
           outer.use("/voice",createVoiceApi(controller,apiToken));
         } else {

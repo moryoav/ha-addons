@@ -203,7 +203,7 @@
       "message": "Too many WhatsApp lookups were requested. Wait before trying again."
     },
     "unauthorized": {
-      "message": "WhatsApp app API authorization failed while running {action}. Reload app discovery after checking its API token configuration."
+      "message": "WhatsApp app API authorization failed while running {action}. Restart the WhatsApp app to refresh its discovery information."
     },
     "upstream_error": {
       "message": "WhatsApp could not complete {action}. Try again later."

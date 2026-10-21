@@ -185,6 +185,66 @@ test("an incoming companion call preserves the offering device for SRTP identity
   await h.controller.close();
 });
 
+test("a phone-number allowlist answers its resolved LID without admitting other numbers",async()=>{
+  const phone="12025550124@s.whatsapp.net";
+  const {baileys,host,peer}=await signalPair(PEER_DEVICE);
+  const h=harness(testOptions({allowed_callers:[phone]}),{baileys,host});
+  let lookups=0;
+  h.socket.onWhatsApp=async(...phones)=>{lookups++;assert.deepEqual(phones,[phone]);return [{exists:true,jid:phone,lid:PEER}];};
+  const encrypted=await peer.repo.encryptMessage({jid:SELF,data:baileys.encodeWAMessage({call:{callKey:KEY}})});
+  const offer=actionNode("offer",ID,PEER_DEVICE,PEER_DEVICE);
+  offer.content[0].content=[{tag:"enc",attrs:{type:encrypted.type,v:"2"},content:encrypted.ciphertext}];
+  try {
+    await h.controller.incoming(offer);
+    assert.equal(h.controller.active.answered,true);
+    assert.equal(h.workers.length,1);
+    await h.controller.end();
+    await h.controller.incoming(actionNode("offer","unknown-call","333333333@lid","333333333@lid"));
+    assert.equal(h.controller.active,null);assert.equal(h.workers.length,1);assert.equal(lookups,1);
+  } finally { await h.controller.close(); }
+});
+
+test("caller mapping failures and unrequested results fail closed and are cached per connection",async()=>{
+  const phone="12025550124@s.whatsapp.net";
+  for (const result of [undefined, [{exists:true,jid:"12025550125@s.whatsapp.net",lid:PEER}],
+    [{exists:false,jid:phone,lid:PEER}], [{exists:true,jid:phone,lid:"invalid"}]]) {
+    const h=harness(testOptions({allowed_callers:[phone]}));let lookups=0;
+    h.socket.onWhatsApp=async()=>{lookups++;return result;};
+    await h.controller.incoming(actionNode("offer",ID,PEER,PEER));
+    await h.controller.incoming(actionNode("offer","another-call",PEER,PEER));
+    assert.equal(h.workers.length,0);assert.equal(lookups,1);
+    await h.controller.close();
+  }
+});
+
+test("a hang-up or reconnect during caller lookup cannot answer a stale offer",async()=>{
+  const phone="12025550124@s.whatsapp.net";
+  for (const action of ["terminate","reject","reconnect"]) {
+    const h=harness(testOptions({allowed_callers:[phone]}));let release,lookups=0;
+    h.socket.onWhatsApp=()=>{lookups++;return new Promise(resolve=>{release=resolve;});};
+    const pending=h.controller.incoming(actionNode("offer",ID,PEER_DEVICE,PEER_DEVICE));
+    const duplicate=h.controller.incoming(actionNode("offer",ID,PEER_DEVICE,PEER_DEVICE));
+    if (action === "reconnect") {
+      const next=socketHarness();h.controller.attach(next.socket,next.baileys);
+      next.socket.ev.emit("connection.update",{connection:"open"});
+    } else await h.controller.incoming(actionNode(action,ID,PEER_DEVICE,PEER_DEVICE));
+    release([{exists:true,jid:phone,lid:PEER}]);
+    await Promise.all([pending,duplicate]);
+    assert.equal(h.workers.length,0);assert.equal(h.controller.active,null);assert.equal(lookups,1);
+    assert.equal(h.controller.pendingOffers.size,0);
+    await h.controller.close();
+  }
+});
+
+test("a stalled registration lookup has a bounded deadline and never answers",async()=>{
+  const h=harness(testOptions({allowed_callers:["12025550124@s.whatsapp.net"]}));
+  h.socket.onWhatsApp=()=>new Promise(()=>{});
+  h.controller.setTimeout=(callback,ms)=>{assert.equal(ms,10000);return setTimeout(callback,1);};
+  await h.controller.incoming(actionNode("offer",ID,PEER_DEVICE,PEER_DEVICE));
+  assert.equal(h.workers.length,0);assert.equal(h.controller.pendingOffers.size,0);
+  await h.controller.close();
+});
+
 test("failed HA configuration prevents an outgoing offer and preserves the messaging socket",async()=>{
   const h=harness();
   h.controller.bridgeFactory=()=>{

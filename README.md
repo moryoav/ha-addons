@@ -473,7 +473,7 @@ for encryption recovery and LID sender receipt handling.
 - If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
 - If an action reports `unauthorized`, make sure the add-on and integration are
   both current, then restart the add-on and reload the integration so Supervisor
-  discovery refreshes the configured API token. Because `/health` is public for
+  discovery refreshes the managed internal credential. Because `/health` is public for
   container monitoring, a stale token is detected on the first protected action rather
   than during setup.
 - If an action is unsupported or its endpoint is missing, update both the

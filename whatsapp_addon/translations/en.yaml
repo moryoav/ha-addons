@@ -96,6 +96,7 @@ configuration:
             description: Defaults to 180 ms and adjusts automatically for source timing
               and delivery gaps. The allowed range is 120-1500 ms; larger values increase
               delay.
+  # Compatibility path for frontends that report nested groups in reverse order.
   advanced:
     name: Advanced voice settings
     description: Audio codec and playback buffer tuning.
