@@ -1,0 +1,34 @@
+[package]
+name = "whatsapp-call-worker"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "Apache-2.0"
+
+[dependencies]
+whatsapp-rust = { git = "https://github.com/oxidezap/whatsapp-rust", rev = "0dc38af07632f48f0cf6c66df285f1643fc22b95", default-features = false, features = ["voip"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+anyhow = "1"
+bytes = "1"
+
+[profile.release]
+debug = 0
+strip = true
+codegen-units = 8
+
+# The call-only worker does not use the generated message protobuf API. Avoid
+# spending a local app build optimizing that entire unused generated surface.
+[profile.release.package.waproto]
+opt-level = 0
+codegen-units = 256
+
+[profile.release.package.wacore]
+opt-level = 2
+codegen-units = 64
+
+[profile.release.package.whatsapp-rust]
+opt-level = 1
+codegen-units = 64

@@ -263,7 +263,7 @@ Assistant allows 70 seconds for the API response. Concurrent requests on the
 same connection share the in-progress fetch.
 
 The local API is `POST /contacts` with `{"clientId": "default"}` and advertises
-capability `get_contacts`. It uses the same optional bearer authentication and
+capability `get_contacts`. It uses the same managed bearer authentication and
 per-client lookup rate limit as the other lookup actions. Contact values are
 not included in app error logs. This action requires an established session
 with available app-state keys, an explicit `clientId`, and `response_variable`.

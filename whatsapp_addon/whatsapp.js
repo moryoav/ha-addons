@@ -1,12 +1,17 @@
 const EventEmitter = require("eventemitter2");
 const axios = require("axios");
 
+// Detailed decryption tracing is disabled. Keep these hooks for debugging.
+// const {
+//   createBaileysDiagnosticLogger,
+//   createMessageUpsertDiagnostic,
+//   createRawMessageDiagnostic,
+//   createReceiptDiagnostic,
+// } = require("./decryption-diagnostics");
 const {
-  createBaileysDiagnosticLogger,
-  createMessageUpsertDiagnostic,
-  createRawMessageDiagnostic,
-  createReceiptDiagnostic,
-} = require("./decryption-diagnostics");
+  attachLidSenderReceipts,
+  createDeliveredMessages,
+} = require("./lid-sender-receipts");
 const {
   attachServerSyncMonitor,
   createAppStateLogger,
@@ -249,8 +254,7 @@ class WhatsappClient extends EventEmitter {
   #refreshMs;
   #baileys;
   #socketLogger;
-  #decryptionDiagnostics;
-  #experimentalLidSenderReceipts;
+  // #decryptionDiagnostics;
   #lidSenderReceipts;
   #lidDelivered;
   #eventBufferFlush;
@@ -280,8 +284,7 @@ class WhatsappClient extends EventEmitter {
     refreshMs,
     baileys,
     socketLogger,
-    decryptionDiagnostics = false,
-    experimentalLidSenderReceipts = false,
+    // decryptionDiagnostics = false,
     autoConnect = true,
   }) {
     super();
@@ -297,16 +300,13 @@ class WhatsappClient extends EventEmitter {
     this.#refreshMs = refreshMs || this.#toMilliseconds(6, 0, 0);
     this.#messageDedupe = new MessageDedupe();
     this.#baileys = baileys || import("@whiskeysockets/baileys");
-    this.#decryptionDiagnostics = decryptionDiagnostics === true;
-    this.#experimentalLidSenderReceipts = experimentalLidSenderReceipts === true;
-    this.#socketLogger =
-      socketLogger ||
-      (this.#decryptionDiagnostics
-        ? createBaileysDiagnosticLogger({
-            emit: (diagnostic) =>
-              this.emit("decryption_diagnostic", diagnostic),
-          })
-        : require("pino")({ level: "silent" }));
+    this.#socketLogger = socketLogger || require("pino")({ level: "silent" });
+    // this.#decryptionDiagnostics = decryptionDiagnostics === true;
+    // if (!socketLogger && this.#decryptionDiagnostics) {
+    //   this.#socketLogger = createBaileysDiagnosticLogger({
+    //     emit: (diagnostic) => this.emit("decryption_diagnostic", diagnostic),
+    //   });
+    // }
 
     this.#archiveStore = new ChatArchiveStore({
       directory: path,
@@ -391,13 +391,13 @@ class WhatsappClient extends EventEmitter {
       getMessage: async (key) => {
         const message =
           this.#retryCache === retryCache ? retryCache.get(key) : undefined;
-        this.#emitDecryptionDiagnostic(() => ({
-          source: "message_retry_cache",
-          operation: "lookup",
-          key: { ...key },
-          hit: !!message,
-          ...retryCache.stats,
-        }));
+        // this.#emitDecryptionDiagnostic(() => ({
+        //   source: "message_retry_cache",
+        //   operation: "lookup",
+        //   key: { ...key },
+        //   hit: !!message,
+        //   ...retryCache.stats,
+        // }));
         return message;
       },
     }));
@@ -448,23 +448,16 @@ class WhatsappClient extends EventEmitter {
         if (this.#conn === socket) this.emit("app_state_sync", report);
       },
     });
-    if (this.#experimentalLidSenderReceipts) {
-      // No helper load, extra handlers or metadata cache in the default-off path.
-      const {
-        attachLidSenderReceipts,
-        createDeliveredMessages,
-      } = require("./lid-sender-receipts");
-      // Kept across reconnects: a copy of a message decrypted on the previous
-      // socket is exactly what WhatsApp replays after the reconnect.
-      this.#lidDelivered ||= createDeliveredMessages();
-      this.#closeLidSenderReceipts();
-      this.#lidSenderReceipts = attachLidSenderReceipts({
-        socket,
-        delivered: this.#lidDelivered,
-        isCurrent: () => this.#conn === socket && !this.#status.disconnected,
-        onDiagnostic: (diagnostic) => this.#emitDecryptionDiagnostic(() => diagnostic),
-      });
-    }
+    // Kept across reconnects: a copy of a message decrypted on the previous
+    // socket is exactly what WhatsApp replays after the reconnect.
+    this.#lidDelivered ||= createDeliveredMessages();
+    this.#closeLidSenderReceipts();
+    this.#lidSenderReceipts = attachLidSenderReceipts({
+      socket,
+      delivered: this.#lidDelivered,
+      isCurrent: () => this.#conn === socket && !this.#status.disconnected,
+      // onDiagnostic: (diagnostic) => this.#emitDecryptionDiagnostic(() => diagnostic),
+    });
     // Register before the connection opens and before HA consumers strip context.
     socket.ev.on("messages.upsert", ({ messages }) => {
       if (this.#conn !== socket) return;
@@ -473,19 +466,16 @@ class WhatsappClient extends EventEmitter {
         if (this.#retryCache === retryCache) this.#cacheRetryMessage(message);
       }
     });
-    if (
-      this.#decryptionDiagnostics &&
-      typeof this.#conn.ws?.on === "function"
-    ) {
-      this.#conn.ws.on("CB:message", (node) => {
-        this.#emitDecryptionDiagnostic(() => createRawMessageDiagnostic(node));
-      });
-      for (const event of ["CB:receipt", "CB:ack,class:message"]) {
-        this.#conn.ws.on(event, (node) => {
-          this.#emitDecryptionDiagnostic(() => createReceiptDiagnostic(node));
-        });
-      }
-    }
+    // if (this.#decryptionDiagnostics && typeof this.#conn.ws?.on === "function") {
+    //   this.#conn.ws.on("CB:message", (node) => {
+    //     this.#emitDecryptionDiagnostic(() => createRawMessageDiagnostic(node));
+    //   });
+    //   for (const event of ["CB:receipt", "CB:ack,class:message"]) {
+    //     this.#conn.ws.on(event, (node) => {
+    //       this.#emitDecryptionDiagnostic(() => createReceiptDiagnostic(node));
+    //     });
+    //   }
+    // }
 
     this.#conn.ev.on("creds.update", (state) => {
       if (state?.me?.id) {
@@ -662,14 +652,14 @@ class WhatsappClient extends EventEmitter {
     messageTimestamp: message?.messageTimestamp,
   });
 
-  #emitDecryptionDiagnostic = (factory) => {
-    if (!this.#decryptionDiagnostics) return;
-    try {
-      this.emit("decryption_diagnostic", factory());
-    } catch {
-      // Optional diagnostics must never interrupt WhatsApp message processing.
-    }
-  };
+  // #emitDecryptionDiagnostic = (factory) => {
+  //   if (!this.#decryptionDiagnostics) return;
+  //   try {
+  //     this.emit("decryption_diagnostic", factory());
+  //   } catch {
+  //     // Optional diagnostics must never interrupt WhatsApp message processing.
+  //   }
+  // };
 
   #emitAppStateSync = (event, me) => {
     try {
@@ -687,13 +677,13 @@ class WhatsappClient extends EventEmitter {
   #cacheRetryMessage = (message) => {
     if (!this.#retryCache || message?.key?.fromMe !== true) return;
     const result = this.#retryCache.put(message);
-    this.#emitDecryptionDiagnostic(() => ({
-      source: "message_retry_cache",
-      operation: "store",
-      key: { ...message.key },
-      ...result,
-      ...this.#retryCache.stats,
-    }));
+    // this.#emitDecryptionDiagnostic(() => ({
+    //   source: "message_retry_cache",
+    //   operation: "store",
+    //   key: { ...message.key },
+    //   ...result,
+    //   ...this.#retryCache.stats,
+    // }));
   };
 
   #rememberPoll = (message) => {
@@ -796,13 +786,13 @@ class WhatsappClient extends EventEmitter {
 
     const me = () => this.#conn?.authState?.creds?.me || this.#conn?.user;
     this.#conn.ev.on("messages.upsert", async ({ messages, type, requestId }) => {
-      if (this.#decryptionDiagnostics) {
-        for (const message of messages || []) {
-          this.#emitDecryptionDiagnostic(() =>
-            createMessageUpsertDiagnostic(message, { type, requestId })
-          );
-        }
-      }
+      // if (this.#decryptionDiagnostics) {
+      //   for (const message of messages || []) {
+      //     this.#emitDecryptionDiagnostic(() =>
+      //       createMessageUpsertDiagnostic(message, { type, requestId })
+      //     );
+      //   }
+      // }
       this.emit("msg_upsert", {
         count: messages?.length || 0,
         type,

@@ -54,9 +54,21 @@ profile whatsapp_addon flags=(attach_disconnected,mediate_deleted) {
     # this add-on's generated attachments in the shared media directory.
     /** r,
     /usr/bin/node mr,
+    /usr/bin/python3* mrix,
+    /opt/voice/bin/python* mrix,
+    /usr/local/bin/whatsapp-call-worker rix,
+    /usr/local/bin/whatsapp-call-worker mr,
+    /opt/voice/{,**} mr,
+    /usr/lib/{,**} mr,
+    /lib/{,**} mr,
+    /app/base/node_modules/{,**} mr,
+    signal (send, receive) peer=whatsapp_addon//node,
+    signal (send, receive) peer=*_whatsapp_addon//node,
     /node_modules/{,**} mr,
     /tmp/{,**} rwk,
     /data/{,**} rwk,
+    /data/.api-token l,
+    /data/.api-token.*.tmp l,
     /media/whatsapp/{,**} rwk,
   }
 }

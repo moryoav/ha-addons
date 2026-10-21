@@ -7,8 +7,9 @@
 
 # WhatsApp for Home Assistant
 
-Send WhatsApp messages from Home Assistant automations and receive WhatsApp
-message, receipt, call, and presence events through the companion app.
+Send WhatsApp messages, call your Home Assistant for a conversation, or have
+your home call you when something needs attention. The companion app also
+delivers message, receipt, call, and presence events for automations.
 
 This project has two parts, installed separately:
 
@@ -21,6 +22,9 @@ paired by scanning its QR code in the add-on web UI.
 
 ## What it can do
 
+- **Talk to your home:** make and receive [WhatsApp voice calls](#voice-calls)
+  with GPT-Live and your existing Home Assistant OpenAI conversation agent.
+  Ask about devices, control exposed entities, and run exposed scripts.
 - **Send messages:** text, images, videos, documents, stickers, voice messages,
   locations, contacts, polls, reactions, edits, deletions, and quoted replies.
 - **Receive events:** incoming and outgoing messages, delivery and read receipts,
@@ -91,7 +95,7 @@ If the integration cannot detect the add-on yet, confirm the `WhatsApp` add-on i
 ## Configuration parameters
 
 See the [complete add-on option reference](whatsapp_addon/DOCS.md#configuration)
-for media downloads, retention, diagnostics, and experimental options.
+for voice calls, media downloads, retention, and logging options.
 
 ### Add-on
 
@@ -102,24 +106,17 @@ The add-on accepts these options:
   digits, `_`, and `-`, and may be at most 64 characters long.
 - `log_level`: `info` (the default) for normal operation, or `debug` for
   additional privacy-safe runtime diagnostics while investigating a problem.
-- `decryption_diagnostics`: `false` by default. This internal debugging option
-  records complete message metadata and decoded message structures, exact JIDs
-  and message IDs, retry activity, and encrypted payload fingerprints. Keep it
-  disabled during normal operation.
-- `api_token`: optional bearer token for the internal add-on API. Use a strong
-  random value when you want defense in depth. Leave it unset if you do not need
-  API authentication. A token may contain
-  `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`, `+`, and `/`, followed by optional
-  `=` padding, with a maximum total length of 512 characters. Random hex or
-  URL-safe Base64 is recommended; spaces, `:`, and other characters make the
-  add-on reject its configuration at startup.
 
-Token-enabled installations require Supervisor discovery; manual or fallback
-URL detection cannot supply the token. After adding, changing, or removing
-`api_token`, restart the add-on and reload the integration so the discovery
-record authoritatively refreshes the stored credential.
+The app creates its internal API credential automatically on first startup,
+saves it privately, and keeps it across restarts. Supervisor discovery shares
+it with the integration, which applies credential changes automatically.
+There is no token to enter or manage in the app configuration.
 
 Each client gets its own QR-code pairing flow and persisted add-on session data.
+
+Supplemental delivery receipts for decrypted own-device LID messages are always
+enabled for every account. They do not mark chats as read. Detailed decryption
+tracing is disabled; neither behavior has a configuration switch.
 
 The add-on page includes an Open Web UI action through Home Assistant Ingress.
 The web UI shows each configured session, its connection state, and the current
@@ -132,9 +129,30 @@ requires confirmation before deleting that client's local session.
 ### Integration
 
 The integration has no user-entered setup parameters. It detects the running
-add-on URL and optional API token through Home Assistant Supervisor discovery.
+app address and managed API credential through Home Assistant Supervisor discovery.
 
 You can use the integration entry menu to reconfigure later; reconfiguration rediscovers the add-on URL automatically.
+
+## Voice calls
+
+Call the linked WhatsApp account and talk to your Home Assistant. You can ask
+"Did I leave any lights on?", turn devices on or off, and keep asking follow-up
+questions. Automations can also call you with an opening message, such as an
+alert about a water leak.
+
+In the app's **Voice calls** settings, choose one existing **Calling account**,
+enter your **OpenAI conversation agent** entity ID, and allow the callers you
+want it to answer. The app uses that agent's existing OpenAI API key and Assist
+permissions. Calls and messages share the existing linked device, so there is
+no second WhatsApp pairing. Other accounts keep working for messaging.
+
+Choose from 22 voices, random or fixed greetings, automatic hang-up after a
+goodbye, a call time limit, and advanced audio settings. Optional call recording
+is off by default and has 30-day retention. Only direct audio calls are supported,
+one at a time. Leave the calling account and agent empty for messaging only.
+
+See the [voice call setup and automation examples](https://moryoav.github.io/ha-addons/examples/voice-calls/),
+including upgrade steps for existing installations.
 
 ## Devices and sensors
 
@@ -210,6 +228,9 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   name, description, owner, settings, and participants.
 - `whatsapp.reject_call`: decline an incoming call using the `callId` and
   `from` values of its `whatsapp_call_update` event.
+- `whatsapp.make_call`: start an AI voice call from the selected calling account,
+  with an optional opening message after the recipient answers.
+- `whatsapp.hang_up`: end the selected account's active AI call.
 - `whatsapp.get_profile`: look up a contact's profile picture URL, about text,
   and business profile, or a group's picture.
 - `whatsapp.list_groups`: list every group the linked account belongs to, with
@@ -387,8 +408,9 @@ and account state every 30 seconds.
 
 ## Security notes
 
-- The bridge API runs on Home Assistant's internal add-on network. The optional
-  `api_token` setting protects action requests with bearer authentication.
+- The bridge API runs on Home Assistant's internal app network. A privately
+  generated credential protects API requests and is shared automatically
+  through Supervisor discovery.
 - The web UI uses Home Assistant Ingress and accepts connections from the
   Supervisor ingress proxy. Pairing QR codes appear there and in Home Assistant
   persistent notifications.
@@ -399,8 +421,7 @@ and account state every 30 seconds.
 API tokens, pairing QR codes, session data, and WhatsApp identifiers are
 sensitive. Redact them from issue reports, screenshots, logs, and shared
 automation traces. Home Assistant may retain action inputs, response data,
-and message bodies in traces. Decryption Diagnostics records private message
-data when enabled; review and redact those captures before sharing them.
+and message bodies in traces. Review and redact those traces before sharing them.
 
 ## Diagnostics
 
@@ -430,18 +451,9 @@ after the connection opened, a warning is logged instead. Until WhatsApp
 finishes, new messages can wait on the server until the next reconnect. These
 lines contain counts only.
 
-The separate Decryption Diagnostics toggle is intended for investigating
-message decryption failures. When enabled, it records raw message-stanza
-attributes, exact message and participant identifiers, sender names,
-timestamps, message stub data, retry counters, the complete decoded message
-structure when available, and encrypted payload sizes and SHA-256
-fingerprints. It also records incoming receipts and message acknowledgements,
-outgoing receipt and acknowledgement routing reported by Baileys, and retry-cache
-lookups, including the requested conversation, message ID, and whether it was
-found. An outgoing log entry records a send attempt, not proof that WhatsApp
-accepted the acknowledgement. It remains enabled until the option is switched
-off and the add-on is restarted. A failed encrypted message has no decoded body
-to record.
+Detailed decryption tracing is disabled. Its instrumentation remains commented
+out in the source for future debugging. Normal debug logging and recovery
+protection remain active.
 
 Failed native health checks are retained at both log levels. If Supervisor
 replaces an unhealthy container, the next add-on run replays the saved probe
@@ -453,7 +465,7 @@ Home Assistant persistent notification containing the same sanitized summary;
 updates the existing alert instead of accumulating duplicates.
 
 See the [add-on troubleshooting and diagnostics guide](whatsapp_addon/DOCS.md#troubleshooting-and-diagnostics)
-for encryption recovery and experimental options.
+for encryption recovery and LID sender receipt handling.
 
 ## Troubleshooting
 
@@ -461,7 +473,7 @@ for encryption recovery and experimental options.
 - If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
 - If an action reports `unauthorized`, make sure the add-on and integration are
   both current, then restart the add-on and reload the integration so Supervisor
-  discovery refreshes the configured API token. Because `/health` is public for
+  discovery refreshes the managed internal credential. Because `/health` is public for
   container monitoring, a stale token is detected on the first protected action rather
   than during setup.
 - If an action is unsupported or its endpoint is missing, update both the
@@ -508,6 +520,11 @@ If this project is useful to you, you can support my work:
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development notes, [SECURITY.md](SECURITY.md) for vulnerability reporting, and [CHANGELOG.md](CHANGELOG.md) for release history.
+
+See the [voice architecture and offline tests](whatsapp_addon/voice/README.md)
+for the shared Baileys session adapter, native call worker, GPT-Live bridge,
+and container validation. The messaging dependencies stay pinned while the
+call worker is built from a fixed upstream revision and guarded patches.
 
 [hacs-badge]: https://img.shields.io/badge/HACS-41BDF5.svg?style=flat-square
 [hacs-url]: #installation

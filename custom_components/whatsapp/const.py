@@ -31,6 +31,8 @@ SERVICE_REJECT_CALL: Final = "reject_call"
 SERVICE_GET_PROFILE: Final = "get_profile"
 SERVICE_LIST_GROUPS: Final = "list_groups"
 SERVICE_GET_CONTACTS: Final = "get_contacts"
+SERVICE_MAKE_CALL: Final = "make_call"
+SERVICE_HANG_UP: Final = "hang_up"
 
 CAPABILITY_CHECK_NUMBER: Final = SERVICE_CHECK_NUMBER
 CAPABILITY_GET_GROUP_INFO: Final = SERVICE_GET_GROUP_INFO
@@ -39,6 +41,8 @@ CAPABILITY_GET_PROFILE: Final = SERVICE_GET_PROFILE
 CAPABILITY_LIST_GROUPS: Final = SERVICE_LIST_GROUPS
 CAPABILITY_GET_CONTACTS: Final = SERVICE_GET_CONTACTS
 CAPABILITY_GET_STATUS: Final = "get_status"
+CAPABILITY_MAKE_CALL: Final = SERVICE_MAKE_CALL
+CAPABILITY_HANG_UP: Final = SERVICE_HANG_UP
 
 SESSION_STATES: Final = (
     "connecting",
@@ -60,5 +64,6 @@ ATTR_STATUS: Final = "status"
 ATTR_TO: Final = "to"
 ATTR_TYPE: Final = "type"
 ATTR_USER_ID: Final = "userId"
+ATTR_MESSAGE: Final = "message"
 
 PRESENCE_TYPES: Final = ("unavailable", "available", "composing", "recording", "paused")

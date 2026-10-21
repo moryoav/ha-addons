@@ -1,7 +1,8 @@
 # WhatsApp for Home Assistant
 
 Send WhatsApp messages from Home Assistant automations and receive message,
-receipt, call, contact, and presence events.
+receipt, call, contact, and presence events. Make and receive AI voice calls
+with your Home Assistant OpenAI conversation agent over the same linked device.
 
 This project has two parts: the **WhatsApp add-on** runs the local WhatsApp
 Web bridge, and the **WhatsApp integration** connects it to Home Assistant.
@@ -34,6 +35,7 @@ Session state. All status entities refresh together every 30 seconds. See
 | `check_number` | Check whether a phone number is on WhatsApp and get its LID. |
 | `get_group_info` | Get a group's name, description, settings, and members. |
 | `reject_call` | Decline an incoming call. |
+| `make_call`, `hang_up` | Start or end an AI voice call, with an optional opening message after pickup. |
 | `get_profile` | Get a contact's profile picture, about text, and business profile, or a group's picture. |
 | `list_groups` | List every group the account belongs to. |
 | `get_contacts` | Fetch saved contact names and identifiers from WhatsApp. |
@@ -77,6 +79,7 @@ event fields, and a processing example.
 | [Recipients and lookups](examples/recipients.md) | Phone JIDs, LIDs, group lists and IDs, registration checks, saved contacts, and contact profiles. |
 | [Presence](examples/presence.md) | Subscriptions, online notifications, typing indicators, and a bounded typing loop. |
 | [Automations](examples/automations.md) | Declining calls, call logs, unread-alert escalation, logging, replies, read markers, arrival messages, sensor alerts, and webhooks. |
+| [Voice calls](examples/voice-calls.md) | Talk to your home, receive call alerts, choose voices and greetings, and record calls. |
 | [Reusable scripts](examples/scripts.md) | Return send responses, quote notifications, save message keys, and send files prepared by helpers. |
 | [Decrypt incoming media](examples/incoming-media.md) | Enable downloads, process decrypted files, and manage retention and storage limits. |
 | [Incoming messages and agents](examples/incoming-messages.md) | Filter chats, extract text, reply with a conversation agent, and recognize incoming media. |
@@ -100,6 +103,5 @@ event fields, and a processing example.
 
 WhatsApp events and Home Assistant automation traces can contain phone JIDs,
 LIDs, call and message keys, quoted-message data, contact names, and message
-bodies. Saved media files and Decryption Diagnostics captures can also contain
-private information. Redact these fields, QR codes, session data, and
-`api_token` before sharing diagnostics, logs, screenshots, or traces.
+bodies. Saved media files can also contain private information. Redact these fields, QR codes, session data, and
+internal API credentials before sharing diagnostics, logs, screenshots, or traces.

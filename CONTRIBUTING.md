@@ -103,7 +103,8 @@ For add-on changes, verify that the add-on can:
 - Send a message.
 - Fire `new_whatsapp_message`, `whatsapp_call_update`, and
   `whatsapp_presence_update` events when relevant.
-- Authenticate API calls when `api_token` is configured.
+- Authenticate API calls with the managed credential supplied through discovery.
+- Keep voice tests offline and synthetic; never commit recordings or session data.
 - Leave Home Assistant's `/config` directory untouched.
 
 For HACS readiness, the HACS and Hassfest GitHub Actions should pass without ignored checks before opening a HACS/default submission.

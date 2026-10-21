@@ -14,6 +14,11 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
   name, description, owner, settings, and participants.
 - `whatsapp.reject_call`: decline an incoming call using the `callId` and
   `from` values of its `whatsapp_call_update` event.
+- `whatsapp.make_call`: start an AI voice call from the configured calling
+  account. Supply `clientId`, `to`, and optionally `message` (up to 300 characters)
+  for the greeting after pickup. Optional response: `status: calling`.
+- `whatsapp.hang_up`: end that account's active AI call using `clientId`.
+  Optional response: `status: ended`.
 - `whatsapp.get_profile`: look up a contact's profile picture URL, about text,
   and business profile, or a group's picture.
 - `whatsapp.list_groups`: list every group the linked account belongs to, with
@@ -37,5 +42,6 @@ the recipient read the message.
 - [Recipients, profiles, and group lists](../examples/recipients.md)
 - [Presence](../examples/presence.md)
 - [Automations, calls, and read markers](../examples/automations.md)
+- [AI voice calls, setup, and call alerts](../examples/voice-calls.md)
 - [Reusable notification scripts](../examples/scripts.md)
 - [Incoming messages and conversation agents](../examples/incoming-messages.md)

@@ -105,7 +105,6 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
       clientIds: ["default", "backup_1"],
       apiToken: "fictional-token_123456",
       logLevel: "info",
-      decryptionDiagnostics: false,
       mediaOptions: {
         enabled: false, retentionMs: 86400000,
         maxFileBytes: 64 * 1024 * 1024, maxStorageBytes: 1024 * 1024 * 1024,
@@ -119,25 +118,10 @@ test("options parsing validates client IDs and optional bearer tokens", () => {
   for (const value of ["trace", "", null]) {
     assert.throws(() => normalizeLogLevel(value), RequestValidationError);
   }
-  assert.equal(
-    parseOptions(
-      JSON.stringify({
-        clients: ["default"],
-        decryption_diagnostics: true,
-      })
-    ).decryptionDiagnostics,
-    true
-  );
-  assert.throws(
-    () =>
-      parseOptions(
-        JSON.stringify({
-          clients: ["default"],
-          decryption_diagnostics: "true",
-        })
-      ),
-    RequestValidationError
-  );
+  for (const value of [true, false, "true"]) {
+    const options = parseOptions(JSON.stringify({ clients: ["default"], decryption_diagnostics: value }));
+    assert.equal(Object.hasOwn(options, "decryptionDiagnostics"), false);
+  }
 
   for (const token of ["has spaces", "line\nbreak", "bad:token", "a".repeat(513)]) {
     assert.throws(() => normalizeApiToken(token), RequestValidationError);
@@ -239,6 +223,7 @@ test("startup initializes storage before clients and closes it on normal shutdow
   for (const fail of [false, true]) {
     const calls = [];
     const start = () => startAddon({
+    apiTokenLoader: async () => "fictional-runtime-token",
       logger: {},
       optionsLoader: async () => ({ clientIds: ["default"], mediaOptions: { enabled: true } }),
       diagnosticsFactory: () => ({ start() {}, stop() {} }),
@@ -630,6 +615,7 @@ test("debug diagnostics are configured before clients are created", async () => 
   const servers = [];
 
   const runtime = await startAddon({
+    apiTokenLoader: async () => "fictional-runtime-token",
     logger,
     optionsLoader: async () => ({
       clientIds: ["default"],
@@ -677,6 +663,7 @@ test("the installed libsignal filter can latch recovery in the running add-on", 
   const persisted = [];
   let disconnects = 0;
   const runtime = await startAddon({
+    apiTokenLoader: async () => "fictional-runtime-token",
     logger: {},
     optionsLoader: async () => ({
       clientIds: ["default"],
@@ -737,6 +724,7 @@ test("terminal health replay emits an event and a debug-only notification", asyn
     setClientStateProvider() {},
   };
   const runtime = await startAddon({
+    apiTokenLoader: async () => "fictional-runtime-token",
     logger: {},
     optionsLoader: async () => ({
       clientIds: ["default"],
@@ -1134,7 +1122,7 @@ test("debug message detail is capped and privacy-sanitized", () => {
   assert.equal(JSON.stringify(entries).includes(FICTIONAL_NUMBER), false);
 });
 
-test("decryption diagnostics pass through complete opt-in message context", () => {
+test("retired diagnostic flags cannot log private message context", () => {
   const entries = [];
   const clients = [];
   const client = new FakeClient();
@@ -1157,13 +1145,9 @@ test("decryption diagnostics pass through complete opt-in message context", () =
     pushName: "Fictional Sender",
   });
 
-  assert.equal(clients[0].decryptionDiagnostics, true);
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0][0], "WhatsApp decryption diagnostic.");
-  const payload = JSON.parse(entries[0][1]);
-  assert.equal(payload.clientId, "default");
-  assert.equal(payload.diagnostic.remoteJid, FICTIONAL_JID);
-  assert.equal(payload.diagnostic.pushName, "Fictional Sender");
+  assert.equal(Object.hasOwn(clients[0], "decryptionDiagnostics"), false);
+  assert.equal(client.listenerCount("decryption_diagnostic"), 0);
+  assert.deepEqual(entries, []);
 });
 
 test("discovery advertises the optional token without logging it", async () => {
@@ -1207,6 +1191,7 @@ test("partial startup closes the API listener and clients if ingress fails", asy
   await assert.rejects(
     () =>
       startAddon({
+    apiTokenLoader: async () => "fictional-runtime-token",
         optionsLoader: async () => ({
           clientIds: ["default"],
           apiToken: undefined,

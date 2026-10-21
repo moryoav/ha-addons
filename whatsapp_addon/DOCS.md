@@ -3,7 +3,8 @@
 This add-on runs a local WhatsApp Web bridge for Home Assistant. The companion
 WhatsApp integration provides account devices, status sensors, actions, and
 diagnostics. Install both parts to send messages and build automations from
-incoming message, receipt, call, contact, and presence events.
+incoming message, receipt, call, contact, and presence events. Voice calling
+connects WhatsApp audio to GPT-Live and your Home Assistant OpenAI agent.
 
 Supported architectures are `aarch64` and `amd64`.
 
@@ -16,7 +17,7 @@ add-on and integration.
 2. Scan the pairing QR code with WhatsApp on your phone. A QR code also appears
    in a Home Assistant persistent notification.
 3. Add **WhatsApp** under **Settings > Devices & services**. Supervisor discovery
-   supplies the local API address and optional token.
+   supplies the local API address and automatically managed credential.
 4. Use the configured session name, `default` unless changed, as `clientId`
    in Home Assistant actions.
 
@@ -26,13 +27,9 @@ The add-on options are:
 
 - `clients`: one or more unique WhatsApp session names. The default is
   `default`. A name must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
-- `api_token`: an optional bearer token for the internal add-on API. Use a
-  strong random value for defense in depth, or leave it unset to use the
-  internal API without bearer authentication. The value may
-  contain `A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`, `+`, and `/`, followed by
-  optional `=` padding, and may be at most 512 characters total. Random hex or
-  URL-safe Base64 is recommended. Spaces, `:`, and other characters cause a
-  startup validation error.
+
+The app manages its internal API credential automatically. It is saved privately
+and supplied to the integration through Supervisor discovery.
 
 Each session name becomes the `clientId` used by Home Assistant actions. Every client has its own persisted WhatsApp pairing state under the add-on data folder.
 
@@ -42,6 +39,40 @@ Open the add-on configuration page and add another value under `clients`. Use
 that value as the `clientId` in Home Assistant actions. Empty lists, duplicates,
 invalid characters, and names longer than 64 characters are rejected before
 any session directory is created.
+
+### Voice call options
+
+Expand **Voice calls** in the configuration. Calls reuse the selected account's
+existing WhatsApp login. Leave the calling account and agent empty for messaging
+only. Update both the app and HACS integration to use the new calling actions.
+
+| Option | Default and purpose |
+| --- | --- |
+| `calling_account` | Empty. Choose one account ID already listed in `clients`, such as `default`. Only that account gains AI calling. |
+| `allowed_callers` | Empty. Exact WhatsApp user JIDs ending in `@lid` or `@s.whatsapp.net` that may call the assistant. Empty answers nobody. |
+| `agent_id` | Empty. The `conversation.*` entity from the Home Assistant OpenAI integration. Its API key and Assist permissions are used. |
+| `voice` | `gleam`. Select from 22 GPT-Live voices. |
+| `max_call_seconds` | `300`, from 60 to 900 seconds including setup. |
+| `greeting_mode` | `random`. Use a random short greeting, `fixed` text, or `disabled`. Greeting waits for the call's audio connection. |
+| `greeting_text` | Empty. Text to use in fixed mode, up to 300 characters. |
+| `automatic_hangup` | `true`. A small OpenAI model detects a clear final goodbye and disconnects immediately. |
+| `record_calls` | `false`. Save both voices in a local WAV file using a background writer. |
+| `recording_retention_days` | `30`, from 1 to 365 days. Applies to existing recordings too. Cleanup continues when recording is disabled. |
+| `advanced.audio_codec` | `opus`. Tested default; `mlow` is Meta's low-bandwidth speech codec. Compare them on your connection if needed. |
+| `advanced.playback_buffer_ms` | `180`, from 120 to 1500 ms. Initial adaptive playback cushion. Larger values add delay. |
+
+The app reads the API key belonging to the selected OpenAI conversation agent
+through a read-only Home Assistant configuration mount. No extra key or custom
+conversation service is configured. Home requests use `conversation.process`.
+GPT-Live and goodbye detection use the OpenAI API and incur API charges.
+
+Only one direct audio call runs at a time. Open the web UI for calling status
+and completed recordings. Recordings are also in
+`/media/whatsapp/call-recordings`; shared media permissions and backups apply.
+
+See the [voice call guide](https://moryoav.github.io/ha-addons/examples/voice-calls/)
+for setup, `whatsapp.make_call` and `whatsapp.hang_up`, optional per-call opening
+messages, recordings, upgrade instructions, and troubleshooting.
 
 ### Incoming media options
 
@@ -55,20 +86,14 @@ any session directory is created.
   content. Must be at least `media_max_file_mb`. New downloads are rejected
   when the budget is full; unexpired files are not removed to make room.
 
-### Diagnostics options
+### Logging options
 
 - `log_level`: `info` (the default) for normal operation, or `debug` for
   additional privacy-safe runtime diagnostics while investigating a problem.
-- `decryption_diagnostics`: `false` by default. This internal debugging option
-  records complete message metadata and decoded message structures, exact JIDs
-  and message IDs, retry activity, and encrypted payload fingerprints. Keep it
-  disabled during normal operation.
 
-### Experimental options
-
-- `experimental_lid_sender_receipts`: `false` by default. Enables the experimental
-  [own-device LID receipt workaround](#experimental-lid-sender-receipts). Leave disabled unless
-  testing the replay/decryption-storm issue.
+Detailed decryption tracing is disabled. Supplemental [own-device LID delivery
+receipts](#lid-sender-receipts) are always enabled for every account. Neither
+behavior has a configuration switch; old saved switch values are ignored.
 
 ## Web UI
 
@@ -283,17 +308,17 @@ The shared `/media` mount makes decrypted files available to Home Assistant.
 Download links require Home Assistant authentication, including for documents.
 The files are not published through `/local` or an unauthenticated add-on port.
 
-When `api_token` is set, action API requests require
-`Authorization: Bearer <token>`. The token is advertised to the integration
-through the internal Supervisor discovery record. Keep the token private and
-redact it from logs and issue reports.
+Protected API requests require `Authorization: Bearer <token>`. The app
+generates a random credential on first startup and stores it privately under
+its persistent data directory. It is retained across restarts and app updates.
+An existing configured credential is adopted during migration when available.
+The integration receives the credential through Supervisor discovery and
+applies changes automatically. No token field or manual copy is needed.
+Keep internal credentials private when collecting support information.
 
-Token-enabled installations require Supervisor discovery; manual or fallback
-URL detection cannot provide the credential. After adding, changing, or
-removing `api_token`, restart the add-on and reload the integration so discovery
-refreshes or removes the stored token. Because `/health` is public, a stale or
-wrong token is reported as an authorization error on the first protected action
-rather than during setup.
+API startup fails if the saved credential cannot be read or created; it does
+not silently disable authentication. The app's matching integration build
+should be installed so discovery updates are applied automatically.
 
 The `/health` route remains unauthenticated so container monitoring can use it.
 Its response is deliberately limited to a non-sensitive status, the service
@@ -305,9 +330,8 @@ session data, or message content.
 
 WhatsApp events and Home Assistant automation traces can contain phone JIDs,
 LIDs, call and message keys, quoted-message data, contact names, and message
-bodies. Saved media files and Decryption Diagnostics captures can also contain
-private information. Redact these fields, QR codes, session data, and
-`api_token` before sharing diagnostics, logs, screenshots, or traces.
+bodies. Saved media files can also contain private information. Redact these fields, QR codes, session data, and
+internal API credentials before sharing diagnostics, logs, screenshots, or traces.
 
 ## Troubleshooting and diagnostics
 
@@ -330,13 +354,9 @@ duration, start time, and whether the caller and participants are the linked
 account, with identifiers replaced by one-way references. These entries show
 how calls made from the phone reach a linked device.
 
-The separate Decryption Diagnostics toggle is intended for investigating
-message decryption failures. When enabled, it records raw message-stanza
-attributes, exact message and participant identifiers, sender names,
-timestamps, message stub data, retry counters, the complete decoded message
-structure when available, and encrypted payload sizes and SHA-256
-fingerprints. It remains enabled until the option is switched off and the
-add-on is restarted. A failed encrypted message has no decoded body to record.
+Detailed decryption tracing is disabled. Its instrumentation remains commented
+out in the source for future debugging. Normal debug logging and recovery
+protection remain active.
 
 After each connection the add-on logs how many offline messages WhatsApp
 announced and delivered. If WhatsApp has not finished sending them one minute
@@ -394,19 +414,14 @@ client return the `client_recovery_paused` error until Retry or Reset and
 re-pair is started. This recovery mode contains the failure but does not fix
 the underlying upstream encryption problem.
 
-### Experimental LID sender receipts
+### LID sender receipts
 
-This option is disabled by default and is intended only for investigating
-[issue #7](https://github.com/moryoav/ha-addons/issues/7). It is a fix candidate,
-not a confirmed solution for every decryption failure.
+Supplemental own-device LID delivery receipts are always enabled for every
+account. This handling addresses the receipt-routing and replay behavior from
+[issue #7](https://github.com/moryoav/ha-addons/issues/7); it does not fix every
+possible upstream decryption failure.
 
-To test, turn on **Experimental LID sender receipts** in the add-on's
-Configuration tab, save, and restart the add-on. The YAML option is
-`experimental_lid_sender_receipts: true`. To roll back, switch it off, save, and
-restart. When disabled, no workaround handlers, tracking cache, or extra
-receipts are installed.
-
-When enabled, the add-on matches a direct encrypted own-device LID stanza to
+The app matches a direct encrypted own-device LID stanza to
 its successfully decrypted message and sends a supplemental `sender` delivery
 receipt to the originating device with the original recipient. This bypasses
 the LID-specific receipt-routing problem without modifying or upgrading
@@ -425,7 +440,7 @@ its keys are used. If WhatsApp sends it again, for example after a reconnect,
 the add-on answers the copy with the same receipt and does not pass it to
 Baileys.
 
-The experiment excludes groups, broadcasts, newsletters, peer synchronization
+The receipt handling excludes groups, broadcasts, newsletters, peer synchronization
 traffic, other people's incoming messages, failed or partial decryptions, and
 local sends without a matching incoming stanza. If two of the account's devices
 ever present the same message ID, the match is skipped rather than guessing a
@@ -444,31 +459,10 @@ account, chat and message IDs and the sending device, at most 2,048 entries for
 24 hours. It survives reconnects. Stopping or restarting the add-on, logout,
 recovery and reset clear it.
 
-Decryption Diagnostics is independent of this switch. When enabled separately,
-it also records sanitized `lid_sender_receipts` outcomes such as `sent`,
-`send_failed`, `ambiguous`, `queue_full`, and `copy_answered`. `sent` means the
-socket write completed, not that WhatsApp has confirmed acceptance. Decryption
-Diagnostics also records private message data as described above; redact
-captures before sharing them.
-
-For validation, repeat a send that requires session setup, continue ordinary
-phone/desktop messaging, and observe multiple reconnects. Check whether
-successfully processed messages stop accumulating for replay and whether the
-pause remains absent. Also check normal notifications to yourself, direct
-contacts and groups.
-
-The earliest signal does not need a storm. With Decryption Diagnostics on, a
-message from one of the account's own devices (its `from` is the account's own
-LID and it carries a `recipient`) that was decrypted once should no longer come
-back with `offline` set after the next reconnect, and the recurring
-`Key used already or never filled` failures for `fromMe` messages should stop.
-If own messages are still redelivered after several reconnects, WhatsApp is not
-accepting the supplemental receipt and the experiment has failed; switch it off.
-
-Enabling this option does not clear an existing pause. Messages that were left
-pending before the switch was on replay and fail one more time while they
-drain, so recovery may still need the existing Retry or Reset and re-pair
-controls. Do not re-pair preemptively on an otherwise working system.
+Detailed decryption tracing is disabled, including receipt outcome logging.
+Normal runtime health, retry caching, offline-sync monitoring, and the recovery
+pause remain active. Receipt handling does not clear an existing recovery pause;
+use the existing Retry or Reset and re-pair controls when needed.
 
 ## Support and issues
 

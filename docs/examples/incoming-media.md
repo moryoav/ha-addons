@@ -113,7 +113,7 @@ Another add-on needs the same `/media` mount to read that path.
 Use `url` for authenticated HTTP access. It is relative to the Home Assistant
 base URL and requires a Home Assistant login session or an
 `Authorization: Bearer <Home Assistant access token>` header. The add-on's
-optional API token does not authenticate this URL. The endpoint supports
+internal API credential does not authenticate this URL. The endpoint supports
 documents as well as images, audio, and video and serves them as downloads.
 
 A cloud OCR or AI provider generally cannot fetch a private Home Assistant

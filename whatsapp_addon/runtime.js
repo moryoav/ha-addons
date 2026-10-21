@@ -4,6 +4,7 @@ const fs = require("fs");
 const axios = require("axios");
 const qrimage = require("qr-image");
 
+const { loadOrCreateApiToken, normalizeApiToken } = require("./api-token");
 const { createApiApp } = require("./api");
 const { summarizeSyncAction } = require("./app-state-sync");
 const { CALL_LOG_EVENT, createCallLogTracker } = require("./call-log");
@@ -124,21 +125,6 @@ const safeUpstreamCode = (error) => {
     : undefined;
 };
 
-const normalizeApiToken = (value) => {
-  if (value === undefined || value === null || value === "") return undefined;
-  if (
-    typeof value !== "string" ||
-    value.length > 512 ||
-    !/^[-A-Za-z0-9._~+/]+=*$/.test(value)
-  ) {
-    throw new RequestValidationError(
-      "api_token must be empty or a bearer-safe token of at most 512 characters."
-    );
-  }
-
-  return value;
-};
-
 const normalizeLogLevel = (value) => {
   if (value === undefined) return "info";
   if (value !== "info" && value !== "debug") {
@@ -147,25 +133,14 @@ const normalizeLogLevel = (value) => {
   return value;
 };
 
-const normalizeDecryptionDiagnostics = (value) => {
-  if (value === undefined) return false;
-  if (typeof value !== "boolean") {
-    throw new RequestValidationError(
-      "decryption_diagnostics must be a boolean."
-    );
-  }
-  return value;
-};
-
-const normalizeExperimentalLidSenderReceipts = (value) => {
-  if (value === undefined) return false;
-  if (typeof value !== "boolean") {
-    throw new RequestValidationError(
-      "experimental_lid_sender_receipts must be a boolean."
-    );
-  }
-  return value;
-};
+// Detailed decryption tracing is disabled. Keep these hooks for debugging.
+// const normalizeDecryptionDiagnostics = (value) => {
+//   if (value === undefined) return false;
+//   if (typeof value !== "boolean") {
+//     throw new RequestValidationError("decryption_diagnostics must be a boolean.");
+//   }
+//   return value;
+// };
 
 const parseOptions = (content) => {
   let options;
@@ -180,14 +155,8 @@ const parseOptions = (content) => {
     clientIds: normalizeConfiguredClientIds(options.clients),
     apiToken: normalizeApiToken(options.api_token),
     logLevel: normalizeLogLevel(options.log_level),
-    decryptionDiagnostics: normalizeDecryptionDiagnostics(
-      options.decryption_diagnostics
-    ),
+    // decryptionDiagnostics: normalizeDecryptionDiagnostics(options.decryption_diagnostics),
     mediaOptions: parseMediaOptions(options),
-    // Keep the legacy options/factory shape when this experiment is disabled.
-    ...(normalizeExperimentalLidSenderReceipts(options.experimental_lid_sender_receipts)
-      ? { experimentalLidSenderReceipts: true }
-      : {}),
   };
 };
 
@@ -337,8 +306,7 @@ const createAddonRuntime = ({
   apiPort = API_PORT,
   fingerprintKey = PROCESS_LOG_KEY,
   logLevel = "info",
-  decryptionDiagnostics = false,
-  experimentalLidSenderReceipts = false,
+  // decryptionDiagnostics = false,
   runId = createRunId(),
   diagnostics,
   mediaStore,
@@ -357,12 +325,7 @@ const createAddonRuntime = ({
   const logoutTasks = new Map();
   const logRef = (value) => fingerprint(value, fingerprintKey);
   const debugEnabled = normalizeLogLevel(logLevel) === "debug";
-  const decryptionDiagnosticsEnabled = normalizeDecryptionDiagnostics(
-    decryptionDiagnostics
-  );
-  const experimentalLidSenderReceiptsEnabled = normalizeExperimentalLidSenderReceipts(
-    experimentalLidSenderReceipts
-  );
+  // const decryptionDiagnosticsEnabled = normalizeDecryptionDiagnostics(decryptionDiagnostics);
   const callRetryWaiters = new Map();
   const recovery = {
     active: !!initialRecoveryRecord,
@@ -903,13 +866,13 @@ const createAddonRuntime = ({
     );
   };
 
-  const onDecryptionDiagnostic = (diagnostic, clientId) => {
-    if (!decryptionDiagnosticsEnabled) return;
-    logger.info?.(
-      "WhatsApp decryption diagnostic.",
-      JSON.stringify({ runId, clientId, diagnostic })
-    );
-  };
+  // const onDecryptionDiagnostic = (diagnostic, clientId) => {
+  //   if (!decryptionDiagnosticsEnabled) return;
+  //   logger.info?.(
+  //     "WhatsApp decryption diagnostic.",
+  //     JSON.stringify({ runId, clientId, diagnostic })
+  //   );
+  // };
 
   const initClient = (clientId) => {
     if (clients[clientId]) return clients[clientId];
@@ -919,10 +882,7 @@ const createAddonRuntime = ({
 
     const client = clientFactory({
       path: sessionPath,
-      decryptionDiagnostics: decryptionDiagnosticsEnabled,
-      ...(experimentalLidSenderReceiptsEnabled
-        ? { experimentalLidSenderReceipts: true }
-        : {}),
+      // decryptionDiagnostics: decryptionDiagnosticsEnabled,
     });
     clients[clientId] = client;
 
@@ -1020,9 +980,9 @@ const createAddonRuntime = ({
     );
     client.on("message_status", (status) => onMessageStatus(status, clientId));
     client.on("chat_read", (read) => onChatRead(read, clientId));
-    client.on("decryption_diagnostic", (diagnostic) =>
-      onDecryptionDiagnostic(diagnostic, clientId)
-    );
+    // client.on("decryption_diagnostic", (diagnostic) =>
+    //   onDecryptionDiagnostic(diagnostic, clientId)
+    // );
     client.on("logout", () => {
       if (logoutTasks.has(clientId)) return;
 
@@ -1344,6 +1304,8 @@ const startAddon = async ({
   fsModule = fs,
   fsPromises = fs.promises,
   optionsLoader = loadOptions,
+  apiTokenLoader = loadOrCreateApiToken,
+  additionalCapabilities = [],
   listenFn = listen,
   closeServerFn = closeServer,
   diagnosticsFactory = createRuntimeDiagnostics,
@@ -1363,14 +1325,13 @@ const startAddon = async ({
   ...runtimeOptions
 } = {}) => {
   const options = await optionsLoader(optionsPath);
-  const { clientIds, apiToken } = options;
+  const { clientIds } = options;
+  const apiToken = normalizeApiToken(await apiTokenLoader({
+    dataRoot, legacyToken: options.apiToken, fsPromises,
+  }));
+  if (!apiToken) throw new Error("Internal API authentication is required.");
   const logLevel = normalizeLogLevel(options.logLevel);
-  const decryptionDiagnostics = normalizeDecryptionDiagnostics(
-    options.decryptionDiagnostics
-  );
-  const experimentalLidSenderReceipts = normalizeExperimentalLidSenderReceipts(
-    options.experimentalLidSenderReceipts
-  );
+  // const decryptionDiagnostics = normalizeDecryptionDiagnostics(options.decryptionDiagnostics);
   if (logger && typeof logger === "object") logger.level = logLevel;
 
   const diagnostics = diagnosticsFactory({
@@ -1397,14 +1358,9 @@ const startAddon = async ({
   logger.info?.("WhatsApp add-on runtime starting.", {
     runId: safeRunId,
     logLevel,
-    decryptionDiagnostics,
+    // decryptionDiagnostics,
     clientCount: Array.isArray(clientIds) ? clientIds.length : 0,
   });
-  if (experimentalLidSenderReceipts) {
-    logger.warn?.("Experimental LID sender receipts enabled; live validation is required.", {
-      runId: safeRunId,
-    });
-  }
   await diagnostics.start?.();
 
   let runtime;
@@ -1450,8 +1406,7 @@ const startAddon = async ({
       fsPromises,
       logger,
       logLevel,
-      decryptionDiagnostics,
-      experimentalLidSenderReceipts,
+      // decryptionDiagnostics,
       runId: safeRunId,
       diagnostics,
       mediaStore,
@@ -1474,6 +1429,7 @@ const startAddon = async ({
       logger,
       sharedSecret: apiToken,
       diagnostics,
+      additionalCapabilities,
     });
     webUiApp = createWebUiApp({
       clients: runtime.clients,
@@ -1483,7 +1439,7 @@ const startAddon = async ({
       retryRecovery: runtime.retryRecovery,
     });
 
-    apiServer = await listenFn(apiApp, apiPort);
+    apiServer = await listenFn(apiApp, apiPort, { apiToken });
     webUiServer = await listenFn(webUiApp, ingressPort);
     diagnostics.markApiReady?.();
   } catch (error) {
@@ -1554,8 +1510,7 @@ module.exports = {
   fingerprint,
   loadOptions,
   normalizeApiToken,
-  normalizeDecryptionDiagnostics,
-  normalizeExperimentalLidSenderReceipts,
+  // normalizeDecryptionDiagnostics,
   normalizeLogLevel,
   normalizeCallUpdate,
   parseOptions,

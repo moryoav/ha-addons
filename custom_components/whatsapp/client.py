@@ -17,6 +17,7 @@ from .const import (
     ADDON_API_VERSION,
     ADDON_SERVICE,
     ATTR_CALL_ID,
+    ATTR_CLIENT_ID,
     ATTR_FROM,
     ATTR_TO,
     CAPABILITY_CHECK_NUMBER,
@@ -24,7 +25,9 @@ from .const import (
     CAPABILITY_GET_GROUP_INFO,
     CAPABILITY_GET_PROFILE,
     CAPABILITY_GET_STATUS,
+    CAPABILITY_HANG_UP,
     CAPABILITY_LIST_GROUPS,
+    CAPABILITY_MAKE_CALL,
     CAPABILITY_REJECT_CALL,
     DEFAULT_TIMEOUT,
     SESSION_STATES,
@@ -112,6 +115,13 @@ def validate_call_reference(call_id: str, caller: str) -> None:
         raise ValueError("call ID is not a valid WhatsApp call ID")
     if not _CALLER_JID_PATTERN.fullmatch(caller):
         raise ValueError("caller is not a valid WhatsApp phone JID or LID")
+
+
+def normalize_voice_target(value: str) -> str:
+    """Normalize a direct audio-call target without accepting group identifiers."""
+    if _LID_PATTERN.fullmatch(value):
+        return value
+    return normalize_phone_target(value)
 
 
 def _is_none_or(value: Any, predicate: Any) -> bool:
@@ -676,6 +686,35 @@ class WhatsappClient:
                     code="unsupported_capability",
                 ) from err
             raise
+
+    async def async_make_call(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Start a voice call through the configured calling account."""
+        payload = await self._post_lookup(
+            "voice/call",
+            {**data, ATTR_TO: normalize_voice_target(data[ATTR_TO])},
+            "make call",
+            CAPABILITY_MAKE_CALL,
+            timeout=ClientTimeout(total=60),
+        )
+        if not isinstance(payload, dict) or payload.get("status") != "calling":
+            raise WhatsappApiError(
+                "make call returned an invalid response", code="invalid_response"
+            )
+        return {"status": "calling"}
+
+    async def async_hang_up(self, data: dict[str, Any]) -> dict[str, Any]:
+        """End the voice call on the configured calling account."""
+        payload = await self._post_lookup(
+            "voice/hangup",
+            {ATTR_CLIENT_ID: data[ATTR_CLIENT_ID]},
+            "hang up",
+            CAPABILITY_HANG_UP,
+        )
+        if not isinstance(payload, dict) or payload.get("status") != "ended":
+            raise WhatsappApiError(
+                "hang up returned an invalid response", code="invalid_response"
+            )
+        return {"status": "ended"}
 
     async def _post_ok(
         self,

@@ -5,8 +5,8 @@
 
 # Home Assistant Add-on: WhatsApp
 
-Send WhatsApp messages from Home Assistant and receive message, receipt, call,
-contact, and presence events.
+Send WhatsApp messages, talk to your Home Assistant over a WhatsApp call, and
+let automations call you when something needs attention.
 
 This add-on runs the local WhatsApp Web bridge. Install the companion
 **WhatsApp** integration through HACS to use account devices, status sensors,
@@ -14,6 +14,8 @@ actions, and diagnostics in Home Assistant.
 
 ## What it can do
 
+- Make and receive AI voice calls with GPT-Live and your Home Assistant OpenAI
+  conversation agent, using the same linked WhatsApp device as messaging.
 - Send text, images, videos, documents, stickers, voice messages, locations,
   contacts, polls, reactions, edits, deletions, and quoted replies.
 - Receive incoming and outgoing messages, delivery and read receipts, calls,
@@ -107,29 +109,43 @@ The add-on advertises its local API through Supervisor discovery, so the integra
 ## Add-on options
 
 See the [complete option reference](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md#configuration)
-for media downloads, retention, diagnostics, and experimental options.
+for voice calls, media downloads, retention, and logging options.
 
 - `clients`: one or more unique WhatsApp session names. The default is
   `default`. Names must start with a letter or digit, may contain letters,
   digits, `_`, and `-`, and may be at most 64 characters long.
 - `log_level`: `info` (the default) for normal operation, or `debug` for
   additional privacy-safe runtime diagnostics while investigating a problem.
-- `decryption_diagnostics`: `false` by default. This internal debugging option
-  records complete message metadata and decoded message structures, exact JIDs
-  and message IDs, retry activity, and encrypted payload fingerprints. Keep it
-  disabled during normal operation.
-- `api_token`: optional bearer token for the internal API. Set it to a strong
-  random value for defense in depth, or leave it unset to use the internal API
-  without bearer authentication. It may contain `A-Z`, `a-z`, `0-9`,
-  `-`, `.`, `_`, `~`, `+`, and `/`, followed by optional `=` padding, and may be
-  at most 512 characters total. Random hex or URL-safe Base64 is recommended;
-  spaces, `:`, and other characters make startup fail validation.
 
-Token-enabled installations require Supervisor discovery; manual or fallback
-URL detection cannot provide the token. Restart the add-on and reload the
-integration after adding, changing, or removing `api_token`.
+The app creates its internal API credential automatically on first startup,
+saves it privately, and keeps it across restarts. Supervisor discovery shares
+it with the integration, which applies credential changes automatically.
+There is no token to enter or manage in the app configuration.
 
 Each client gets its own persisted session and must be referenced by `clientId` in service calls.
+
+Supplemental delivery receipts for decrypted own-device LID messages are always
+enabled for every account. They do not mark chats as read. Detailed decryption
+tracing is disabled; neither behavior has a configuration switch.
+
+## Voice calls
+
+Choose one of your existing account IDs as **Calling account**, enter your
+OpenAI conversation entity ID, and set **Allowed incoming callers**. The app
+uses that agent's existing API key and Assist permissions. Other accounts keep
+their normal messaging behavior, and there is no second WhatsApp pairing.
+
+You can call your home, ask about exposed entities, control devices, and run
+scripts through the selected agent. Use `whatsapp.make_call` in an automation
+to have your home call you, with an optional opening message after pickup.
+`whatsapp.hang_up` ends the active AI call.
+
+Choose a voice and greeting, adjust call limits and audio settings, or enable
+recordings with 30-day retention by default. Recording is off until enabled.
+Leave the calling account and agent empty to continue using messaging only.
+
+See the [voice call guide](https://moryoav.github.io/ha-addons/examples/voice-calls/)
+for setup, automation examples, recording, and upgrading from 2.x.
 
 ## Web UI and pairing
 
@@ -182,10 +198,9 @@ names and LIDs when supplied, without waiting for messages. See the
 
 ## Security notes
 
-The bridge API runs on Home Assistant's internal add-on network and supports
-optional bearer-token authentication through `api_token`. Supervisor discovery
-provides the local API address and token to the integration. Restart the add-on
-and reload the integration after changing that token.
+The bridge API runs on Home Assistant's internal app network and uses a
+privately generated credential. Supervisor discovery provides the address and
+credential to the integration automatically. It is preserved across restarts.
 
 The web UI uses Home Assistant Ingress. AppArmor restricts the Node bridge's
 writes to temporary files, persistent session data, and attachments under
@@ -193,7 +208,6 @@ writes to temporary files, persistent session data, and attachments under
 
 Redact API tokens, pairing QR codes, session data, phone JIDs, LIDs, and message
 content before sharing logs, diagnostics, screenshots, or automation traces.
-Decryption Diagnostics records private message data when enabled.
 
 ## Diagnostics
 
@@ -204,13 +218,9 @@ message content, raw account identifiers, QR codes, session data, or API
 tokens. Identifier-related entries use run-scoped one-way references for
 correlation. Return the option to `info` after collecting the relevant logs.
 
-The separate Decryption Diagnostics toggle is intended for investigating
-message decryption failures. When enabled, it records raw message-stanza
-attributes, exact message and participant identifiers, sender names,
-timestamps, message stub data, retry counters, the complete decoded message
-structure when available, and encrypted payload sizes and SHA-256
-fingerprints. It remains enabled until the option is switched off and the
-add-on is restarted. A failed encrypted message has no decoded body to record.
+Detailed decryption tracing is disabled. Its instrumentation remains commented
+out in the source for future debugging. Normal debug logging and recovery
+protection remain active.
 
 Failed native health checks are recorded in a small persistent history at both
 log levels. If Supervisor replaces an unhealthy container, the new add-on run

@@ -86,6 +86,64 @@ async def test_setup_entry_passes_discovered_api_token(
     assert client_cls.call_args.kwargs == {"api_token": "secret-token"}
 
 
+@pytest.mark.parametrize(
+    "old_token,new_token",
+    [(None, "new-secret"), ("old-secret", "new-secret"), ("old-secret", None)],
+)
+async def test_discovery_credentials_reload_loaded_entry(
+    hass, enable_custom_integrations, old_token, new_token
+) -> None:
+    """Apply first-time credentials and later discovery changes automatically."""
+    data = {CONF_URL: "http://addon:3000"}
+    if old_token:
+        data[CONF_API_TOKEN] = old_token
+    entry = MockConfigEntry(
+        domain=DOMAIN, state=ConfigEntryState.SETUP_IN_PROGRESS, data=data
+    )
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.whatsapp.WhatsappClient.async_health",
+            AsyncMock(return_value={"status": "ok"}),
+        ),
+        patch.object(hass.config_entries, "async_forward_entry_setups", AsyncMock()),
+    ):
+        assert await async_setup_entry(hass, entry)
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+    updated = {CONF_URL: "http://addon:3000"}
+    if new_token:
+        updated[CONF_API_TOKEN] = new_token
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload:
+        hass.config_entries.async_update_entry(entry, data=updated)
+        await hass.async_block_till_done()
+        reload.assert_awaited_once_with(entry.entry_id)
+
+
+async def test_unchanged_discovery_does_not_reload_entry(
+    hass, enable_custom_integrations
+) -> None:
+    """App restarts retain their token and do not trigger needless reloads."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        state=ConfigEntryState.SETUP_IN_PROGRESS,
+        data={CONF_URL: "http://addon:3000", CONF_API_TOKEN: "saved-secret"},
+    )
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.whatsapp.WhatsappClient.async_health",
+            AsyncMock(return_value={"status": "ok"}),
+        ),
+        patch.object(hass.config_entries, "async_forward_entry_setups", AsyncMock()),
+    ):
+        assert await async_setup_entry(hass, entry)
+    entry.mock_state(hass, ConfigEntryState.LOADED)
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload:
+        assert not hass.config_entries.async_update_entry(entry, data=dict(entry.data))
+        await hass.async_block_till_done()
+        reload.assert_not_awaited()
+
+
 async def test_setup_entry_cannot_connect(hass, enable_custom_integrations) -> None:
     """Test setup retry when the add-on cannot be reached or identified."""
     entry = MockConfigEntry(

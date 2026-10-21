@@ -1,43 +1,107 @@
----
 configuration:
-  download_media:
-    name: Download incoming media
-    description: >-
-      Automatically download and decrypt incoming attachments into unique
-      temporary files and include their path and link in message events.
-      Update both the add-on and integration to 2.0.0 first. Applies to all
-      sessions and chats. Use the saved files in your Home Assistant automations.
-  media_retention_hours:
-    name: Media retention (hours)
-    description: >-
-      Keep each new attachment for this many hours after its download completes.
-      Default 24. Existing files keep their original expiry. Cleanup also runs
-      when downloads are disabled and catches up after a restart.
-  media_max_file_mb:
-    name: Maximum attachment size (MiB)
-    description: Maximum decrypted size of one attachment. Default 64 MiB.
-  media_max_storage_mb:
-    name: Media storage budget (MiB)
-    description: >-
-      Total attachment-content budget. Default 1024 MiB. Must be at least the
-      maximum attachment size. Active downloads reserve the maximum file size.
-      Rejects new downloads instead of removing unexpired files when full.
   clients:
-    name: WhatsApp sessions
-    description: Session names that can be used as clientId values in Home Assistant actions.
-  api_token:
-    name: API token
-    description: Optional bearer-safe token (A-Z, a-z, 0-9, -._~+/, then optional = padding; maximum 512 characters). Use random hex or URL-safe Base64. Restart the add-on and reload the integration after changing it. Leave unset for internal-network compatibility.
+    name: WhatsApp accounts
+    description: Give each account a unique ID, such as default. Link each account
+      to WhatsApp separately. Use these IDs as clientId values in Home Assistant actions
+      and choose one of them as the Calling account. IDs may contain letters, numbers,
+      underscores, and hyphens, and must start with a letter or number.
   log_level:
     name: Log level
-    description: Use info for normal operation or debug for additional privacy-safe runtime diagnostics while investigating a problem.
-  decryption_diagnostics:
-    name: Decryption Diagnostics
-    description: For internal debugging purposes only. Keep this switched off during normal operation.
-  experimental_lid_sender_receipts:
-    name: Experimental LID sender receipts
-    description: >-
-      Disabled by default. Tests supplemental delivery receipts for successfully
-      decrypted own-device LID messages to investigate replay/decryption storms.
-      Does not mark messages as read or reset pairing. Leave off unless testing
-      this issue. Save and restart the add-on after changing this switch.
+    description: Choose info for everyday use or debug for extra troubleshooting details.
+      Debug logs omit message contents and private account identifiers.
+  download_media:
+    name: Download media
+    description: Save incoming photos, videos, voice messages, and documents for use
+      in Home Assistant. Message events include a local file path and download link.
+      Applies to all configured accounts. Disabled by default.
+  media_retention_hours:
+    name: Media retention (hours)
+    description: How long to keep each downloaded attachment. Defaults to 24 hours.
+      Existing files keep their original expiry time. Expired files are cleaned up
+      even when new media downloads are disabled.
+  media_max_file_mb:
+    name: Maximum media file size (MiB)
+    description: Largest attachment the app will save. Defaults to 64 MiB. Larger
+      files are skipped while their message event is still delivered.
+  media_max_storage_mb:
+    name: Media storage limit (MiB)
+    description: Total space available for saved attachments. Defaults to 1024 MiB.
+      Must be at least the maximum media file size. When full, new downloads are skipped
+      until older files expire.
+  voice_calls:
+    name: Voice calls
+    description: Configure the assistant that answers and makes WhatsApp calls.
+    fields:
+      calling_account:
+        name: Calling account
+        description: Choose one account ID already listed in Accounts above. Leave
+          this and Conversation agent empty to use messaging without voice calls.
+      allowed_callers:
+        name: Allowed incoming callers
+        description: WhatsApp user IDs allowed to call the assistant, ending in @lid
+          or @s.whatsapp.net. Only these callers are answered automatically. Leave
+          empty to disable incoming calls.
+      agent_id:
+        name: OpenAI conversation agent
+        description: Enter the conversation entity ID from your OpenAI integration.
+          The app uses this agent's API key for voice and its exposed devices and
+          scripts for home requests. Leave empty to keep messaging active without
+          answering or making calls.
+      voice:
+        name: Assistant voice
+        description: Choose the OpenAI voice used when the assistant speaks. Changes
+          apply to new calls.
+      max_call_seconds:
+        name: Maximum call length (seconds)
+        description: Maximum duration including setup time. The default is 300 seconds
+          (5 minutes).
+      greeting_mode:
+        name: Opening greeting
+        description: Choose random for a different short greeting, fixed for your
+          own text, or disabled for no greeting.
+      greeting_text:
+        name: Fixed greeting text
+        description: Used only when Opening greeting is set to fixed. Enter the words
+          the assistant should say after pickup.
+      automatic_hangup:
+        name: End calls after goodbye
+        description: Disconnect immediately when a clear final goodbye or request
+          to hang up is recognized. Does not wait for the assistant's farewell, and
+          speaking again does not cancel a confirmed hang-up.
+      record_calls:
+        name: Record calls
+        description: Save both sides of answered calls as a single WAV file. Disabled
+          by default. Play or download completed recordings from the WhatsApp calls
+          page, or find them in Home Assistant's Media folder under whatsapp/call-recordings.
+          Recording runs in the background and stops if storage cannot keep up, so
+          it does not hold up live audio.
+      recording_retention_days:
+        name: Recording retention (days)
+        description: Automatically delete completed recordings after this many days.
+          Defaults to 30 days. Cleanup runs at startup and hourly, including when
+          Record calls is off. Changing this value also changes the expiry of existing
+          recordings. Download any recording you want to keep longer.
+      advanced:
+        name: Advanced voice settings
+        description: Audio codec and playback buffer tuning.
+        fields: &id001
+          audio_codec:
+            name: Call audio codec
+            description: Opus is a standard audio codec and the tested default for
+              this app. MLOW is Meta's low-bitrate voice codec, designed for speech
+              on limited-bandwidth connections. Try MLOW to compare call quality;
+              results depend on the connection and device.
+          playback_buffer_ms:
+            name: Initial playback buffer (ms)
+            description: Defaults to 180 ms and adjusts automatically for source timing
+              and delivery gaps. The allowed range is 120-1500 ms; larger values increase
+              delay.
+  # Compatibility path for frontends that report nested groups in reverse order.
+  advanced:
+    name: Advanced voice settings
+    description: Audio codec and playback buffer tuning.
+    fields:
+      voice_calls:
+        name: Voice calls
+        description: Configure the assistant that answers and makes WhatsApp calls.
+        fields: *id001

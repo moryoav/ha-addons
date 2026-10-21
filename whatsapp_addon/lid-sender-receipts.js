@@ -71,11 +71,11 @@ const createDeliveredMessages = ({
 };
 
 /**
- * Experimental, additive workaround for Baileys 6.x sender-receipt LID routing.
+ * Supplemental sender receipts for Baileys 6.x own-device LID routing.
  * Does NOT change auth/Signal state or ACK a message that never decrypted.
  * With `delivered`, a later copy of an own message this client already decrypted
  * is answered here and not passed to Baileys, which could only fail on it.
- * Call only when explicitly enabled. State belongs to this socket; only
+ * Attached to every connected client. State belongs to this socket; only
  * `delivered` is shared by the sockets of one client.
  */
 const attachLidSenderReceipts = ({

@@ -10,7 +10,7 @@ rules:
   config-flow: done
   dependency-transparency:
     status: done
-    comment: HTTP provides authenticated attachment downloads; the documented shared media mount contains files decrypted by the companion add-on.
+    comment: HTTP provides authenticated attachment downloads; documented app mounts contain decrypted media and optional recordings, and the read-only config mount supplies the selected OpenAI agent key for voice calls.
   docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done
@@ -38,7 +38,7 @@ rules:
     comment: Both platforms set PARALLEL_UPDATES to 0 and share one coordinator.
   reauthentication-flow:
     status: exempt
-    comment: The optional local API token is configured in add-on options and delivered or refreshed through Supervisor discovery; the integration does not accept or renew credentials, and WhatsApp pairing remains in the add-on QR flow.
+    comment: The app generates its internal API credential and delivers or refreshes it through Supervisor discovery; the integration does not accept or renew credentials, and WhatsApp pairing remains in the app QR flow.
   test-coverage: done
 
   # Gold

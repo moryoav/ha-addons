@@ -47,10 +47,27 @@ The add-on API is intended only for Home Assistant's internal add-on network and
 is not published to the LAN by the supplied configuration. Do not expose port
 `3000` through a reverse proxy or host port mapping.
 
-Set the add-on's optional `api_token` setting to require bearer-token
-authentication for API requests. The add-on advertises that token to the
-integration through Supervisor discovery; do not copy it into automations,
-logs, diagnostics, screenshots, or issue reports.
+The app generates an internal API credential on first startup, saves it with
+owner-only access in its persistent data directory, and reuses it on later
+starts. Protected API requests require bearer authentication. Supervisor
+discovery supplies the credential to the integration automatically. Do not
+copy it into automations, logs, diagnostics, screenshots, or issue reports.
+A credential storage failure prevents API startup instead of disabling
+authentication.
+
+Voice calls use one selected Baileys account and the same linked device as
+messaging. Only explicitly allowed caller JIDs are answered; an empty list
+answers nobody. The selected OpenAI conversation agent's API key is resolved
+through a read-only Home Assistant configuration mount. The native audio worker
+receives per-call media keys, never the OpenAI or Home Assistant API credentials.
+Calls use the selected agent's existing Assist access to entities and scripts.
+
+The app can optionally save call audio in
+`/media/whatsapp/call-recordings`. Recording is disabled by default, recordings
+expire after 30 days by default, and app playback/download routes require API
+authentication or Home Assistant ingress. Completed files are also accessible
+through Home Assistant's shared Media folder and may be included in its backups.
+Audio is not included in logs, diagnostics, or numeric call reports.
 
 Registration lookups can reveal whether a phone number is associated with a
 WhatsApp account and can return its linked identifier. Use them only for

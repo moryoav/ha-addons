@@ -5,7 +5,6 @@ const path = require("node:path");
 const test = require("node:test");
 const { WhatsappClient } = require("../whatsapp");
 const { parseOptions, createAddonRuntime, startAddon } = require("../runtime");
-const { RequestValidationError } = require("../validation");
 
 const OWN = "999999999999991";
 const PEER = "999999999999992@lid";
@@ -55,27 +54,25 @@ const harness = async (settings = {}) => {
   return { client, sockets, sent };
 };
 
-test("default and explicit false do not load the helper or attach tracking handlers", async () => {
-  assert.equal(require.cache[require.resolve("../lid-sender-receipts")], undefined);
-  for (const settings of [{}, { experimentalLidSenderReceipts: false }]) {
+test("sender receipts are always active, including with a legacy false setting", async () => {
+  for (const settings of [{}, { experimentalLidSenderReceipts: false }, { experimentalLidSenderReceipts: true }]) {
     const h = await harness(settings);
     const socket = h.sockets[0];
     const delivered = [];
     h.client.on("msg_sent", (message) => delivered.push(message));
-    assert.equal(socket.ws.listenerCount("CB:message"), 0);
-    assert.equal(socket.ev.listenerCount("messages.upsert"), 2);
+    assert.equal(socket.ws.listenerCount("CB:message"), 1);
     socket.ws.emit("CB:message", incoming());
     socket.ev.emit("messages.upsert", upsert());
     await tick();
     assert.equal(delivered.length, 1);
-    assert.deepEqual(socket.receipts, []);
+    assert.equal(socket.receipts.length, 1);
     await h.client.disconnect();
+    assert.equal(socket.ws.listenerCount("CB:message"), 0);
   }
-  assert.equal(require.cache[require.resolve("../lid-sender-receipts")], undefined);
 });
 
-test("enabled wiring works without Decryption Diagnostics and preserves normal message events", async () => {
-  const h = await harness({ experimentalLidSenderReceipts: true });
+test("sender receipts preserve normal message events without decryption diagnostics", async () => {
+  const h = await harness();
   const socket = h.sockets[0];
   const messages = [];
   const diagnostics = [];
@@ -93,8 +90,8 @@ test("enabled wiring works without Decryption Diagnostics and preserves normal m
   assert.equal(socket.ws.listenerCount("CB:message"), 0);
 });
 
-test("enabled diagnostics report a sanitized outcome, independently of the normal send API", async () => {
-  const h = await harness({ experimentalLidSenderReceipts: true, decryptionDiagnostics: true });
+test("legacy diagnostic settings cannot enable tracing or change the normal send API", async () => {
+  const h = await harness({ decryptionDiagnostics: true });
   const socket = h.sockets[0];
   const diagnostics = [];
   h.client.on("decryption_diagnostic", (event) => {
@@ -108,12 +105,13 @@ test("enabled diagnostics report a sanitized outcome, independently of the norma
   socket.ws.emit("CB:message", incoming());
   socket.ev.emit("messages.upsert", upsert());
   await tick();
-  assert.deepEqual(diagnostics, [{ source: "lid_sender_receipts", outcome: "sent" }]);
+  assert.deepEqual(diagnostics, []);
+  assert.equal(socket.receipts.length, 1);
   await h.client.disconnect();
 });
 
 test("reconnect binds fresh tracking and cannot send for a stale socket", async () => {
-  const h = await harness({ experimentalLidSenderReceipts: true });
+  const h = await harness();
   const old = h.sockets[0];
   old.ws.emit("CB:message", incoming());
   await h.client.disconnect(true);
@@ -133,28 +131,26 @@ test("reconnect binds fresh tracking and cannot send for a stale socket", async 
   await h.client.disconnect();
 });
 
-test("settings are strictly boolean, absent/false retain the legacy default, and true is forwarded", () => {
-  for (const flag of [undefined, false, true]) {
-    const options = parseOptions(JSON.stringify({ clients: ["default"], experimental_lid_sender_receipts: flag }));
-    assert.equal(options.experimentalLidSenderReceipts === true, flag === true);
+test("retired settings are ignored and never forwarded to clients", () => {
+  for (const flag of [undefined, false, true, "true", "false", 1, 0, null, [], {}]) {
+    const options = parseOptions(JSON.stringify({ clients: ["default"], experimental_lid_sender_receipts: flag, decryption_diagnostics: flag }));
+    assert.equal(Object.hasOwn(options, "experimentalLidSenderReceipts"), false);
+    assert.equal(Object.hasOwn(options, "decryptionDiagnostics"), false);
     let settings;
-    createAddonRuntime({ ...options, clientFactory: (value) => {
+    createAddonRuntime({ ...options, experimentalLidSenderReceipts: flag, decryptionDiagnostics: flag, clientFactory: (value) => {
       settings = value; return new EventEmitter();
     } });
-    assert.equal(settings.experimentalLidSenderReceipts === true, flag === true);
-    if (flag !== true) assert.equal(Object.hasOwn(settings, "experimentalLidSenderReceipts"), false);
-  }
-  for (const value of ["true", "false", 1, 0, null, [], {}]) {
-    assert.throws(() => parseOptions(JSON.stringify({ clients: ["default"], experimental_lid_sender_receipts: value })), RequestValidationError);
-    assert.throws(() => createAddonRuntime({ clientIds: ["default"], experimentalLidSenderReceipts: value }), RequestValidationError);
+    assert.equal(Object.hasOwn(settings, "experimentalLidSenderReceipts"), false);
+    assert.equal(Object.hasOwn(settings, "decryptionDiagnostics"), false);
   }
 });
 
-test("startup carries the setting through options loading and retains it after recovery retry", async () => {
+test("startup and recovery retry ignore retired options and preserve the recovery guard", async () => {
   const factories = [];
   const warnings = [];
   const app = await startAddon({
-    optionsLoader: async () => parseOptions(JSON.stringify({ clients: ["default"], experimental_lid_sender_receipts: true })),
+    apiTokenLoader: async () => "fictional-runtime-token",
+    optionsLoader: async () => parseOptions(JSON.stringify({ clients: ["default"], experimental_lid_sender_receipts: false, decryption_diagnostics: true })),
     clientFactory: (settings) => {
       factories.push(settings);
       const client = new EventEmitter(); client.disconnect = async () => {};
@@ -168,28 +164,31 @@ test("startup carries the setting through options loading and retains it after r
     listenFn: async () => ({}), closeServerFn: async () => {},
     httpClient: { post: async () => {} },
   });
-  assert.equal(factories[0].experimentalLidSenderReceipts, true);
-  assert.ok(warnings.some((text) => /Experimental LID/.test(text)));
+  assert.equal(Object.hasOwn(factories[0], "experimentalLidSenderReceipts"), false);
+  assert.equal(Object.hasOwn(factories[0], "decryptionDiagnostics"), false);
+  assert.equal(warnings.some((text) => /Experimental LID/.test(text)), false);
   await app.enterRecovery({ failedDecryptMessages: 10, badMacSessionErrors: 100 });
-  assert.equal(app.recovery.active, true); // Guard is NOT disabled by the experiment.
+  assert.equal(app.recovery.active, true);
   await app.retryRecovery();
-  assert.equal(factories[1].experimentalLidSenderReceipts, true);
+  assert.equal(Object.hasOwn(factories[1], "experimentalLidSenderReceipts"), false);
+  assert.equal(Object.hasOwn(factories[1], "decryptionDiagnostics"), false);
   await app.close();
 });
 
-test("Supervisor settings default off and Docker explicitly includes the helper", () => {
+test("retired settings are absent from Supervisor configuration and Docker retains the helper", () => {
   const root = path.resolve(__dirname, "..");
   const config = fs.readFileSync(path.join(root, "config.yaml"), "utf8");
-  assert.match(config, /experimental_lid_sender_receipts: false/);
-  assert.match(config, /experimental_lid_sender_receipts: bool/);
-  assert.match(fs.readFileSync(path.join(root, "translations/en.yaml"), "utf8"), /experimental_lid_sender_receipts:/);
+  const translations = fs.readFileSync(path.join(root, "translations/en.yaml"), "utf8");
+  for (const text of [config, translations]) {
+    assert.doesNotMatch(text, /experimental_lid_sender_receipts|decryption_diagnostics/);
+  }
   assert.match(fs.readFileSync(path.join(root, "Dockerfile"), "utf8"), /lid-sender-receipts\.js/);
   assert.match(fs.readFileSync(path.join(root, ".dockerignore"), "utf8"), /^!lid-sender-receipts\.js$/m);
 });
 
 // Issue #7, 23 Sep: what one socket decrypted was replayed to the next one.
 test("a copy decrypted on the previous socket is answered after a reconnect", async () => {
-  const h = await harness({ experimentalLidSenderReceipts: true });
+  const h = await harness();
   const sent = [];
   h.client.on("msg_sent", (message) => sent.push(message));
   const old = h.sockets[0];
@@ -214,7 +213,7 @@ test("a copy decrypted on the previous socket is answered after a reconnect", as
 });
 
 test("stopping the client forgets which messages it decrypted", async () => {
-  const h = await harness({ experimentalLidSenderReceipts: true });
+  const h = await harness();
   const first = h.sockets[0];
   first.ws.emit("CB:message", incoming());
   first.ev.emit("messages.upsert", upsert());

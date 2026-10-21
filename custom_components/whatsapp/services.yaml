@@ -209,3 +209,34 @@ get_contacts:
       example: default
       selector:
         text:
+
+make_call:
+  fields:
+    clientId:
+      name: Calling account
+      description: An existing account ID matching Calling account in the WhatsApp app.
+      required: true
+      example: default
+      selector:
+        text:
+    to:
+      required: true
+      example: 12025550123@s.whatsapp.net
+      selector:
+        text:
+    message:
+      required: false
+      example: A water leak was detected in the kitchen. How would you like to proceed?
+      selector:
+        text:
+          multiline: true
+
+hang_up:
+  fields:
+    clientId:
+      name: Calling account
+      description: The account ID selected for voice calls in the WhatsApp app.
+      required: true
+      example: default
+      selector:
+        text:

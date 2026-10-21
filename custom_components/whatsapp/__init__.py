@@ -29,6 +29,7 @@ from .client import (
     normalize_group_target,
     normalize_phone_target,
     normalize_profile_target,
+    normalize_voice_target,
     validate_call_reference,
 )
 from .const import (
@@ -36,6 +37,7 @@ from .const import (
     ATTR_CALL_ID,
     ATTR_CLIENT_ID,
     ATTR_FROM,
+    ATTR_MESSAGE,
     ATTR_OPTIONS,
     ATTR_STATUS,
     ATTR_TO,
@@ -49,7 +51,9 @@ from .const import (
     SERVICE_GET_CONTACTS,
     SERVICE_GET_GROUP_INFO,
     SERVICE_GET_PROFILE,
+    SERVICE_HANG_UP,
     SERVICE_LIST_GROUPS,
+    SERVICE_MAKE_CALL,
     SERVICE_PRESENCE_SUBSCRIBE,
     SERVICE_READ_MESSAGES,
     SERVICE_REJECT_CALL,
@@ -139,6 +143,16 @@ LIST_GROUPS_SCHEMA = vol.Schema(
 )
 
 GET_CONTACTS_SCHEMA = LIST_GROUPS_SCHEMA
+
+MAKE_CALL_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CLIENT_ID): cv.string,
+        vol.Required(ATTR_TO): cv.string,
+        vol.Optional(ATTR_MESSAGE): vol.All(cv.string, vol.Length(min=1, max=300)),
+    }
+)
+
+HANG_UP_SCHEMA = LIST_GROUPS_SCHEMA
 
 REJECT_CALL_SCHEMA = vol.Schema(
     {
@@ -319,6 +333,47 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             lambda client, data: client.async_reject_call(data),
         )
 
+    async def async_make_call(call: ServiceCall) -> dict[str, Any] | None:
+        """Call one WhatsApp user, optionally announcing an automation message."""
+        try:
+            target = normalize_voice_target(call.data[ATTR_TO])
+        except ValueError as err:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_voice_target",
+            ) from err
+        result = await _async_call_api(
+            hass,
+            SERVICE_MAKE_CALL,
+            {**call.data, ATTR_TO: target},
+            lambda client, data: client.async_make_call(data),
+        )
+        return result if call.return_response else None
+
+    async def async_hang_up(call: ServiceCall) -> dict[str, Any] | None:
+        """End the active voice call without touching messaging sessions."""
+        result = await _async_call_api(
+            hass,
+            SERVICE_HANG_UP,
+            call.data,
+            lambda client, data: client.async_hang_up(data),
+        )
+        return result if call.return_response else None
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_MAKE_CALL,
+        async_make_call,
+        schema=MAKE_CALL_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_HANG_UP,
+        async_hang_up,
+        schema=HANG_UP_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(
         DOMAIN,
         SERVICE_SEND_MESSAGE,
@@ -426,7 +481,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_type=dr.DeviceEntryType.SERVICE,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_update_entry))
     return True
+
+
+async def _async_update_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply refreshed discovery credentials without user configuration."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -138,6 +138,25 @@
     "get_contacts": {
       "name": "Get contacts",
       "description": "Fetches saved contacts from a fresh WhatsApp app-state snapshot, including names and LIDs when supplied. Returns the original contact fields. Requires response_variable."
+    },
+    "make_call": {
+      "name": "Make a voice call",
+      "description": "Call a WhatsApp user and connect them to the selected Home Assistant OpenAI agent.",
+      "fields": {
+        "to": {
+          "name": "Recipient",
+          "description": "A WhatsApp phone number, phone JID, or LID. Direct audio calls only."
+        },
+        "message": {
+          "name": "Opening message",
+          "description": "Optional opening message to say after the recipient answers (up to 300 characters)."
+        }
+      }
+    },
+    "hang_up": {
+      "name": "Hang up a voice call",
+      "description": "End the active voice call without disconnecting WhatsApp messaging.",
+      "fields": {}
     }
   },
   "exceptions": {
@@ -169,7 +188,7 @@
       "message": "Enter an international phone number using 5 to 15 digits, optionally prefixed with +, or its @s.whatsapp.net JID. Groups, broadcasts, LIDs, and device JIDs are not supported."
     },
     "invalid_api_token_config": {
-      "message": "The API token received from WhatsApp app discovery is invalid. Check the app option and reload its Supervisor discovery."
+      "message": "The WhatsApp app supplied an invalid internal credential. Restart the WhatsApp app to refresh its discovery information."
     },
     "invalid_request": {
       "message": "The WhatsApp app rejected the action input."
@@ -184,10 +203,13 @@
       "message": "Too many WhatsApp lookups were requested. Wait before trying again."
     },
     "unauthorized": {
-      "message": "WhatsApp app API authorization failed while running {action}. Reload app discovery after checking its API token configuration."
+      "message": "WhatsApp app API authorization failed while running {action}. Restart the WhatsApp app to refresh its discovery information."
     },
     "upstream_error": {
       "message": "WhatsApp could not complete {action}. Try again later."
+    },
+    "invalid_voice_target": {
+      "message": "Enter a WhatsApp phone number, phone JID, or LID for a direct audio call."
     }
   },
   "entity": {

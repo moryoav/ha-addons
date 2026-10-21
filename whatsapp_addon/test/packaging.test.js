@@ -61,11 +61,19 @@ test("AppArmor confines Node after the trusted base-image bootstrap", () => {
   assert.match(childProfile, /^\s*\/media\/whatsapp\/\{,\*\*\}\s+rwk,\s*$/m);
   assert.doesNotMatch(childProfile, /^\s*\/media\/\{,\*\*\}\s+rwk,\s*$/m);
   assert.doesNotMatch(childProfile, /^\s*file,\s*$/m);
-  assert.doesNotMatch(childProfile, /^\s*\/\S+\s+\S*x\S*,\s*$/m);
+  // Calls run in the same confined profile. Only these two child runtimes may
+  // execute; broad shell or directory execution permissions stay forbidden.
+  const executableRules = childProfile.match(/^\s*\/\S+\s+\S*x\S*,\s*$/gm) || [];
+  assert.deepEqual(executableRules.map((rule) => rule.trim()).sort(), [
+    "/opt/voice/bin/python* mrix,",
+    "/usr/bin/python3* mrix,",
+    "/usr/local/bin/whatsapp-call-worker rix,",
+  ]);
+  assert.match(childProfile, /^\s*\/app\/base\/node_modules\/\{,\*\*\}\s+mr,\s*$/m);
 
   assert.match(profile, /^\s*\/healthcheck\.sh\s+rix,\s*$/m);
   const runScript = fs.readFileSync(path.join(ADDON_ROOT, "run.sh"), "utf8");
-  assert.match(runScript, /^exec \/usr\/bin\/node \/index\.js\r?$/m);
+  assert.match(runScript, /^exec \/usr\/bin\/node \/app\/voice\/index\.js "\$@"\r?$/m);
 });
 
 test("Docker packages the diagnostic health probe with a longer wrapper timeout", () => {

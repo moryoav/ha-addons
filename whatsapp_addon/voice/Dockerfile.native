@@ -1,0 +1,24 @@
+FROM rust:1.94-alpine AS dependencies
+RUN apk add --no-cache git cmake clang llvm-dev musl-dev openssl-dev opus-dev pkgconf python3
+WORKDIR /build
+ENV CARGO_BUILD_JOBS=1
+COPY voice/native/Cargo.toml ./Cargo.toml
+COPY voice/native/Cargo.lock ./Cargo.lock
+RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo fetch --locked
+
+FROM scratch AS lockfile
+COPY --from=dependencies /build/Cargo.lock /Cargo.lock
+
+FROM dependencies AS builder
+RUN apk add --no-cache build-base
+COPY voice/native/Cargo.lock ./Cargo.lock
+COPY voice/patches ./patches
+RUN python3 patches/apply.py
+COPY voice/native/src ./src
+RUN --mount=type=cache,target=/build/target,sharing=locked \
+    cargo clean --locked --release -p whatsapp-rust \
+    && cargo test --locked --release && cargo build --locked --release \
+    && cp target/release/whatsapp-call-worker /build/whatsapp-call-worker
+
+FROM scratch AS artifact
+COPY --from=builder /build/whatsapp-call-worker /whatsapp-call-worker
