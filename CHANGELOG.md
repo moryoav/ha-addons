@@ -22,8 +22,9 @@ All notable changes to this repository are documented here.
 
 ### Configuration and compatibility
 
-- Generated and persisted internal API credentials automatically and refreshed
-  the Home Assistant integration through discovery, preserving existing tokens.
+- **Breaking:** Required authentication for protected API routes. The app now
+  generates and saves its own credential, preserves existing tokens, and refreshes
+  the integration through discovery. Update the app and HACS integration together.
 - Enabled supplemental own-device LID sender receipts for every account and
   removed the experimental switch.
 - Disabled detailed decryption tracing and removed its configuration switch,

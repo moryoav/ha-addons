@@ -229,7 +229,7 @@ jobs:
             --env SUPERVISOR_API=http://supervisor:8080 \
             --env SUPERVISOR_TOKEN=ci \
             "whatsapp-addon:ci-${{ matrix.arch }}" \
-            /usr/bin/node -e \
+            /usr/bin/with-contenv /usr/bin/node -e \
             "(async()=>{const fs=require('node:fs');
             const dns=require('node:dns').promises;
             const profile=fs.readFileSync('/proc/self/attr/current','utf8');

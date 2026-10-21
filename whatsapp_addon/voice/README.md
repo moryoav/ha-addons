@@ -102,3 +102,6 @@ resolution. Guarded patches preserve queued relay frames, add privacy-safe
 transport counters, and enable Opus repair settings. They fail the build if
 upstream source no longer matches the expected version. The existing Baileys
 package and lockfile dependencies are unchanged.
+
+The upstream MIT notice is preserved in `licenses/whatsapp-rust.txt` and included
+in the runtime image.

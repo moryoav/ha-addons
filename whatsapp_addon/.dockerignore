@@ -47,3 +47,5 @@
 !voice/test/*.js
 !voice/test/*.py
 voice/test/test_configuration_labels.py
+!voice/licenses/
+!voice/licenses/*.txt
