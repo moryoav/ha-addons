@@ -1,472 +1,233 @@
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { MessageInbox } = require("../message-inbox");
-const { createApiApp } = require("../api");
+const { createAddonRuntime, parseOptions, startAddon } = require("../runtime");
 
-const SESSION = "a".repeat(32);
-const OTHER_SESSION = "b".repeat(32);
-const message = (id = "fictional-1", chat = "12025550123@s.whatsapp.net") => ({
-  key: { id, remoteJid: chat, fromMe: false }, type: "conversation",
-  messageTimestamp: 1234567890, message: { conversation: "Fictional private note. שלום." },
+/** Build an ordinary incoming message with fictional private metadata. */
+const message = (id = "fictional-id") => ({
+  key: { id, remoteJid: "12025550123@s.whatsapp.net", fromMe: false },
+  type: "conversation", messageTimestamp: 1234567890,
+  message: { conversation: "Fictional private content" },
 });
 
+/** Isolate each durable queue outside the repository and remove it afterward. */
 async function fixture(t, options = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "whatsapp-inbox-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const create = () => new MessageInbox({ directory, clientIds: ["default", "other"], ...options });
+  const create = () => new MessageInbox({ directory, ...options });
   const inbox = await create().start();
-  await inbox.open(SESSION);
   return { inbox, create, directory };
 }
 
-async function enqueue(inbox, payload = message(), client = "default", media) {
-  const id = await inbox.enqueue(client, payload);
-  if (id) await inbox.ready(id, media);
-  return id;
+test("pending messages survive app restarts in order, preserving sender and group metadata", async (t) => {
+  const { inbox, create } = await fixture(t);
+  const original = { ...message(), key: { ...message().key, remoteJid: "12025550123-1@g.us", participant: "999999999999999@lid" } };
+  await inbox.enqueue("default", original); await inbox.enqueue("default", message("second"));
+  const restarted = await create().start();
+  assert.deepEqual(restarted.peek(() => true).payload, original);
+  const id = restarted.peek(() => true).id;
+  await restarted.delivered(id);
+  assert.equal(restarted.peek(() => true).payload.key.id, "second");
+  await restarted.enqueue("default", original);
+  assert.equal(restarted.state.pending.length, 1);
+  const saved = await fs.readFile(restarted.file, "utf8");
+  assert.ok(!saved.includes("participant"));
+  assert.equal((await create().start()).state.delivered[0].id, id);
+});
+
+test("concurrent admissions serialize, suppress duplicates, and preserve binary media keys", async (t) => {
+  const { inbox, create } = await fixture(t);
+  const original = { ...message(), message: { audioMessage: { ptt: false, mediaKey: Buffer.from([1, 2]), fileSha256: new Uint8Array([3, 4]), fileLength: 42n } } };
+  await Promise.all(Array.from({ length: 12 }, () => inbox.enqueue("default", original)));
+  assert.equal(inbox.state.pending.length, 1);
+  const payload = (await create().start()).peek(() => true).payload;
+  assert.deepEqual(payload.message.audioMessage.mediaKey, Buffer.from([1, 2]));
+  assert.deepEqual(payload.message.audioMessage.fileSha256, Buffer.from([3, 4]));
+  assert.equal(payload.message.audioMessage.fileLength, "42");
+  payload.key.id = "changed";
+  assert.equal(inbox.peek(() => true).payload.key.id, "fictional-id");
+});
+
+test("capacity and payload limits never evict queued messages", async (t) => {
+  const { inbox } = await fixture(t, { maxPending: 1, maxMessageBytes: 300 });
+  await inbox.enqueue("default", message());
+  await assert.rejects(inbox.enqueue("default", message("second")), /full/);
+  assert.throws(() => inbox.enqueue("default", { ...message(), message: { conversation: "x".repeat(400) } }), /too large/);
+  const before = await fs.readFile(inbox.file, "utf8");
+  for (const value of [{}, { ...message(), key: { ...message().key, fromMe: true } }]) {
+    assert.throws(() => inbox.enqueue("default", value));
+  }
+  assert.equal(await fs.readFile(inbox.file, "utf8"), before);
+  await inbox.delivered(inbox.peek(() => true).id);
+  await inbox.enqueue("default", message("second"));
+  assert.equal(inbox.state.pending.length, 1);
+});
+
+test("unreadable or invalid snapshots are preserved, and oversize state is refused before reading", async (t) => {
+  const { inbox, create } = await fixture(t);
+  for (const raw of ['{"version":', '{"version":1,"pending":[null],"delivered":[]}', '{"version":2,"pending":[],"delivered":[]}']) {
+    await fs.writeFile(inbox.file, raw);
+    const broken = create();
+    await assert.rejects(broken.start(), /original files are preserved/);
+    assert.equal(broken.failed, true);
+    assert.equal(await fs.readFile(inbox.file, "utf8"), raw);
+  }
+  const limited = new MessageInbox({ directory: inbox.directory, maxBytes: 2,
+    fsPromises: { ...fs, readFile: async () => { assert.fail("Oversized state must not be read"); } } });
+  await assert.rejects(limited.start());
+});
+
+for (const stage of ["open", "writeFile", "sync", "rename", "directory"]) {
+  test(`a failed ${stage} cannot overwrite uncertain state with later writes`, async (t) => {
+    const { inbox, create } = await fixture(t); await inbox.enqueue("default", message());
+    const previous = await fs.readFile(inbox.file, "utf8");
+    inbox.fsPromises = { ...fs, open: async (...args) => {
+      if (stage === "open") throw new Error("Fictional failure");
+      const handle = await fs.open(...args);
+      if (stage === "writeFile" || stage === "sync") {
+        const original = handle[stage].bind(handle);
+        handle[stage] = async () => { throw new Error("Fictional failure"); };
+        assert.equal(typeof original, "function");
+      }
+      return handle;
+    }, rename: stage === "rename" ? async () => { throw new Error("Fictional failure"); } : fs.rename };
+    if (stage === "directory") inbox.syncDirectory = async () => { throw new Error("Fictional failure"); };
+    await assert.rejects(inbox.enqueue("default", message("second")), /could not be saved/);
+    const uncertain = await fs.readFile(inbox.file, "utf8");
+    if (stage !== "directory") assert.equal(uncertain, previous);
+    await assert.rejects(inbox.enqueue("default", message("third")), /unavailable/);
+    assert.equal(await fs.readFile(inbox.file, "utf8"), uncertain);
+    const restarted = await create().start();
+    assert.equal(restarted.peek(() => true).payload.key.id, "fictional-id");
+  });
 }
 
-test("pending messages survive app restart with original metadata and arrival order", async (t) => {
-  const { inbox, create } = await fixture(t);
-  const original = message();
-  const id = await enqueue(inbox, original);
-  await enqueue(inbox, message("fictional-2"), "other");
-  const restarted = await create().start(); await restarted.open(OTHER_SESSION);
-  const result = await restarted.poll(OTHER_SESSION);
-  assert.equal(result.status, "pending");
-  assert.deepEqual(result.counts, { pending: 2, processing: 0, interrupted: 0, blocked: 0 });
-  assert.equal(result.message.inbox.id, id);
-  assert.deepEqual(result.message.key, original.key);
-  assert.deepEqual(result.message.message, original.message);
-  assert.equal(result.message.clientId, "default");
+test("private permissions and symlink checks protect queued payloads", { skip: process.platform === "win32" }, async (t) => {
+  const { inbox, create, directory } = await fixture(t); await inbox.enqueue("default", message());
+  assert.equal((await fs.stat(directory)).mode & 0o777, 0o700);
+  assert.equal((await fs.stat(inbox.file)).mode & 0o777, 0o600);
+  await fs.rename(inbox.file, path.join(directory, "original.json"));
+  await fs.symlink(path.join(directory, "original.json"), inbox.file);
+  await assert.rejects(create().start());
 });
 
-test("a delivery is not processing until the automation explicitly starts it", async (t) => {
-  const { inbox, create } = await fixture(t); await enqueue(inbox);
-  const first = await inbox.poll(SESSION);
-  assert.equal((await inbox.poll(SESSION)).message.inbox.receipt, first.message.inbox.receipt);
-  const restarted = await create().start(); await restarted.open(OTHER_SESSION);
-  assert.equal((await restarted.poll(OTHER_SESSION)).status, "pending");
-});
-
-test("concurrent duplicate starts have exactly one winner", async (t) => {
-  const { inbox } = await fixture(t); await enqueue(inbox);
-  const { inbox: reference } = (await inbox.poll(SESSION)).message;
-  const results = await Promise.all([inbox.begin(reference), inbox.begin(reference)]);
-  assert.equal(results.filter((result) => result.started).length, 1);
-  assert.equal((await inbox.poll(SESSION)).status, "processing");
-  assert.deepEqual(await inbox.complete(reference), { status: "completed" });
-  assert.deepEqual(await inbox.complete(reference), { status: "completed" });
-  assert.equal((await inbox.poll(SESSION)).status, "empty");
-});
-
-test("processing becomes interrupted after either HA session change or app restart", async (t) => {
-  for (const restartApp of [false, true]) {
-    const { inbox, create } = await fixture(t); await enqueue(inbox);
-    await inbox.begin((await inbox.poll(SESSION)).message.inbox);
-    const next = restartApp ? await create().start() : inbox;
-    await next.open(OTHER_SESSION);
-    assert.equal((await next.poll(OTHER_SESSION)).status, "interrupted");
-  }
-});
-
-test("an interrupted action is retained for review while later messages continue", async (t) => {
-  const { inbox } = await fixture(t); await enqueue(inbox); await enqueue(inbox, message("later"));
-  const reference = (await inbox.poll(SESSION)).message.inbox;
-  await inbox.begin(reference); await inbox.open(OTHER_SESSION);
-  const interrupted = await inbox.poll(OTHER_SESSION);
-  assert.equal(interrupted.attention[0].inbox.id, reference.id);
-  assert.equal(interrupted.status, "pending");
-  await inbox.resolve(interrupted.attention[0].inbox, "discard");
-  assert.equal((await inbox.poll(OTHER_SESSION)).message.key.id, "later");
-});
-
-test("explicit retry changes the receipt and refuses stale acknowledgements", async (t) => {
-  const { inbox } = await fixture(t); await enqueue(inbox);
-  const old = (await inbox.poll(SESSION)).message.inbox;
-  await inbox.begin(old); await inbox.open(OTHER_SESSION);
-  const reference = (await inbox.poll(OTHER_SESSION)).inbox;
-  await inbox.resolve(reference, "retry");
-  const retried = (await inbox.poll(OTHER_SESSION)).message.inbox;
-  assert.notEqual(retried.receipt, old.receipt);
-  await assert.rejects(inbox.complete({ ...old, session: OTHER_SESSION }), { code: "inbox_message_not_found" });
-  assert.equal((await inbox.begin(retried)).started, true);
-});
-
-test("completed payloads are erased and redelivery remains deduplicated across restart", async (t) => {
-  const { inbox, create, directory } = await fixture(t); await enqueue(inbox);
-  const reference = (await inbox.poll(SESSION)).message.inbox;
-  await inbox.begin(reference); await inbox.complete(reference);
-  assert.ok(!(await fs.readFile(path.join(directory, "messages.json"), "utf8")).includes("Fictional private"));
-  const restarted = await create().start();
-  assert.equal(await restarted.enqueue("default", message()), null);
-});
-
-test("a complete acknowledgement cannot skip the start gate", async (t) => {
-  const { inbox } = await fixture(t); await enqueue(inbox);
-  await assert.rejects(inbox.complete((await inbox.poll(SESSION)).message.inbox), { code: "inbox_message_not_started" });
-});
-
-test("capacity never evicts unfinished messages", async (t) => {
-  const { inbox, create } = await fixture(t, { maxPending: 1 });
-  await enqueue(inbox);
-  await assert.rejects(enqueue(inbox, message("second")), { code: "inbox_full" });
-  const restarted = await create().start(); await restarted.open(SESSION);
-  assert.equal((await restarted.poll(SESSION)).message.key.id, "fictional-1");
-});
-
-test("oversized and invalid messages are refused without exposing their content", async (t) => {
-  const { inbox } = await fixture(t, { maxMessageBytes: 400 });
-  const oversized = message(); oversized.message.conversation = "private".repeat(200);
-  await assert.rejects(inbox.enqueue("default", oversized), { code: "inbox_message_too_large" });
-  for (const value of [{}, { ...message(), key: { ...message().key, fromMe: true } }]) {
-    await assert.rejects(inbox.enqueue("default", value), { code: "invalid_inbox_message" });
-  }
-  await assert.rejects(inbox.enqueue("disabled", message()), { code: "inbox_disabled" });
-});
-
-test("malformed or truncated storage fails closed without overwriting it", async (t) => {
-  const { create, directory } = await fixture(t);
-  const file = path.join(directory, "messages.json"); await fs.writeFile(file, '{"version":');
-  await assert.rejects(create().start(), { code: "inbox_storage_unavailable" });
-  assert.equal(await fs.readFile(file, "utf8"), '{"version":');
-});
-
-test("failed atomic publication preserves the previous message and removes temporary files", async (t) => {
-  const { inbox, directory } = await fixture(t); await enqueue(inbox);
-  const original = await fs.readFile(inbox.file, "utf8");
-  inbox.fsPromises = { ...fs, rename: async () => { throw new Error("private filesystem detail"); } };
-  await assert.rejects(inbox.enqueue("default", message("second")), { code: "inbox_storage_unavailable" });
-  assert.equal(await fs.readFile(inbox.file, "utf8"), original);
-  assert.deepEqual((await fs.readdir(directory)).filter((name) => name.startsWith(".pending-")), []);
-});
-
-test("an uncertain directory flush cannot overwrite a published message from stale memory", async (t) => {
-  const { inbox, create } = await fixture(t); await enqueue(inbox);
-  const sync = inbox.syncDirectory.bind(inbox); let flushes = 0;
-  inbox.syncDirectory = async () => {
-    if (++flushes === 2) throw new Error("Fictional snapshot directory flush failure");
-    return sync();
-  };
-  await assert.rejects(inbox.enqueue("default", message("second")), { code: "inbox_storage_unavailable" });
-  const published = await fs.readFile(inbox.file, "utf8");
-  assert.ok(published.includes('"messageId":"second"'));
-  await assert.rejects(inbox.enqueue("default", message("third")), { code: "inbox_storage_unavailable" });
-  assert.equal(await fs.readFile(inbox.file, "utf8"), published);
-  const recovered = await create().start();
-  assert.equal(recovered.state.entries.length, 2);
-});
-
-test("media is pinned before cleanup and unpinned only after completion", async (t) => {
-  const { inbox } = await fixture(t);
-  const id = "1bcdfb31-7cd3-47df-8595-17fcaf84943a";
-  await enqueue(inbox, message(), "default", { id, status: "ready", expires_at: "2000-01-01T00:00:00Z" });
-  assert.equal(inbox.isMediaPinned(id), true);
-  const renewed = "2099-01-01T00:00:00Z";
-  const result = await inbox.poll(SESSION, async (media) => ({ ...media, expires_at: renewed }));
-  assert.equal(result.message.media.expires_at, renewed);
-  await inbox.begin(result.message.inbox); await inbox.complete(result.message.inbox);
-  assert.equal(inbox.isMediaPinned(id), false);
-});
-
-test("a transient renewal failure keeps the attachment durable and pinned until retry succeeds", async (t) => {
-  const { inbox, create } = await fixture(t);
-  const media = { id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a", status: "ready", expires_at: "2000-01-01T00:00:00Z" };
-  await enqueue(inbox, message(), "default", media);
-  const failed = await inbox.poll(SESSION, async () => ({ status: "error", error: "inbox_media_unavailable" }));
-  assert.equal(failed.status, "preparing");
-  assert.equal(failed.error, "inbox_media_unavailable");
-  assert.equal(failed.message, undefined);
-  assert.equal(inbox.isMediaPinned(media.id), true);
-  const restarted = await create().start(); await restarted.open(SESSION);
-  assert.equal(restarted.isMediaPinned(media.id), true);
-  assert.deepEqual(restarted.state.entries[0].payload.media, media);
-  const renewed = await restarted.poll(SESSION, async (item) => ({ ...item, expires_at: "2099-01-01T00:00:00Z" }));
-  assert.equal(renewed.status, "pending");
-  assert.equal(renewed.message.media.id, media.id);
-});
-
-test("ready messages wait for the WhatsApp account to reconnect before delivery", async (t) => {
-  const { inbox } = await fixture(t); await enqueue(inbox);
-  const paused = await inbox.poll(SESSION, undefined, () => false);
-  assert.equal(paused.status, "preparing");
-  assert.equal(paused.message, undefined);
-  assert.equal((await inbox.poll(SESSION, undefined, () => true)).status, "pending");
-});
-
-test("incomplete preparation resumes after a normal app restart", async (t) => {
-  const { inbox, create } = await fixture(t); await inbox.enqueue("default", message());
-  await enqueue(inbox, message("second"));
-  const next = await create().start(); await next.open(SESSION);
-  assert.equal(next.unready("default").length, 1);
-  const result = await next.poll(SESSION);
-  assert.equal(result.status, "preparing");
-  assert.deepEqual(result.attention, []);
-  await next.ready(next.unready("default")[0].id);
-  assert.equal((await next.poll(SESSION)).message.key.id, "fictional-1");
-});
-
-test("a stale HA session cannot consume or mutate the current inbox", async (t) => {
-  const { inbox } = await fixture(t); await enqueue(inbox);
-  const reference = (await inbox.poll(SESSION)).message.inbox; await inbox.open(OTHER_SESSION);
-  await assert.rejects(inbox.poll(SESSION), { code: "inbox_session_changed" });
-  await assert.rejects(inbox.begin(reference), { code: "invalid_inbox_reference" });
-});
-
-test("inbox API requires authentication and only explicit requests change processing state", async (t) => {
-  const { inbox } = await fixture(t); await enqueue(inbox);
-  const app = createApiApp({ clients: { default: { status: { connected: true } } },
-    sharedSecret: "fictional-api-token", messageInbox: inbox });
-  const server = app.listen(0, "127.0.0.1"); await new Promise((resolve) => server.once("listening", resolve));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const url = `http://127.0.0.1:${server.address().port}/inbox/`;
-  const post = (operation, body, token = "fictional-api-token") => fetch(url+operation, {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-  });
-  assert.equal((await post("poll", { session: SESSION }, "wrong-token")).status, 401);
-  const result = await (await post("poll", { session: SESSION })).json();
-  assert.equal(result.status, "pending");
-  const reference = result.message.inbox;
-  assert.equal((await (await post("start", { inbox: reference })).json()).started, true);
-  assert.equal((await (await post("complete", { inbox: reference })).json()).status, "completed");
-});
-
-test("offline, unprepared, and processing account heads cannot block another account", async (t) => {
-  for (const state of ["offline", "unprepared", "processing", "interrupted"]) {
-    const { inbox } = await fixture(t);
-    const firstId = await inbox.enqueue("default", message());
-    if (state !== "unprepared") await inbox.ready(firstId);
-    if (["processing", "interrupted"].includes(state)) {
-      await inbox.begin((await inbox.poll(SESSION)).message.inbox);
-      if (state === "interrupted") { await inbox.open(OTHER_SESSION); await inbox.open(SESSION); }
-    }
-    await enqueue(inbox, message("other-account"), "other");
-    const result = await inbox.poll(SESSION, undefined, (id) => state !== "offline" || id !== "default");
-    assert.equal(result.message.clientId, "other", state);
-    assert.equal((await inbox.begin(result.message.inbox)).started, true, state);
-  }
-});
-
-test("unclaimed messages time out durably and do not hold later messages hostage", async (t) => {
-  let now = 1000;
-  const { inbox, create } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
-  await enqueue(inbox); await enqueue(inbox, message("later"));
-  const original = (await inbox.poll(SESSION)).message.inbox;
-  now += 61;
-  const result = await inbox.poll(SESSION);
-  assert.equal(result.message.key.id, "later");
-  assert.equal(result.attention[0].reason, "unclaimed");
-  assert.equal((await inbox.begin(original)).started, false);
-  const restarted = await create().start(); await restarted.open(OTHER_SESSION);
-  const recovered = await restarted.poll(OTHER_SESSION);
-  assert.equal(recovered.attention[0].inbox.id, original.id);
-  assert.equal(recovered.counts.blocked, 1);
-});
-
-test("processing watchdog retains uncertain actions without automatic replay", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, processingTimeoutMs: 60 });
-  await enqueue(inbox); await enqueue(inbox, message("later"));
-  const reference = (await inbox.poll(SESSION)).message.inbox;
-  await inbox.begin(reference); now += 61;
-  const result = await inbox.poll(SESSION);
-  assert.equal(result.message.key.id, "later");
-  assert.equal(result.attention[0].reason, "processing_timeout");
-  assert.equal((await inbox.begin(reference)).started, false);
-  assert.deepEqual(await inbox.complete(reference), { status: "completed" });
-});
-
-test("unprepared messages can be discarded immediately or held by the watchdog", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, preparationTimeoutMs: 60 });
+test("compact receipts are bounded and expire without retaining completed payloads", async (t) => {
+  let now = 1000; const { inbox } = await fixture(t, { now: () => now });
+  await inbox.update((next) => { next.delivered = Array.from({ length: 1005 }, (_, index) => ({ id: index.toString(16).padStart(64, "0"), at: now })); return true; });
+  assert.equal(inbox.state.delivered.length, 1000);
+  now += 8 * 86400000;
   await inbox.enqueue("default", message());
-  let result = await inbox.poll(SESSION);
-  await inbox.resolve(result.inbox, "discard");
-  await inbox.enqueue("default", message("stuck"));
-  await inbox.poll(SESSION);
-  now += 61;
-  result = await inbox.poll(SESSION);
-  assert.equal(result.status, "blocked");
-  assert.equal(result.attention[0].reason, "preparation_timeout");
-  await inbox.resolve(result.inbox, "discard");
-  assert.equal((await inbox.poll(SESSION)).status, "empty");
+  assert.equal(inbox.state.delivered.length, 0);
+  await inbox.delivered(inbox.peek(() => true).id);
+  assert.ok(!(await fs.readFile(inbox.file, "utf8")).includes("Fictional private"));
 });
 
-test("retries preserve arrival time and cannot overlap a later active message", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
-  await enqueue(inbox); await enqueue(inbox, message("later"));
-  const first = (await inbox.poll(SESSION)).message.inbox;
-  now += 61;
-  const later = (await inbox.poll(SESSION)).message.inbox;
-  await inbox.begin(later);
-  await inbox.resolve(first, "retry");
-  assert.equal((await inbox.poll(SESSION)).status, "processing");
-  const retriedEntry = inbox.state.entries[0];
-  await assert.rejects(inbox.begin({ ...first, receipt: retriedEntry.receipt }), { code: "inbox_message_out_of_order" });
-  await inbox.complete(later);
-  const retried = await inbox.poll(SESSION);
-  assert.equal(retried.message.inbox.received_at, first.received_at);
-  assert.equal((await inbox.begin(retried.message.inbox)).started, true);
+test("persistent inbox selection is opt-in and validates configured account IDs", () => {
+  assert.equal(parseOptions(JSON.stringify({ clients: ["default"] })).inboxClients, undefined);
+  assert.deepEqual(parseOptions(JSON.stringify({ clients: ["default"], inbox_clients: ["default"] })).inboxClients, ["default"]);
+  for (const value of [true, "default", ["missing"], ["default", "default"]]) {
+    assert.throws(() => parseOptions(JSON.stringify({ clients: ["default"], inbox_clients: value })));
+  }
 });
 
-test("temporary preparation errors back off and succeed or become terminal after a bounded budget", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, preparationRetryMs: 10 });
-  const id = await inbox.enqueue("default", message());
-  const failure = { status: "error", error: "download_failed" };
-  assert.equal(await inbox.ready(id, failure), false);
-  assert.equal(inbox.unready("default").length, 0);
-  now += 10;
-  assert.equal(inbox.unready("default").length, 1);
-  assert.equal(await inbox.ready(id, failure), false);
-  now += 19; assert.equal(inbox.unready("default").length, 0);
-  now += 1;
-  assert.equal(await inbox.ready(id, failure), true);
-  const result = await inbox.poll(SESSION);
-  assert.equal(result.message.media.error, "download_failed");
-  await inbox.resolve(result.message.inbox, "retry");
-  assert.equal(inbox.unready("default").length, 1);
-  await inbox.ready(id, { status: "ready", id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a" });
-  assert.equal((await inbox.poll(SESSION)).message.media.status, "ready");
+test("the app waits for the integration, then retries the same event without changing its payload", async (t) => {
+  const { inbox, create } = await fixture(t); const timers = []; const posts = []; const logs = [];
+  let reachable = false; let accept = false; let downloads = 0;
+  const client = new EventEmitter(); client.status = { connected: true };
+  const runtime = createAddonRuntime({ clientIds: ["default"], inboxClients: ["default"], messageInbox: inbox,
+    clientFactory: () => client, logger: { error: (...args) => logs.push(args) },
+    setTimeoutFn: (fn, delay) => { const timer = { fn, delay, unref() {} }; timers.push(timer); return timer; },
+    clearTimeoutFn: (timer) => { const index = timers.indexOf(timer); if (index >= 0) timers.splice(index, 1); },
+    mediaStore: { enrich: async () => { downloads++; return { status: "ready", id: "fictional-media" }; } },
+    httpClient: {
+      get: async (_, options) => { assert.equal(options.timeout, 10000); if (!reachable) throw new Error("Private response"); return { data: { ready: true } }; },
+      post: async (url, body, options) => { posts.push({ url, body, options }); if (!accept) throw new Error("Private response"); },
+    } });
+  t.after(() => runtime.stopInbox());
+  client.emit("msg", message());
+  await new Promise((resolve) => setImmediate(resolve)); await inbox.close();
+  assert.equal((await create().start()).state.pending.length, 1);
+  await timers.shift().fn();
+  assert.equal(downloads, 0); assert.equal(posts.length, 0);
+  reachable = true;
+  assert.equal(timers[0].delay, 10000); await timers.shift().fn();
+  assert.equal(inbox.state.pending.length, 1);
+  accept = true; await timers.shift().fn();
+  assert.equal(inbox.state.pending.length, 0);
+  assert.equal(posts.length, 2); assert.equal(posts[0].body.id, posts[1].body.id);
+  assert.equal(posts[1].url, "http://supervisor/core/api/whatsapp/inbox");
+  assert.deepEqual(posts[1].body.message, { ...message(), media: { status: "ready", id: "fictional-media" }, clientId: "default" });
+  assert.equal(posts[1].options.timeout, 10000);
+  assert.ok(!JSON.stringify(logs).includes("Private response"));
 });
 
-test("missing media is delivered as an explicit error while temporary failures retain the pin", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now });
-  const media = { status: "ready", id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a" };
-  await enqueue(inbox, message(), "default", media);
-  await enqueue(inbox, message("other"), "other");
-  const temporary = await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_unavailable" }));
-  assert.equal(temporary.message.clientId, "other");
-  assert.equal(inbox.isMediaPinned(media.id), true);
-  now += 100;
-  const missing = await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_missing" }));
-  assert.equal(missing.message.clientId, "default");
-  assert.equal(missing.message.media.error, "inbox_media_missing");
-  assert.equal(inbox.state.entries[0].mediaWaitAt, undefined);
+test("delivery is paced and disconnected accounts do not block other accounts", async (t) => {
+  const { inbox } = await fixture(t); const timers = []; const posts = []; const live = [];
+  await inbox.enqueue("offline", message("first"));
+  await inbox.enqueue("default", message("second")); await inbox.enqueue("default", message("third"));
+  const clients = {};
+  const runtime = createAddonRuntime({ clientIds: ["offline", "default", "live"], inboxClients: ["offline", "default"], messageInbox: inbox, logger: {},
+    clientFactory: ({ path: sessionPath }) => { const client = new EventEmitter(); client.status = { connected: path.basename(sessionPath) === "default" }; clients[path.basename(sessionPath)] = client; return client; },
+    setTimeoutFn: (fn, delay) => { const timer = { fn, delay, unref() {} }; timers.push(timer); return timer; }, clearTimeoutFn: () => {},
+    httpClient: { get: async () => ({ data: { ready: true } }), post: async (url, body) => (url.endsWith("/events/new_whatsapp_message") ? live : posts).push(body) } });
+  t.after(() => runtime.stopInbox());
+  clients.live.emit("msg", message("live")); await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(live, [{ clientId: "live", ...message("live") }]);
+  await timers.shift().fn(); assert.equal(posts.length, 1); assert.equal(posts[0].message.key.id, "second");
+  assert.equal(timers[0].delay, 10000); await timers.shift().fn();
+  assert.equal(posts[1].message.key.id, "third");
+  clients.offline.status.connected = true; await timers.shift().fn();
+  assert.equal(posts[2].message.key.id, "first");
+  assert.equal(inbox.state.pending.length, 0);
 });
 
-test("unchanged polls avoid snapshot cloning and disk writes with a full receipt history", async (t) => {
-  const { inbox } = await fixture(t);
-  // Seed a real persisted history in one transaction, avoiding thousands of test fsyncs.
-  await inbox.transaction((state) => {
-    for (let i = 0; i < 10000; i++) state.entries.push({
-      id: i.toString(16).padStart(64, "0"), receipt: "c".repeat(64), clientId: "default",
-      sequence: ++state.sequence, status: "completed", completedAt: Date.now(),
-      chatId: "12025550123@s.whatsapp.net", messageId: `old-${i}`, receivedAt: 1, ready: true,
-    });
+for (const unavailable of [false, true]) {
+  test(`storage ${unavailable ? "failure" : "capacity"} preserves the backlog and falls back to live delivery`, async (t) => {
+    const { inbox } = await fixture(t, { maxPending: 1 }); await inbox.enqueue("default", message());
+    inbox.failed = unavailable;
+    const client = new EventEmitter(); const posts = []; const logs = [];
+    const runtime = createAddonRuntime({ clientIds: ["default"], inboxClients: ["default"], messageInbox: inbox,
+      clientFactory: () => client, logger: { error: (...args) => logs.push(args) },
+      setTimeoutFn: () => ({ unref() {} }), clearTimeoutFn: () => {},
+      httpClient: { post: async (url, body) => posts.push({ url, body }) } });
+    client.emit("msg", message("fallback")); await runtime.stopInbox();
+    assert.deepEqual(posts, [{ url: "http://supervisor/core/api/events/new_whatsapp_message", body: { clientId: "default", ...message("fallback") } }]);
+    assert.equal(inbox.state.pending.length, 1); assert.equal(logs.length, 1);
+    assert.ok(!JSON.stringify(logs).includes("Fictional private"));
   });
-  assert.equal(inbox.state.entries.length, 1000);
-  assert.ok((await fs.stat(inbox.file)).size < 300000);
-  await enqueue(inbox);
-  await inbox.poll(SESSION); // First offer is deliberately durable.
-  const snapshot = inbox.state;
-  inbox.fsPromises = { ...fs, open: async () => { throw new Error("Unexpected write on read-only poll"); } };
-  for (let i = 0; i < 100; i++) assert.equal((await inbox.poll(SESSION)).status, "pending");
-  assert.equal(inbox.state, snapshot);
+}
+
+test("startup loads the inbox and shutdown settles delivery before closing storage", async (t) => {
+  const { directory } = await fixture(t); const client = new EventEmitter();
+  client.disconnect = async () => { client.emit("msg", message("during-shutdown")); await new Promise((resolve) => setImmediate(resolve)); };
+  const runtime = await startAddon({ dataRoot: directory, logger: {},
+    optionsLoader: async () => ({ clientIds: ["default"], inboxClients: ["default"] }),
+    apiTokenLoader: async () => "fictional-token", diagnosticsFactory: () => ({}),
+    replayHealthDiagnosticsFn: async () => null, readRecoveryRecordFn: async () => null,
+    listenFn: async () => ({}), closeServerFn: async () => {}, clientFactory: () => client,
+    httpClient: { post: async () => {} },
+  });
+  client.emit("msg", message());
+  await runtime.close();
+  const restarted = await new MessageInbox({ directory: path.join(directory, "inbox") }).start();
+  assert.deepEqual(restarted.state.pending.map((entry) => entry.payload.key.id), ["fictional-id", "during-shutdown"]);
 });
 
-test("an uncertain enqueue is held after restart rather than replaying a possible live fallback", async (t) => {
-  const { inbox, create } = await fixture(t);
-  const sync = inbox.syncDirectory.bind(inbox); let flushes = 0;
-  inbox.syncDirectory = async () => {
-    if (++flushes === 2) throw new Error("Fictional snapshot directory flush failure");
-    return sync();
-  };
-  await assert.rejects(inbox.enqueue("default", message()), { code: "inbox_storage_unavailable" });
-  const recovered = await create().start(); await recovered.open(OTHER_SESSION);
-  const result = await recovered.poll(OTHER_SESSION);
-  assert.equal(result.status, "blocked");
-  assert.equal(result.attention[0].reason, "preparation_interrupted");
-});
-
-test("inspection does not begin the claim deadline and workflow failures can be held immediately", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
-  await enqueue(inbox);
-  await inbox.poll(SESSION, undefined, undefined, false);
-  now += 60000;
-  const result = await inbox.poll(SESSION);
-  assert.equal(result.status, "pending");
-  await inbox.begin(result.message.inbox);
-  assert.equal((await inbox.resolve(result.message.inbox, "hold")).status, "interrupted");
-  assert.equal((await inbox.poll(SESSION)).attention[0].reason, "workflow_failed");
-});
-
-test("receipt expiry admits the first new delivery and failed preparation cannot mutate the prior snapshot", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, receiptRetentionMs: 60 });
-  await enqueue(inbox);
-  const reference = (await inbox.poll(SESSION)).message.inbox;
-  await inbox.begin(reference); await inbox.complete(reference); now += 61;
-  const id = await inbox.enqueue("default", message());
-  assert.equal(id, reference.id);
-  assert.equal(inbox.state.entries.length, 1);
-  const snapshot = JSON.stringify(inbox.state);
-  inbox.fsPromises = { ...fs, rename: async () => { throw new Error("Fictional write failure"); } };
-  await assert.rejects(inbox.ready(id, { status: "error", error: "invalid_metadata" }));
-  assert.equal(JSON.stringify(inbox.state), snapshot);
-});
-
-test("failed media renewal is held after its watchdog and later messages continue", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, preparationTimeoutMs: 60 });
-  const media = { id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a", status: "ready" };
-  await enqueue(inbox, message(), "default", media);
-  await enqueue(inbox, message("later"));
-  await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_unavailable" }));
-  now += 61;
-  const result = await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_unavailable" }));
-  assert.equal(result.attention[0].reason, "preparation_timeout");
-  assert.equal(inbox.isMediaPinned(media.id), true);
-  assert.equal((await inbox.poll(SESSION)).message.key.id, "later");
-});
-
-test("admission reserves room to prepare, start and complete messages at the storage limit", async (t) => {
-  const { inbox } = await fixture(t, { maxBytes: 16000 });
-  const large = message(); large.message.conversation = "x".repeat(6000);
-  const id = await inbox.enqueue("default", large);
-  await assert.rejects(inbox.enqueue("default", { ...large, key: { ...large.key, id: "next" } }), { code: "inbox_full" });
-  await inbox.ready(id, { status: "ready", original_filename: "x".repeat(2000) });
-  const reference = (await inbox.poll(SESSION)).message.inbox;
-  assert.equal((await inbox.begin(reference)).started, true);
-  await inbox.complete(reference);
-  assert.equal((await inbox.poll(SESSION)).status, "empty");
-});
-
-test("a backwards wall-clock correction cannot strand preparation backoff or watchdogs", async (t) => {
-  let now = 100000;
-  const { inbox } = await fixture(t, { now: () => now, preparationRetryMs: 10, preparationTimeoutMs: 60 });
-  const id = await inbox.enqueue("default", message());
-  await inbox.ready(id, { status: "error", error: "timeout" });
-  now = 1000;
-  assert.equal((await inbox.poll(SESSION)).status, "preparing");
-  now += 10;
-  assert.equal(inbox.unready("default").length, 1);
-  now += 51;
-  assert.equal((await inbox.poll(SESSION)).attention[0].reason, "preparation_timeout");
-});
-
-test("a new HA session gets a fresh claim window after a long outage, but reopening the same session does not", async (t) => {
-  let now = 1000;
-  const { inbox } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
-  await enqueue(inbox);
-  const original = (await inbox.poll(SESSION)).message.inbox;
-  now += 1000000;
-  await inbox.open(OTHER_SESSION);
-  const recovered = await inbox.poll(OTHER_SESSION);
-  assert.equal(recovered.status, "pending");
-  assert.deepEqual(recovered.attention, []);
-  assert.equal(recovered.message.inbox.receipt, original.receipt);
-  assert.equal(recovered.message.inbox.received_at, original.received_at);
-  await assert.rejects(inbox.begin(original), { code: "invalid_inbox_reference" });
-  now += 61;
-  await inbox.open(OTHER_SESSION);
-  const blocked = await inbox.poll(OTHER_SESSION);
-  assert.equal(blocked.status, "blocked");
-  assert.equal(blocked.attention[0].reason, "unclaimed");
+test("shutdown during media preparation retains the message and stops retry timers", async (t) => {
+  const { inbox } = await fixture(t); await inbox.enqueue("default", message());
+  const timers = []; let release; let posts = 0;
+  const client = new EventEmitter(); client.status = { connected: true };
+  const runtime = createAddonRuntime({ clientIds: ["default"], inboxClients: ["default"], messageInbox: inbox,
+    clientFactory: () => client, logger: {},
+    setTimeoutFn: (fn) => { const timer = { fn, unref() {} }; timers.push(timer); return timer; }, clearTimeoutFn: () => {},
+    httpClient: { get: async () => ({ data: { ready: true } }), post: async () => { posts++; } },
+    mediaStore: { enrich: () => new Promise((resolve) => { release = resolve; }) } });
+  const attempt = timers.shift().fn(); await new Promise((resolve) => setImmediate(resolve));
+  const stopping = runtime.stopInbox(); release({ status: "error", error: "stopped" });
+  await Promise.all([attempt, stopping]);
+  assert.equal(posts, 0); assert.equal(inbox.state.pending.length, 1); assert.equal(timers.length, 0);
 });

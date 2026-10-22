@@ -29,13 +29,7 @@ paired by scanning its QR code in the add-on web UI.
   locations, contacts, polls, reactions, edits, deletions, and quoted replies.
 - **Receive events:** incoming and outgoing messages, delivery and read receipts,
   calls, presence, contact updates, chat archive state, and decoded poll votes.
-- **Recover missed messages:** opt selected accounts into a persistent inbox with
-  [startup recovery and explicit processing acknowledgements](https://moryoav.github.io/ha-addons/examples/reliable-incoming-messages/).
-  Accounts drain independently, and held messages raise a review notification.
-  Resolve held backlogs in bulk and recover failed storage through Home Assistant
-  actions with administrator access. Shared workflows for multiple accounts need
-  parallel mode. Existing held work gets one startup reminder without replaying
-  per-message alert events.
+- **Recover missed messages:** opt selected accounts into a [persistent inbox](https://moryoav.github.io/ha-addons/examples/reliable-incoming-messages/) that replays messages after Home Assistant restarts, without automation changes.
 - **Process incoming attachments:** [download and decrypt media](#decrypted-incoming-media)
   for OCR, transcription, document processing, or AI automations.
 - **Look up recipients:** check phone numbers, fetch saved contacts and profiles,
@@ -412,9 +406,9 @@ The add-on pushes message, receipt, call, contact, and presence events into
 Home Assistant as they arrive. Supervisor discovery provides the local API
 connection, and actions call that API on demand. Status sensors read the app
 and account state every 30 seconds.
-For opt-in inbox accounts, update hints and a ten-second fallback poll deliver
-pending messages after Home Assistant starts. Processing requires explicit
-start and completion acknowledgements.
+For opt-in inbox accounts, the app retries pending messages every ten seconds
+after Home Assistant starts. Existing automations keep using
+`new_whatsapp_message` without changes.
 
 ## Security notes
 

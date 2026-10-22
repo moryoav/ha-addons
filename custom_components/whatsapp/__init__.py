@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import voluptuous as vol
-from homeassistant.components import persistent_notification
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
@@ -14,8 +13,6 @@ from homeassistant.exceptions import (
     ConfigEntryError,
     HomeAssistantError,
     ServiceValidationError,
-    Unauthorized,
-    UnknownUser,
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -67,7 +64,7 @@ from .const import (
 )
 from .coordinator import WhatsappStatusCoordinator
 from .entity import app_device_identifier
-from .inbox import WhatsappInbox
+from .inbox import WhatsAppInboxView
 from .media import WhatsAppMediaView
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
@@ -79,7 +76,6 @@ class WhatsappRuntimeData:
 
     client: WhatsappClient
     coordinator: WhatsappStatusCoordinator | None = None
-    inbox: WhatsappInbox | None = None
 
 
 SEND_MESSAGE_SCHEMA = vol.Schema(
@@ -189,8 +185,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if not await async_setup_component(hass, "http", {}):
         return False
     hass.http.register_view(WhatsAppMediaView(hass))
+    hass.http.register_view(WhatsAppInboxView(hass))
 
     async def async_send_message(call: ServiceCall) -> dict[str, Any] | None:
+        """Send a message and expose its result to event listeners and callers."""
         result = await _async_call_api(
             hass,
             SERVICE_SEND_MESSAGE,
@@ -218,6 +216,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         return None
 
     async def async_check_number(call: ServiceCall) -> dict[str, Any]:
+        """Validate a phone target and check whether it is registered."""
         try:
             jid = normalize_phone_target(call.data[ATTR_TO])
         except ValueError as err:
@@ -234,6 +233,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_get_group_info(call: ServiceCall) -> dict[str, Any]:
+        """Validate a group target and return its current metadata."""
         try:
             jid = normalize_group_target(call.data[ATTR_TO])
         except ValueError as err:
@@ -250,6 +250,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_set_status(call: ServiceCall) -> None:
+        """Set the selected account's WhatsApp profile status."""
         await _async_call_api(
             hass,
             SERVICE_SET_STATUS,
@@ -258,6 +259,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_presence_subscribe(call: ServiceCall) -> None:
+        """Subscribe the selected account to a user's presence updates."""
         await _async_call_api(
             hass,
             SERVICE_PRESENCE_SUBSCRIBE,
@@ -266,6 +268,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_send_presence_update(call: ServiceCall) -> None:
+        """Publish a presence update for the selected account and chat."""
         await _async_call_api(
             hass,
             SERVICE_SEND_PRESENCE_UPDATE,
@@ -274,6 +277,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_send_infinity_presence_update(call: ServiceCall) -> None:
+        """Start repeating the requested presence update through the app."""
         await _async_call_api(
             hass,
             SERVICE_SEND_INFINITY_PRESENCE_UPDATE,
@@ -282,6 +286,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_read_messages(call: ServiceCall) -> None:
+        """Mark the supplied message keys as read through their account."""
         await _async_call_api(
             hass,
             SERVICE_READ_MESSAGES,
@@ -290,6 +295,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_get_profile(call: ServiceCall) -> dict[str, Any]:
+        """Normalize a profile target and return the available profile data."""
         try:
             jid = normalize_profile_target(call.data[ATTR_TO])
         except ValueError as err:
@@ -306,6 +312,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_list_groups(call: ServiceCall) -> dict[str, Any]:
+        """List the groups visible to the explicitly selected account."""
         return await _async_call_api(
             hass,
             SERVICE_LIST_GROUPS,
@@ -323,6 +330,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_reject_call(call: ServiceCall) -> None:
+        """Validate an incoming call reference and reject that call."""
         try:
             validate_call_reference(call.data[ATTR_CALL_ID], call.data[ATTR_FROM])
         except ValueError as err:
@@ -458,116 +466,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         schema=REJECT_CALL_SCHEMA,
     )
 
-    async def inbox_action(call: ServiceCall) -> dict:
-        # The 2024.12 admin-service helper cannot declare response support.
-        # Apply its permission check here so all supported versions return results.
-        if (
-            call.service in {"resolve_inbox_messages", "recover_inbox"}
-            and call.context.user_id
-        ):
-            user = await hass.auth.async_get_user(call.context.user_id)
-            if user is None:
-                raise UnknownUser(context=call.context)
-            if not user.is_admin:
-                raise Unauthorized(context=call.context)
-        runtime = next(
-            (
-                entry.runtime_data
-                for entry in hass.config_entries.async_entries(DOMAIN)
-                if isinstance(getattr(entry, "runtime_data", None), WhatsappRuntimeData)
-            ),
-            None,
-        )
-        worker = runtime.inbox if runtime else None
-        if worker is None:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="inbox_disabled",
-            )
-        operations = {
-            "get_inbox": "poll",
-            "start_inbox_message": "start",
-            "complete_inbox_message": "complete",
-            "resolve_inbox_message": "resolve",
-            "resolve_inbox_messages": "resolve_many",
-            "recover_inbox": "recover",
-        }
-        data = (
-            {"session": worker.session, "inspect": True}
-            if call.service == "get_inbox"
-            else dict(call.data)
-        )
-        if call.service == "resolve_inbox_messages":
-            if not data.get("reason") and not data.get("client_id"):
-                raise ServiceValidationError(
-                    translation_domain=DOMAIN, translation_key="inbox_filter_required"
-                )
-            if "client_id" in data:
-                data["clientId"] = data.pop("client_id")
-            data["session"] = worker.session
-        result = await _async_call_api(
-            hass,
-            call.service,
-            data,
-            lambda client, values: client.async_inbox(operations[call.service], values),
-        )
-        if call.service != "get_inbox":
-            worker.wake()
-        if call.service == "recover_inbox":
-            persistent_notification.async_dismiss(hass, "whatsapp_inbox_storage")
-        return result
-
-    for action in [
-        "get_inbox",
-        "start_inbox_message",
-        "complete_inbox_message",
-        "resolve_inbox_message",
-        "resolve_inbox_messages",
-        "recover_inbox",
-    ]:
-        fields = (
-            {}
-            if action in {"get_inbox", "resolve_inbox_messages", "recover_inbox"}
-            else {vol.Required("inbox"): dict}
-        )
-        if action == "resolve_inbox_message":
-            fields[vol.Required("resolution")] = vol.In(["retry", "discard", "hold"])
-        elif action == "resolve_inbox_messages":
-            fields = {
-                vol.Required("resolution"): vol.In(["retry", "discard"]),
-                vol.Optional("reason"): vol.In(
-                    [
-                        "unclaimed",
-                        "preparation_timeout",
-                        "processing_timeout",
-                        "preparation_interrupted",
-                        "processing_interrupted",
-                        "workflow_failed",
-                        "account_disabled",
-                    ]
-                ),
-                vol.Optional("client_id"): cv.string,
-            }
-        elif action == "recover_inbox":
-            fields = {
-                vol.Optional("mode", default="reload"): vol.In(["reload", "reset"])
-            }
-        hass.services.async_register(
-            DOMAIN,
-            action,
-            inbox_action,
-            schema=vol.Schema(fields),
-            supports_response=SupportsResponse.ONLY
-            if action
-            in {
-                "get_inbox",
-                "start_inbox_message",
-                "resolve_inbox_messages",
-                "recover_inbox",
-            }
-            else SupportsResponse.OPTIONAL,
-        )
-
     return True
 
 
@@ -596,11 +494,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_type=dr.DeviceEntryType.SERVICE,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    if client.capabilities is not None and "message_inbox" in client.capabilities:
-        inbox = WhatsappInbox(hass, client)
-        entry.runtime_data.inbox = inbox
-        entry.async_on_unload(inbox.stop)
-        inbox.start()
     entry.async_on_unload(entry.add_update_listener(_async_update_entry))
     return True
 

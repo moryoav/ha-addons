@@ -1,6 +1,5 @@
 const crypto = require("crypto");
 const express = require("express");
-const { InboxError } = require("./message-inbox");
 const { ContactSnapshotError, validateContactList } = require("./contact-snapshot");
 
 const {
@@ -315,7 +314,6 @@ const asyncRoute = (handler) => (req, res, next) => {
 };
 
 const classifyError = (error) => {
-  if (error instanceof InboxError) return new ApiError(error.status, error.code, error.message);
   if (error instanceof ApiError) return error;
   if (error instanceof RequestValidationError) {
     return new ApiError(400, "invalid_request", error.message);
@@ -366,9 +364,6 @@ const createApiApp = ({
   lookupRateLimit,
   diagnostics,
   additionalCapabilities = [],
-  messageInbox,
-  prepareInbox,
-  renewInboxMedia,
 } = {}) => {
   if (!clients || typeof clients !== "object") {
     throw new TypeError("clients is required");
@@ -408,27 +403,6 @@ const createApiApp = ({
   app.use(createApiAuth(sharedSecret));
   app.use(express.json({ limit: "1mb", strict: true }));
   app.use(express.urlencoded({ extended: false, limit: "1mb" }));
-
-  if (messageInbox) {
-    for (const operation of ["open", "poll", "start", "complete", "resolve", "resolve_many", "recover"]) {
-      app.post(`/inbox/${operation}`, asyncRoute(async (req, res) => {
-        const body = requirePlainObject(req.body);
-        let result;
-        if (operation === "open") result = await messageInbox.open(body.session);
-        else if (operation === "poll") {
-          prepareInbox?.();
-          result = await messageInbox.poll(body.session, renewInboxMedia,
-            (clientId) => clients[clientId]?.status?.connected === true, body.inspect !== true);
-        }
-        else if (operation === "start") result = await messageInbox.begin(body.inbox);
-        else if (operation === "complete") result = await messageInbox.complete(body.inbox);
-        else if (operation === "resolve_many") result = await messageInbox.resolveMany(body);
-        else if (operation === "recover") result = await messageInbox.recover(body.mode);
-        else result = await messageInbox.resolve(body.inbox, body.resolution);
-        res.json(result);
-      }));
-    }
-  }
 
   // Expose only the configured account IDs and their local connection states.
   // Pairing codes, account identities, and message data remain in the web UI.

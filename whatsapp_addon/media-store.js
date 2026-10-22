@@ -75,7 +75,7 @@ const describeMedia = (content) => {
     typeof content.mimetype === "string"
       ? content.mimetype.split(";")[0].trim().toLowerCase()
       : "";
-  const mimeType = mime.length <= 255 && /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mime)
+  const mimeType = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mime)
     ? mime
     : "application/octet-stream";
   return {
@@ -118,7 +118,6 @@ class MediaStore {
     cleanupIntervalMs = 300000,
     now = Date.now,
     logger = console,
-    isPinned = () => false,
   } = {}) {
     Object.assign(this, {
       root: path.resolve(root),
@@ -133,7 +132,6 @@ class MediaStore {
       cleanupIntervalMs,
       now,
       logger,
-      isPinned,
     });
     this.usedBytes = 0;
     this.reservedBytes = 0;
@@ -171,8 +169,6 @@ class MediaStore {
       await fs.promises.mkdir(this.root, { recursive: true });
       if ((await fs.promises.lstat(this.root)).isSymbolicLink())
         throw new Error();
-      this.entries.clear();
-      this.usedBytes = 0;
       for (const item of await fs.promises.readdir(this.root, {
         withFileTypes: true,
       })) {
@@ -186,21 +182,29 @@ class MediaStore {
         }
         if (!UUID.test(item.name)) continue;
         try {
-          const { metadata, stat } = await this.readMetadata(item.name);
+          const directory = path.join(this.root, item.name);
+          const metadata = JSON.parse(
+            await fs.promises.readFile(
+              path.join(directory, "metadata.json"),
+              "utf8",
+            ),
+          );
+          if (
+            !Number.isFinite(Date.parse(metadata.expires_at)) ||
+            !/^file\.[a-z0-9]+$/.test(metadata.filename)
+          )
+            throw new Error();
+          const stat = await fs.promises.lstat(
+            path.join(directory, metadata.filename),
+          );
+          if (!stat.isFile() || stat.isSymbolicLink()) throw new Error();
           this.entries.set(item.name, {
             size: stat.size,
             expires: Date.parse(metadata.expires_at),
           });
           this.usedBytes += stat.size;
         } catch {
-          if (this.isPinned(item.name)) {
-            // Preserve the folder and reserve its quota without disabling other
-            // accounts. A later renewal can recover a transient read failure.
-            const size = await this.directorySize(item.name);
-            this.entries.set(item.name, { size, expires: Infinity, invalid: true });
-            this.usedBytes += size;
-            this.logger.warn?.("A pending WhatsApp attachment could not be read; the folder is preserved for recovery.");
-          } else await this.removeDirectory(item.name);
+          await this.removeDirectory(item.name);
         }
       }
       this.available = true;
@@ -211,55 +215,6 @@ class MediaStore {
         "WhatsApp media storage is unavailable. Check the shared /media mount and free space.",
       );
     }
-  }
-
-  async directorySize(id) {
-    try {
-      let size = 0;
-      for (const item of await fs.promises.readdir(path.join(this.root, id))) {
-        const stat = await fs.promises.lstat(path.join(this.root, id, item));
-        if (stat.isFile() && !stat.isSymbolicLink()) size += stat.size;
-      }
-      return size;
-    } catch { return this.maxFileBytes; }
-  }
-
-  async readMetadata(id) {
-    const directory = path.join(this.root, id);
-    const folder = await fs.promises.lstat(directory);
-    const metadataFile = path.join(directory, "metadata.json");
-    if (!folder.isDirectory() || folder.isSymbolicLink()) throw new MediaError("invalid_metadata");
-    const info = await fs.promises.lstat(metadataFile);
-    if (!info.isFile() || info.isSymbolicLink() || info.size > 65536) throw new MediaError("invalid_metadata");
-    const metadata = JSON.parse(await fs.promises.readFile(metadataFile, "utf8"));
-    if (!metadata || typeof metadata.filename !== "string" || !/^file\.[a-z0-9]+$/.test(metadata.filename) ||
-        typeof metadata.expires_at !== "string" || !Number.isFinite(Date.parse(metadata.expires_at))) {
-      throw new MediaError("invalid_metadata");
-    }
-    const stat = await fs.promises.lstat(path.join(directory, metadata.filename));
-    if (!stat.isFile() || stat.isSymbolicLink() || metadata.size !== stat.size) throw new MediaError("invalid_metadata");
-    return { metadata, stat };
-  }
-
-  async syncDirectory(directory) {
-    if (process.platform === "win32") return;
-    let handle;
-    try {
-      handle = await fs.promises.open(directory, "r");
-      await handle.sync();
-    } catch (error) {
-      if (!["EINVAL", "ENOTSUP", "EOPNOTSUPP"].includes(error.code)) throw error;
-      if (!this.unsupportedDirectorySync) {
-        this.unsupportedDirectorySync = true;
-        this.logger.warn?.("The WhatsApp media mount does not support directory sync; file data is synced, but crash recovery also depends on the mount.");
-      }
-    } finally { await handle?.close(); }
-  }
-
-  async writeMetadata(file, metadata) {
-    const handle = await fs.promises.open(file, "wx", 0o600);
-    try { await handle.writeFile(JSON.stringify(metadata)); await handle.sync(); }
-    finally { await handle.close(); }
   }
 
   async removeDirectory(name) {
@@ -278,7 +233,7 @@ class MediaStore {
 
   async prune() {
     for (const [id, entry] of this.entries) {
-      if (this.isPinned(id) || (!entry.invalid && entry.expires > this.now())) continue;
+      if (entry.expires > this.now()) continue;
       await this.removeDirectory(id);
       this.entries.delete(id);
       this.usedBytes -= entry.size;
@@ -293,38 +248,6 @@ class MediaStore {
         await this.scan();
       } else {
         await this.prune();
-      }
-    });
-  }
-
-  /** Renew only an existing generated attachment while its inbox entry is pending. */
-  renew(media) {
-    return this.exclusive(async () => {
-      if (typeof media?.id !== "string" || !UUID.test(media.id) || !this.isPinned(media.id)) {
-        return { status: "error", error: "inbox_media_missing" };
-      }
-      const metadataPath = path.join(this.root, media.id, "metadata.json");
-      const temporary = metadataPath + `.pending-${crypto.randomUUID()}`;
-      try {
-        const { metadata, stat } = await this.readMetadata(media.id);
-        let entry = this.entries.get(media.id);
-        if (!entry || entry.invalid) {
-          this.usedBytes += stat.size - (entry?.size || 0);
-          entry = { size: stat.size, expires: Date.parse(metadata.expires_at) };
-          this.entries.set(media.id, entry);
-        }
-        if (entry.expires > this.now() + this.retentionMs / 2) return { ...media, expires_at: new Date(entry.expires).toISOString() };
-        metadata.expires_at = new Date(this.now() + this.retentionMs).toISOString();
-        await this.writeMetadata(temporary, metadata);
-        await fs.promises.rename(temporary, metadataPath);
-        await this.syncDirectory(path.dirname(metadataPath));
-        entry.expires = Date.parse(metadata.expires_at);
-        return { ...media, expires_at: metadata.expires_at };
-      } catch (error) {
-        const missing = ["ENOENT", "ENOTDIR", "invalid_metadata"].includes(error.code) || error instanceof SyntaxError;
-        return { ...media, status: "error", error: missing ? "inbox_media_missing" : "inbox_media_unavailable" };
-      } finally {
-        await fs.promises.unlink(temporary).catch(() => {});
       }
     });
   }
@@ -450,8 +373,6 @@ class MediaStore {
         }),
         { signal },
       );
-      const mediaFile = await fs.promises.open(path.join(partial, details.filename), "r+");
-      try { await mediaFile.sync(); } finally { await mediaFile.close(); }
       if (!crypto.timingSafeEqual(hash, hasher.digest()))
         throw new MediaError("checksum_mismatch");
       signal.throwIfAborted();
@@ -460,8 +381,11 @@ class MediaStore {
         size,
         expires_at: new Date(this.now() + this.retentionMs).toISOString(),
       };
-      await this.writeMetadata(path.join(partial, "metadata.json"), metadata);
-      await this.syncDirectory(partial);
+      await fs.promises.writeFile(
+        path.join(partial, "metadata.json"),
+        JSON.stringify(metadata),
+        { flag: "wx" },
+      );
       await this.exclusive(async () => {
         signal.throwIfAborted();
         await fs.promises.rename(partial, destination);
@@ -471,12 +395,6 @@ class MediaStore {
           expires: Date.parse(metadata.expires_at),
         });
         this.usedBytes += size;
-        // Rename already published a verified file. Keep quota accounting and
-        // return that file rather than downloading another copy on an fsync error.
-        try { await this.syncDirectory(this.root); }
-        catch {
-          this.logger.warn?.("A WhatsApp attachment was published, but the media directory could not be synced; crash recovery depends on the mount.");
-        }
       });
       return {
         status: "ready",

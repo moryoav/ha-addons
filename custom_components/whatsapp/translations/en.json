@@ -157,78 +157,9 @@
       "name": "Hang up a voice call",
       "description": "End the active voice call without disconnecting WhatsApp messaging.",
       "fields": {}
-    },
-    "get_inbox": {
-      "name": "Get message inbox",
-      "description": "Inspect the next eligible message, queue counts and held messages needing review."
-    },
-    "start_inbox_message": {
-      "name": "Start inbox message",
-      "description": "Atomically claims a pending message. Continue the automation only when the response has started=true. Requires response_variable.",
-      "fields": {
-        "inbox": {
-          "name": "Inbox reference",
-          "description": "The complete inbox object from the incoming event or Get message inbox response."
-        }
-      }
-    },
-    "complete_inbox_message": {
-      "name": "Complete inbox message",
-      "description": "Acknowledges a started message after processing and its reply finish. Releases the next pending message.",
-      "fields": {
-        "inbox": {
-          "name": "Inbox reference",
-          "description": "The complete inbox object from the incoming event or Get message inbox response."
-        }
-      }
-    },
-    "resolve_inbox_message": {
-      "name": "Resolve inbox message",
-      "description": "Retry or discard a pending or held message after inspection, or hold a started message for review after a workflow failure.",
-      "fields": {
-        "inbox": {
-          "name": "Inbox reference",
-          "description": "The complete inbox object from the incoming event or Get message inbox response."
-        },
-        "resolution": {
-          "name": "Resolution",
-          "description": "Retry after checking whether actions already ran; discard skips the message; hold retains a started message for review and does not cancel running actions."
-        }
-      }
-    },
-    "resolve_inbox_messages": {
-      "name": "Resolve held inbox messages",
-      "description": "Retry or discard matching held messages in one operation. User calls require an administrator. Choose an account, a reason, or both. Active processing and ordinary pending messages are excluded. Check whether actions already ran before retrying.",
-      "fields": {
-        "resolution": {
-          "name": "Resolution",
-          "description": "Retry matching held messages with new receipts, or discard them and release their media."
-        },
-        "reason": {
-          "name": "Hold reason",
-          "description": "Only resolve held messages with this reason. Required unless an account ID is supplied."
-        },
-        "client_id": {
-          "name": "Account ID",
-          "description": "Only resolve held messages for this account. Disabled accounts can be discarded but cannot be retried."
-        }
-      }
-    },
-    "recover_inbox": {
-      "name": "Recover message inbox",
-      "description": "Reload failed inbox storage. User calls require an administrator. Reset archives unreadable state and starts a fresh inbox; archived messages will not be processed automatically. Healthy inboxes are left running.",
-      "fields": {
-        "mode": {
-          "name": "Recovery mode",
-          "description": "Reload retries loading the existing state. Reset also archives invalid state if it cannot be loaded. Check automation traces and create an app backup before resetting."
-        }
-      }
     }
   },
   "exceptions": {
-    "inbox_disabled": {
-      "message": "Enable inbox_clients in the WhatsApp app and reload the integration first."
-    },
     "addon_too_old": {
       "message": "The installed WhatsApp app does not support this action. Update the app and try again."
     },
@@ -279,9 +210,6 @@
     },
     "invalid_voice_target": {
       "message": "Enter a WhatsApp phone number, phone JID, or LID for a direct audio call."
-    },
-    "inbox_filter_required": {
-      "message": "Choose an account ID, a hold reason, or both before resolving held inbox messages."
     }
   },
   "entity": {

@@ -37,8 +37,6 @@ One coordinator refreshes all devices every 30 seconds. It reads the local
 health probe and the account status API. These requests
 read the app's existing state and make no extra WhatsApp network requests.
 Message, receipt, call, and presence events continue to arrive through push.
-Opt-in inbox accounts use update hints and a ten-second fallback poll to recover
-pending messages. This does not change the status sensor interval.
 
 App connection describes the local app, so it can stay connected while one or
 all WhatsApp accounts are disconnected. It does not confirm message delivery.

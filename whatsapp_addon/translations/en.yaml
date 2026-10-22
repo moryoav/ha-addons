@@ -12,13 +12,8 @@ configuration:
   inbox_clients:
     name: Persistent inbox accounts
     description: Account IDs whose incoming messages should wait for Home Assistant
-      processing acknowledgements. Leave empty for legacy delivery. Update the
-      integration and add Start inbox message and Complete inbox message to your
-      automation before enabling an account. Held or interrupted messages stay
-      stored for review while later messages continue. Use parallel mode for shared
-      workflows across accounts. Home Assistant actions can resolve held backlogs
-      in bulk or recover failed private storage. Disabled accounts retain recovery
-      access to existing work.
+      when it is unavailable. Update the integration first. Existing automations
+      keep using new_whatsapp_message without changes. Leave empty for live delivery.
   download_media:
     name: Download media
     description: Save incoming photos, videos, voice messages, and documents for use

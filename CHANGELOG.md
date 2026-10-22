@@ -6,36 +6,10 @@ All notable changes to this repository are documented here.
 
 ### Persistent incoming message inbox
 
-- Added an opt-in inbox for selected accounts that persists incoming messages before
-  delivery and resumes pending work after Home Assistant or the app restarts.
-- Added startup recovery with a fresh claim window per HA session, atomic start
-  and completion acknowledgements, and explicit
-  retry or discard for interrupted commands. Kept legacy delivery unchanged for
-  accounts outside `inbox_clients`.
-- Preserved original sender metadata and message IDs, retained pending attachments,
-  and bounded private storage with completed payload cleanup and duplicate receipts.
-- Added Home Assistant inbox actions and an automation migration example. Update
-  both components and add the start/completion gates before enabling an account.
-- Isolated delivery and media preparation by account, bounded unclaimed
-  redelivery, and retained stalled work for explicit review with notifications.
-- Added live fallback and visible errors when inbox admission or storage fails;
-  preserved unreadable state while keeping the rest of the app available.
-- Retried temporary media failures, isolated damaged attachments, synced media
-  metadata, and avoided inbox snapshot work on unchanged polls.
-- Preserved ready backlogs across reconnects, resumed normal unfinished downloads
-  after app restarts, and isolated uncertain admissions for explicit review.
-- Rotated delivery offers across accounts so an unclaimed message does not delay
-  other eligible accounts until its watchdog expires.
-- Added filtered bulk recovery for held backlogs and Home Assistant actions to
-  reload private storage or archive an invalid snapshot without restarting.
-- Kept disabled-account work visible for discard, limited recovery media pins to
-  identifiable attachments, and retained quota accounting after media publication.
-- Documented parallel workflows across accounts and verified the published example
-  with simultaneous messages from two accounts.
-- Restricted bulk resolution and storage recovery to administrators for user calls.
-  Preserved unattended automation access and normal single-message workflows.
-- Returned a normal declined claim for superseded receipts and summarized existing
-  held work at startup without replaying per-message alert events.
+- Added an opt-in app inbox that retries incoming messages after Home Assistant
+  restarts, using the existing `new_whatsapp_message` event without automation changes.
+- Preserved sender and message metadata, paced replay, and stored pending messages
+  privately across app restarts. Delivery waits until the integration is ready.
 
 ## 3.0.0
 

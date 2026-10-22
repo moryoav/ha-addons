@@ -36,38 +36,6 @@ per-client rate limit.
 accepted the send operation. It does not guarantee delivery, receipt, or that
 the recipient read the message.
 
-## Message inbox
-
-Enable selected `inbox_clients` in the app only after updating the integration
-and adding the start and completion gates to the processing automation.
-
-- `whatsapp.get_inbox`: inspect the next eligible message, queue counts and held
-  items in `attention`; requires `response_variable`.
-- `whatsapp.start_inbox_message`: submit the event's complete `inbox` object;
-  requires `response_variable`. Continue only if `started` is true. A superseded
-  receipt returns `started: false`; it cannot start work or complete a newer offer.
-- `whatsapp.complete_inbox_message`: submit the same `inbox` object after the
-  workflow and reply finish. Optional response: `status: completed`.
-- `whatsapp.resolve_inbox_message`: submit a current `inbox` reference with
-  `resolution: retry` or `resolution: discard` after inspecting the action.
-  Pending and unprepared messages can also be resolved. A failing workflow can
-  use `resolution: hold` to retain a started message for immediate review.
-- `whatsapp.resolve_inbox_messages`: atomically retry or discard held messages
-  filtered by `reason`, `client_id`, or both. Requires `response_variable` and at
-  least one filter. Returns `status`, `resolution`, and the number `resolved`.
-  Leaves active processing and ordinary pending messages alone. Disabled-account
-  work is visible as `account_disabled` and can be discarded.
-  User calls require an administrator; unattended automations can still run it.
-- `whatsapp.recover_inbox`: reload failed private storage with `mode: reload`
-  (the default). Use `mode: reset` only to archive a proven invalid snapshot and
-  start a fresh inbox. Archived work is preserved but not replayed. Requires
-  `response_variable`; returns `status: ready`, enabled `clients`, and an
-  optional archive basename. Healthy storage is left running.
-  User calls require an administrator; unattended automations can still run it.
-
-See [Recover incoming messages](../examples/reliable-incoming-messages.md) for
-the migration example, restart behavior, storage limits, and media retention.
-
 ## Examples
 
 - [Messages and media](../examples/messages.md)

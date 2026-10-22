@@ -1,7 +1,5 @@
 const crypto = require("crypto");
 const fs = require("fs");
-const path = require("node:path");
-const { CAPABILITY: INBOX_CAPABILITY, MessageInbox } = require("./message-inbox");
 
 const axios = require("axios");
 const qrimage = require("qr-image");
@@ -22,6 +20,7 @@ const {
 const { createWebUiApp, INGRESS_PORT } = require("./webui");
 const { WhatsappClient } = require("./whatsapp");
 const { MediaStore, parseMediaOptions } = require("./media-store");
+const { MessageInbox } = require("./message-inbox");
 const {
   DEFAULT_RECOVERY_PATH,
   RECOVERY_REASON,
@@ -144,6 +143,7 @@ const normalizeLogLevel = (value) => {
 //   return value;
 // };
 
+/** Validate configured accounts, media options and optional persistent delivery. */
 const parseOptions = (content) => {
   let options;
   try {
@@ -319,6 +319,7 @@ const createAddonRuntime = ({
   diagnostics,
   mediaStore,
   messageInbox,
+  inboxClients = [],
   initialRecoveryRecord,
   recoveryPath = DEFAULT_RECOVERY_PATH,
   persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
@@ -537,7 +538,7 @@ const createAddonRuntime = ({
 
   const deliverMessage = (message, clientId, eventType) => postSupervisor(
       `/core/api/events/${eventType}`,
-      { ...message, clientId },
+      { clientId, ...message },
       "message event delivery"
     ).then((delivered) => {
       diagnostics?.recordMessageDelivered?.(delivered);
@@ -552,112 +553,74 @@ const createAddonRuntime = ({
       });
     });
 
-  const inboxTasks = new Map();
-  const preparingClients = new Set();
-  let preparationCursor = 0;
-  const incomingTasks = new Set();
-  const inboxFailures = new Map();
-  let inboxStopping = false;
-  let preparationRetryTimer;
-  const reportInboxFailure = async (clientId, code) => {
-    const key = `${clientId}:${code}`;
-    if (!inboxFailures.has(key) || Date.now() - inboxFailures.get(key) >= 60000) {
-      inboxFailures.set(key, Date.now());
-      logger.error?.("WhatsApp inbox admission failed; using live delivery without restart recovery.", { error: code });
-      await postSupervisor("/core/api/events/whatsapp_inbox_error", { clientId, error: code }, "inbox error delivery");
-      await postSupervisor("/core/api/services/persistent_notification/create", {
-        title: "WhatsApp message inbox needs attention",
-        message: `Inbox storage could not accept a message (${code}). Live delivery is being attempted without restart recovery. Check the app logs, storage and inbox capacity.`,
-        notification_id: "whatsapp_inbox_storage",
-      }, "inbox error notification");
+  const onMsg = (message, clientId, eventType) => {
+    if (messageInbox && inboxClients.includes(clientId) && eventType === "new_whatsapp_message") {
+      const task = Promise.resolve().then(() => messageInbox.enqueue(clientId, message)).catch(() => {
+        logger.error?.("WhatsApp inbox could not accept a message. Check storage and restart the app. Attempting live delivery.");
+        return deliverLive(message, clientId, eventType);
+      });
+      inboxWrites.add(task);
+      void task.then(() => inboxWrites.delete(task), () => inboxWrites.delete(task));
+      return;
+    }
+    void deliverLive(message, clientId, eventType);
+  };
+
+  /** Preserve the existing event path for accounts outside the persistent inbox. */
+  const deliverLive = async (message, clientId, eventType) => {
+    if (!mediaStore || eventType !== "new_whatsapp_message") {
+      return deliverMessage(message, clientId, eventType);
+    }
+    return mediaStore.enrich(message, clients[clientId]).then((media) => {
+      if (media?.status === "error") {
+        logger.warn?.("WhatsApp incoming media could not be saved.", {
+          error: media.error,
+          clientRef: logRef(clientId),
+        });
+      }
+      return deliverMessage(media ? { ...message, media } : message, clientId, eventType);
+    });
+  };
+
+  const inboxWrites = new Set();
+  let inboxStopped = false;
+  let inboxTimer;
+  let inboxDelivery;
+  /** Send one queued event per tick; retain it across HTTP failures and restarts. */
+  const deliverInbox = async () => {
+    const entry = messageInbox.peek((id) => inboxClients.includes(id) && clients[id]?.status?.connected);
+    if (!entry) return;
+    try {
+      const ready = await httpClient.get("http://supervisor/core/api/whatsapp/inbox", {
+        headers: supervisorHeaders, timeout: 10000,
+      });
+      if (ready.data?.ready !== true || inboxStopped) return;
+      const media = await mediaStore?.enrich(entry.payload, clients[entry.clientId]);
+      if (inboxStopped || media?.error === "stopped") return;
+      const result = await requestSupervisor("/core/api/whatsapp/inbox", {
+        id: entry.id, message: { ...entry.payload, ...(media ? { media } : {}), clientId: entry.clientId },
+      }, 10000);
+      diagnostics?.recordMessageDelivered?.(result.delivered);
+      if (result.delivered) await messageInbox.delivered(entry.id);
+    } catch {
+      if (messageInbox.failed) logger.error?.("WhatsApp inbox delivery paused after a storage error. Check storage and restart the app.");
     }
   };
-  const prepareInbox = (entry) => {
-    if (inboxStopping || inboxTasks.size >= 2 || inboxTasks.has(entry.id) || preparingClients.has(entry.clientId)) return;
-    const client = clients[entry.clientId];
-    if (!client?.status?.connected) return;
-    preparingClients.add(entry.clientId);
-    let prepared = false;
-    let settled = false;
-    const task = (async () => {
-      let media;
-      try { media = await mediaStore?.enrich(entry.payload, client); }
-      catch { media = { status: "error", error: "download_failed" }; }
-      if (media?.error === "stopped") return;
-      if (media?.status === "error" && !client.status?.connected) return;
-      prepared = await messageInbox.ready(entry.id, media);
-      settled = true;
-      if (prepared) await postSupervisor("/core/api/events/whatsapp_inbox_updated", {}, "inbox update delivery");
-    })().catch(() => {
-      logger.error?.("WhatsApp inbox preparation failed. Check app storage; the pending message is retained.");
-    }).finally(() => {
-      inboxTasks.delete(entry.id);
-      preparingClients.delete(entry.clientId);
-      if (!inboxStopping && (settled || !client.status?.connected)) {
-        preparePendingInbox();
+  /** Schedule another attempt after the previous request and its write settle. */
+  const tickInbox = () => {
+    if (inboxStopped) return;
+    inboxDelivery = deliverInbox().finally(() => {
+      if (!inboxStopped) {
+        inboxTimer = setTimeoutFn(tickInbox, 10000);
+        inboxTimer.unref?.();
       }
     });
-    inboxTasks.set(entry.id, task);
-    return task;
+    return inboxDelivery;
   };
-  const schedulePreparationRetry = () => {
-    if (preparationRetryTimer !== undefined) clearTimeoutFn(preparationRetryTimer);
-    preparationRetryTimer = undefined;
-    if (inboxStopping || inboxTasks.size >= 2) return;
-    const delay = messageInbox?.nextPreparationDelay?.((id) =>
-      clients[id]?.status?.connected === true && !preparingClients.has(id));
-    if (delay == null) return;
-    preparationRetryTimer = setTimeoutFn(() => {
-      preparationRetryTimer = undefined;
-      preparePendingInbox();
-    }, Math.min(30000, Math.max(1, delay)));
-    preparationRetryTimer.unref?.();
-  };
-  const preparePendingInbox = () => {
-    if (inboxStopping) return;
-    const start = preparationCursor;
-    for (let offset = 0; offset < validatedClientIds.length && inboxTasks.size < 2; offset++) {
-      const index = (start + offset) % validatedClientIds.length;
-      const clientId = validatedClientIds[index];
-      if (preparingClients.has(clientId) || !clients[clientId]?.status?.connected) continue;
-      const entry = messageInbox?.unready(clientId, 1)[0];
-      if (entry) { void prepareInbox(entry); preparationCursor = (index + 1) % validatedClientIds.length; }
-    }
-    schedulePreparationRetry();
-  };
-  const deliverLive = async (message, clientId, eventType) => {
-    let media;
-    if (mediaStore && eventType === "new_whatsapp_message") {
-      try { media = await mediaStore.enrich(message, clients[clientId]); }
-      catch { media = { status: "error", error: "download_failed" }; }
-      if (media?.status === "error") logger.warn?.("WhatsApp incoming media could not be saved.", {
-        error: media.error, clientRef: logRef(clientId),
-      });
-    }
-    return deliverMessage(media ? { ...message, media } : message, clientId, eventType);
-  };
-  const onMsg = (message, clientId, eventType) => {
-    let task;
-    if (eventType === "new_whatsapp_message" && messageInbox?.enabled(clientId)) {
-      task = messageInbox.enqueue(clientId, message).then((id) => {
-        if (id) preparePendingInbox(clientId);
-      }).catch(async (error) => {
-        const code = ["inbox_full", "inbox_message_too_large", "invalid_inbox_message"].includes(error?.code)
-          ? error.code : "inbox_storage_unavailable";
-        const fallback = { ...message, inbox_error: code };
-        delete fallback.inbox;
-        await Promise.all([deliverLive(fallback, clientId, eventType), reportInboxFailure(clientId, code)]);
-      });
-    } else {
-      task = deliverLive(message, clientId, eventType);
-    }
-    incomingTasks.add(task);
-    void task.catch(() => {
-      logger.error?.("WhatsApp live message delivery failed. Check the Home Assistant connection.");
-    }).finally(() => {
-      incomingTasks.delete(task);
-    });
-  };
+  if (messageInbox) {
+    inboxTimer = setTimeoutFn(tickInbox, 0);
+    inboxTimer.unref?.();
+  }
 
   const onMsgUpsert = (upsert, clientId) => {
     diagnostics?.recordMessageBatch?.(upsert.count);
@@ -1042,7 +1005,7 @@ const createAddonRuntime = ({
       });
     });
     client.on("qr", (qr) => onQr(qr, clientId));
-    client.on("ready", () => { onReady(clientId); preparePendingInbox(clientId); });
+    client.on("ready", () => onReady(clientId));
     client.on("disconnected", (statusCode) =>
       onDisconnected(statusCode, clientId)
     );
@@ -1392,18 +1355,17 @@ const createAddonRuntime = ({
     retryRecovery,
     runId,
     stopCallDelivery,
-    preparePendingInbox,
+    /** Stop retries and flush messages received before the clients disconnect. */
     async stopInbox() {
-      inboxStopping = true;
-      if (preparationRetryTimer !== undefined) clearTimeoutFn(preparationRetryTimer);
-      preparationRetryTimer = undefined;
-      await Promise.allSettled([...incomingTasks]);
-      await Promise.allSettled([...inboxTasks.values()]);
+      inboxStopped = true;
+      if (inboxTimer !== undefined) clearTimeoutFn(inboxTimer);
+      await Promise.allSettled([...inboxWrites, inboxDelivery]);
       await messageInbox?.close();
     },
   };
 };
 
+/** Load private app state, start the bridge, and flush pending work on shutdown. */
 const startAddon = async ({
   optionsPath = OPTIONS_PATH,
   dataRoot = DATA_ROOT,
@@ -1504,25 +1466,13 @@ const startAddon = async ({
   };
   libsignalFilter?.setDecryptStormHandler?.(handleDecryptStorm);
   try {
-    const inboxDirectory = path.join(dataRoot, "inbox");
-    let retainedInbox = false;
-    if (!options.inboxClients?.length && typeof fsPromises.lstat === "function") {
-      try { await fsPromises.lstat(inboxDirectory); retainedInbox = true; }
-      catch (error) { retainedInbox = error.code !== "ENOENT"; }
-    }
-    if (options.inboxClients?.length || retainedInbox) {
-      messageInbox = messageInboxFactory({ directory: inboxDirectory,
-        clientIds: options.inboxClients || [], fsPromises, logger });
-      try {
-        await messageInbox.start();
-      } catch {
-        messageInbox.markUnavailable();
-        logger.error?.("WhatsApp inbox storage could not be loaded. The original files are preserved; use Recover message inbox in Home Assistant. Inbox accounts use live delivery until recovery succeeds.");
-      }
+    if (options.inboxClients?.length) {
+      messageInbox = messageInboxFactory({ directory: `${dataRoot}/inbox`, fsPromises });
+      try { await messageInbox.start(); }
+      catch { logger.error?.("WhatsApp inbox storage is unavailable. Existing files are preserved; using live delivery until storage is fixed and the app restarts."); }
     }
     if (options.mediaOptions) {
-      mediaStore = mediaStoreFactory({ ...options.mediaOptions, logger,
-        isPinned: (id) => messageInbox?.isMediaPinned(id) || false });
+      mediaStore = mediaStoreFactory({ ...options.mediaOptions, logger });
       await mediaStore.start();
     }
     runtime = createAddonRuntime({
@@ -1539,6 +1489,7 @@ const startAddon = async ({
       diagnostics,
       mediaStore,
       messageInbox,
+      inboxClients: options.inboxClients,
       initialRecoveryRecord,
       recoveryPath,
       persistRecoveryRecordSyncFn,
@@ -1558,10 +1509,7 @@ const startAddon = async ({
       logger,
       sharedSecret: apiToken,
       diagnostics,
-      messageInbox,
-      prepareInbox: runtime.preparePendingInbox,
-      renewInboxMedia: (media) => mediaStore ? mediaStore.renew(media) : { ...media, status: "error", error: "inbox_media_missing" },
-      additionalCapabilities: [...additionalCapabilities, ...(messageInbox ? [INBOX_CAPABILITY] : [])],
+      additionalCapabilities,
     });
     webUiApp = createWebUiApp({
       clients: runtime.clients,
@@ -1616,11 +1564,11 @@ const startAddon = async ({
         ),
         callDeliveryTask,
       ]);
+      await runtime.stopInbox();
       await Promise.all([
         closeServerFn(apiServer),
         closeServerFn(webUiServer),
       ]);
-      await runtime.stopInbox();
       await diagnostics.stop?.();
       libsignalFilter?.setDecryptStormHandler?.();
       logger.info?.("WhatsApp add-on runtime stopped.", { runId: safeRunId });
