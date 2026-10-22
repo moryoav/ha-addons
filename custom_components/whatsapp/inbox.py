@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.http.decorators import require_admin
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import CoreState, HomeAssistant
 
@@ -23,6 +24,7 @@ class WhatsAppInboxView(HomeAssistantView):
         self.hass = hass
         self._delivered: OrderedDict[str, None] = OrderedDict()
 
+    @require_admin
     async def get(self, request: web.Request) -> web.Response:
         """Let the app wait before downloading media while HA is unavailable."""
         if self.hass.state is not CoreState.running or not any(
@@ -32,6 +34,7 @@ class WhatsAppInboxView(HomeAssistantView):
             raise web.HTTPServiceUnavailable
         return self.json({"ready": True})
 
+    @require_admin
     async def post(self, request: web.Request) -> web.Response:
         """Fire one ordinary message event and return its transport receipt."""
         try:

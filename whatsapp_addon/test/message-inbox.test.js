@@ -23,6 +23,17 @@ async function fixture(t, options = {}) {
   return { inbox, create, directory };
 }
 
+/** Model cancellable timers without waiting for the ten-second network backoff. */
+function fakeTimers() {
+  const timers = [];
+  return { timers,
+    /** Schedule one callback until the test advances it. */
+    setTimeoutFn(fn, delay) { const timer = { fn, delay, unref() {} }; timers.push(timer); return timer; },
+    /** Remove a callback exactly as the runtime's clearTimeout would. */
+    clearTimeoutFn(timer) { const index = timers.indexOf(timer); if (index >= 0) timers.splice(index, 1); },
+  };
+}
+
 test("pending messages survive app restarts in order, preserving sender and group metadata", async (t) => {
   const { inbox, create } = await fixture(t);
   const original = { ...message(), key: { ...message().key, remoteJid: "12025550123-1@g.us", participant: "999999999999999@lid" } };
@@ -80,18 +91,68 @@ test("existing duplicate rules preserve changed payloads and ignore routing and 
   assert.equal(inbox.state.pending.length, 3);
 });
 
-test("unreadable or invalid snapshots are preserved, and oversize state is refused before reading", async (t) => {
+test("invalid snapshots are archived privately and recovery resumes automatically", async (t) => {
   const { inbox, create } = await fixture(t);
   for (const raw of ['{"version":', '{"version":1,"pending":[null],"delivered":[]}', '{"version":2,"pending":[],"delivered":[]}']) {
     await fs.writeFile(inbox.file, raw);
     const broken = create();
-    await assert.rejects(broken.start(), /original files are preserved/);
-    assert.equal(broken.failed, true);
-    assert.equal(await fs.readFile(inbox.file, "utf8"), raw);
+    await broken.start();
+    assert.equal(broken.failed, false);
+    assert.equal(broken.state.pending.length, 0);
+    const archives = (await fs.readdir(inbox.directory)).filter((name) => name.startsWith("messages.invalid-"));
+    assert.ok((await Promise.all(archives.map((name) => fs.readFile(path.join(inbox.directory, name), "utf8")))).includes(raw));
   }
   const limited = new MessageInbox({ directory: inbox.directory, maxBytes: 2,
     fsPromises: { ...fs, readFile: async () => { assert.fail("Oversized state must not be read"); } } });
   await assert.rejects(limited.start());
+});
+
+test("corrupt rows are archived without dropping valid messages or changing stored receipt IDs", async (t) => {
+  const { inbox, create, directory } = await fixture(t);
+  await inbox.enqueue("default", message()); await inbox.enqueue("default", message("second"));
+  const saved = JSON.parse(await fs.readFile(inbox.file, "utf8"));
+  saved.pending[0].id = "f".repeat(64); // A prior release can have used a different hash.
+  saved.pending.splice(1, 0, null); saved.delivered.push({ id: "bad", at: 1 });
+  const raw = JSON.stringify(saved); await fs.writeFile(inbox.file, raw);
+  const restored = await create().start();
+  assert.deepEqual(restored.state.pending.map((entry) => entry.payload.key.id), ["fictional-id", "second"]);
+  assert.equal(restored.state.pending[0].id, "f".repeat(64));
+  const archive = (await fs.readdir(directory)).find((name) => name.startsWith("messages.invalid-"));
+  assert.equal(await fs.readFile(path.join(directory, archive), "utf8"), raw);
+  assert.equal((await create().start()).state.pending.length, 2);
+});
+
+test("read or archive failures never replace the original snapshot, and retry needs no restart", async (t) => {
+  const { inbox, create, directory } = await fixture(t); await inbox.enqueue("default", message());
+  const original = await fs.readFile(inbox.file, "utf8"); const broken = create();
+  broken.fsPromises = { ...fs, readFile: async () => { throw new Error("Fictional read failure"); } };
+  await assert.rejects(broken.start());
+  assert.equal((await fs.readdir(directory)).filter((name) => name.startsWith("messages.invalid-")).length, 0);
+  assert.equal(await fs.readFile(inbox.file, "utf8"), original);
+  await fs.writeFile(inbox.file, "Fictional corrupt snapshot");
+  broken.fsPromises = { ...fs, copyFile: async () => { throw new Error("Fictional archive failure"); } };
+  await assert.rejects(broken.start());
+  assert.equal(await fs.readFile(inbox.file, "utf8"), "Fictional corrupt snapshot");
+  broken.fsPromises = fs; await broken.start(); await broken.enqueue("default", message("recovered"));
+  assert.equal(broken.peek(() => true).payload.key.id, "recovered");
+});
+
+test("one-shot write failures recover both before and after atomic replacement", async (t) => {
+  const { inbox } = await fixture(t); await inbox.enqueue("default", message());
+  let fail = true;
+  inbox.fsPromises = { ...fs, rename: async (...args) => {
+    if (fail) { fail = false; throw new Error("Fictional pre-publication failure"); }
+    return fs.rename(...args);
+  } };
+  await inbox.enqueue("default", message("second"));
+  const sync = inbox.syncDirectory.bind(inbox); fail = true;
+  inbox.syncDirectory = async (...args) => {
+    if (fail) { fail = false; throw new Error("Fictional post-publication failure"); }
+    return sync(...args);
+  };
+  await inbox.enqueue("default", message("third"));
+  assert.equal(inbox.failed, false);
+  assert.deepEqual(inbox.state.pending.map((entry) => entry.payload.key.id), ["fictional-id", "second", "third"]);
 });
 
 for (const stage of ["open", "writeFile", "sync", "rename", "directory"]) {
@@ -109,13 +170,19 @@ for (const stage of ["open", "writeFile", "sync", "rename", "directory"]) {
       return handle;
     }, rename: stage === "rename" ? async () => { throw new Error("Fictional failure"); } : fs.rename };
     if (stage === "directory") inbox.syncDirectory = async () => { throw new Error("Fictional failure"); };
-    await assert.rejects(inbox.enqueue("default", message("second")), /could not be saved/);
+    const syncDirectory = Object.getPrototypeOf(inbox).syncDirectory.bind(inbox);
+    await assert.rejects(inbox.enqueue("default", message("second")), /could not be (saved|loaded)/);
     const uncertain = await fs.readFile(inbox.file, "utf8");
     if (stage !== "directory") assert.equal(uncertain, previous);
-    await assert.rejects(inbox.enqueue("default", message("third")), /unavailable/);
+    await assert.rejects(inbox.enqueue("default", message("third")), /could not be (saved|loaded)/);
     assert.equal(await fs.readFile(inbox.file, "utf8"), uncertain);
     const restarted = await create().start();
     assert.equal(restarted.peek(() => true).payload.key.id, "fictional-id");
+    inbox.fsPromises = fs; inbox.syncDirectory = syncDirectory;
+    await inbox.enqueue("default", message("after-recovery"));
+    assert.equal(inbox.failed, false);
+    assert.equal(inbox.state.pending.at(-1).payload.key.id, "after-recovery");
+    if (stage === "directory") assert.equal(inbox.state.pending[1].payload.key.id, "second");
   });
 }
 
@@ -148,14 +215,15 @@ test("persistent inbox selection is opt-in and validates configured account IDs"
 });
 
 test("the app waits for the integration, then retries the same event without changing its payload", async (t) => {
-  const { inbox, create } = await fixture(t); const timers = []; const posts = []; const logs = [];
+  const { inbox, create, directory } = await fixture(t); const clock = fakeTimers(); const { timers } = clock; const posts = []; const logs = [];
   let reachable = false; let accept = false; let downloads = 0;
+  const media = { status: "ready", id: "fictional-media", size: 5,
+    local_path: path.join(directory, "cached-audio"), expires_at: "2099-01-01T00:00:00Z" };
   const client = new EventEmitter(); client.status = { connected: true };
   const runtime = createAddonRuntime({ clientIds: ["default"], inboxClients: ["default"], messageInbox: inbox,
     clientFactory: () => client, logger: { error: (...args) => logs.push(args) },
-    setTimeoutFn: (fn, delay) => { const timer = { fn, delay, unref() {} }; timers.push(timer); return timer; },
-    clearTimeoutFn: (timer) => { const index = timers.indexOf(timer); if (index >= 0) timers.splice(index, 1); },
-    mediaStore: { enrich: async () => { downloads++; return { status: "ready", id: "fictional-media" }; } },
+    ...clock,
+    mediaStore: { enrich: async () => { downloads++; await fs.writeFile(media.local_path, "audio"); return media; } },
     httpClient: {
       get: async (_, options) => { assert.equal(options.timeout, 10000); if (!reachable) throw new Error("Private response"); return { data: { ready: true } }; },
       post: async (url, body, options) => { posts.push({ url, body, options }); if (!accept) throw new Error("Private response"); },
@@ -169,39 +237,99 @@ test("the app waits for the integration, then retries the same event without cha
   reachable = true;
   assert.equal(timers[0].delay, 10000); await timers.shift().fn();
   assert.equal(inbox.state.pending.length, 1);
+  await timers.shift().fn(); assert.equal(downloads, 1);
+  await fs.unlink(media.local_path); await timers.shift().fn(); assert.equal(downloads, 2);
   accept = true; await timers.shift().fn();
   assert.equal(inbox.state.pending.length, 0);
-  assert.equal(posts.length, 2); assert.equal(posts[0].body.id, posts[1].body.id);
+  assert.equal(posts.length, 4); assert.equal(posts[0].body.id, posts[1].body.id);
   assert.equal(posts[1].url, "http://supervisor/core/api/whatsapp/inbox");
-  assert.deepEqual(posts[1].body.message, { ...message(), media: { status: "ready", id: "fictional-media" }, clientId: "default" });
+  assert.deepEqual(posts[1].body.message, { ...message(), media, clientId: "default" });
   assert.equal(posts[1].options.timeout, 10000);
   assert.ok(!JSON.stringify(logs).includes("Private response"));
 });
 
-test("delivery is paced and disconnected accounts do not block other accounts", async (t) => {
-  const { inbox } = await fixture(t); const timers = []; const posts = []; const live = [];
-  await inbox.enqueue("offline", message("first"));
+test("backlogs drain promptly while disconnected media preserves account order", async (t) => {
+  const { inbox } = await fixture(t); const clock = fakeTimers(); const { timers } = clock; const posts = []; const live = [];
+  await inbox.enqueue("offline", { ...message("first"), type: "audioMessage", message: { audioMessage: { ptt: false } } });
+  await inbox.enqueue("offline", message("after-media"));
   await inbox.enqueue("default", message("second")); await inbox.enqueue("default", message("third"));
   const clients = {};
   const runtime = createAddonRuntime({ clientIds: ["offline", "default", "live"], inboxClients: ["offline", "default"], messageInbox: inbox, logger: {},
-    clientFactory: ({ path: sessionPath }) => { const client = new EventEmitter(); client.status = { connected: path.basename(sessionPath) === "default" }; clients[path.basename(sessionPath)] = client; return client; },
-    setTimeoutFn: (fn, delay) => { const timer = { fn, delay, unref() {} }; timers.push(timer); return timer; }, clearTimeoutFn: () => {},
+    clientFactory: ({ path: sessionPath }) => { const client = new EventEmitter(); client.status = { connected: path.basename(sessionPath) === "default" }; client.getMediaContent = (payload) => payload.message.audioMessage; clients[path.basename(sessionPath)] = client; return client; },
+    ...clock, mediaStore: { enrich: async () => undefined },
     httpClient: { get: async () => ({ data: { ready: true } }), post: async (url, body) => (url.endsWith("/events/new_whatsapp_message") ? live : posts).push(body) } });
   t.after(() => runtime.stopInbox());
   clients.live.emit("msg", message("live")); await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(live, [{ clientId: "live", ...message("live") }]);
   await timers.shift().fn(); assert.equal(posts.length, 1); assert.equal(posts[0].message.key.id, "second");
-  assert.equal(timers[0].delay, 10000); await timers.shift().fn();
+  assert.equal(timers[0].delay, 0); await timers.shift().fn();
   assert.equal(posts[1].message.key.id, "third");
   clients.offline.status.connected = true; await timers.shift().fn();
   assert.equal(posts[2].message.key.id, "first");
+  await timers.shift().fn(); assert.equal(posts[3].message.key.id, "after-media");
   assert.equal(inbox.state.pending.length, 0);
+});
+
+test("idle delivery wakes immediately, drains a burst without backoff and never overlaps requests", async (t) => {
+  const { inbox } = await fixture(t); const clock = fakeTimers(); const { timers } = clock;
+  const client = new EventEmitter(); client.status = { connected: false };
+  const posts = []; let release; let active = 0;
+  const runtime = createAddonRuntime({ clientIds: ["default"], inboxClients: ["default"], messageInbox: inbox,
+    clientFactory: () => client, logger: {}, ...clock,
+    httpClient: { get: async () => ({ data: { ready: true } }), post: async (_, body) => {
+      assert.equal(++active, 1); posts.push(body);
+      if (posts.length === 1) await new Promise((resolve) => { release = resolve; });
+      active--;
+    } } });
+  t.after(() => runtime.stopInbox());
+  await timers.shift().fn(); assert.equal(timers.length, 0);
+  client.emit("msg", message("first")); await new Promise((resolve) => setImmediate(resolve)); await inbox.close();
+  assert.equal(timers[0].delay, 0); const first = timers.shift().fn();
+  await new Promise((resolve) => setImmediate(resolve));
+  for (let index = 2; index <= 5; index++) client.emit("msg", message(`message-${index}`));
+  await new Promise((resolve) => setImmediate(resolve)); await inbox.close();
+  assert.equal(timers.length, 0); release(); await first;
+  while (timers.length) { assert.equal(timers[0].delay, 0); await timers.shift().fn(); }
+  assert.equal(posts.length, 5); assert.equal(inbox.state.pending.length, 0);
+});
+
+test("a failed queue reloads and resumes delivery on the next tick without a new message", async (t) => {
+  const { inbox } = await fixture(t); await inbox.enqueue("default", message());
+  inbox.failed = true; const clock = fakeTimers(); const client = new EventEmitter(); const posts = [];
+  const runtime = createAddonRuntime({ clientIds: ["default"], inboxClients: ["default"], messageInbox: inbox,
+    clientFactory: () => client, logger: {}, ...clock,
+    httpClient: { get: async () => ({ data: { ready: true } }), post: async (_, body) => posts.push(body) } });
+  t.after(() => runtime.stopInbox());
+  await clock.timers.shift().fn();
+  assert.equal(inbox.failed, false); assert.equal(posts.length, 1); assert.equal(inbox.state.pending.length, 0);
+});
+
+test("cached media near expiry is replaced and an app restart uses a fresh download", async (t) => {
+  const { inbox, create, directory } = await fixture(t); await inbox.enqueue("default", message());
+  let now = Date.now(); let downloads = 0;
+  t.mock.method(Date, "now", () => now);
+  const clock = fakeTimers(); const client = new EventEmitter();
+  const mediaStore = { enrich: async () => {
+    const media = { status: "ready", id: `media-${++downloads}`, size: 5,
+      local_path: path.join(directory, `audio-${downloads}`), expires_at: new Date(now + 3600000).toISOString() };
+    await fs.writeFile(media.local_path, "audio"); return media;
+  } };
+  const options = { clientIds: ["default"], inboxClients: ["default"], clientFactory: () => client,
+    logger: {}, mediaStore, httpClient: { get: async () => ({ data: { ready: true } }), post: async () => { throw new Error("Fictional transport failure"); } } };
+  const runtime = createAddonRuntime({ ...options, ...clock, messageInbox: inbox });
+  await clock.timers.shift().fn(); assert.equal(downloads, 1);
+  now += 3590000; await clock.timers.shift().fn(); assert.equal(downloads, 2);
+  await runtime.stopInbox();
+  const secondClock = fakeTimers(); const restarted = createAddonRuntime({ ...options, ...secondClock, messageInbox: await create().start() });
+  await secondClock.timers.shift().fn(); assert.equal(downloads, 3);
+  await restarted.stopInbox();
 });
 
 for (const unavailable of [false, true]) {
   test(`storage ${unavailable ? "failure" : "capacity"} preserves the backlog and falls back to live delivery`, async (t) => {
     const { inbox } = await fixture(t, { maxPending: 1 }); await inbox.enqueue("default", message());
     inbox.failed = unavailable;
+    if (unavailable) inbox.fsPromises = { ...fs, readFile: async () => { throw new Error("Fictional read failure"); } };
     const client = new EventEmitter(); const posts = []; const logs = [];
     const runtime = createAddonRuntime({ clientIds: ["default"], inboxClients: ["default"], messageInbox: inbox,
       clientFactory: () => client, logger: { error: (...args) => logs.push(args) },

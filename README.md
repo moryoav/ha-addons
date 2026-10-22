@@ -406,9 +406,9 @@ The add-on pushes message, receipt, call, contact, and presence events into
 Home Assistant as they arrive. Supervisor discovery provides the local API
 connection, and actions call that API on demand. Status sensors read the app
 and account state every 30 seconds.
-For opt-in inbox accounts, the app retries pending messages every ten seconds
-after Home Assistant starts. Existing automations keep using
-`new_whatsapp_message` without changes.
+For opt-in inbox accounts, the app delivers immediately when Home Assistant is
+ready and retries unavailable delivery after ten seconds. Existing automations
+keep using `new_whatsapp_message` without changes.
 
 ## Security notes
 
