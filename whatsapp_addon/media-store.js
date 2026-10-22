@@ -466,12 +466,17 @@ class MediaStore {
         signal.throwIfAborted();
         await fs.promises.rename(partial, destination);
         published = true;
-        await this.syncDirectory(this.root);
         this.entries.set(id, {
           size,
           expires: Date.parse(metadata.expires_at),
         });
         this.usedBytes += size;
+        // Rename already published a verified file. Keep quota accounting and
+        // return that file rather than downloading another copy on an fsync error.
+        try { await this.syncDirectory(this.root); }
+        catch {
+          this.logger.warn?.("A WhatsApp attachment was published, but the media directory could not be synced; crash recovery depends on the mount.");
+        }
       });
       return {
         status: "ready",

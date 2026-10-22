@@ -410,7 +410,7 @@ const createApiApp = ({
   app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
   if (messageInbox) {
-    for (const operation of ["open", "poll", "start", "complete", "resolve"]) {
+    for (const operation of ["open", "poll", "start", "complete", "resolve", "resolve_many", "recover"]) {
       app.post(`/inbox/${operation}`, asyncRoute(async (req, res) => {
         const body = requirePlainObject(req.body);
         let result;
@@ -422,6 +422,8 @@ const createApiApp = ({
         }
         else if (operation === "start") result = await messageInbox.begin(body.inbox);
         else if (operation === "complete") result = await messageInbox.complete(body.inbox);
+        else if (operation === "resolve_many") result = await messageInbox.resolveMany(body);
+        else if (operation === "recover") result = await messageInbox.recover(body.mode);
         else result = await messageInbox.resolve(body.inbox, body.resolution);
         res.json(result);
       }));

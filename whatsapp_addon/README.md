@@ -24,6 +24,8 @@ actions, and diagnostics in Home Assistant.
 - Retain incoming messages across Home Assistant restarts with the opt-in
   [persistent inbox](https://moryoav.github.io/ha-addons/examples/reliable-incoming-messages/).
   Accounts drain independently, with notifications for messages needing review.
+  Home Assistant actions provide filtered bulk cleanup and private storage
+  recovery without editing app files.
 - Look up saved contacts, phone numbers, profiles, and groups.
 - Monitor the app and each account with connection and session sensors.
 - Pair and manage multiple WhatsApp accounts through the web UI.

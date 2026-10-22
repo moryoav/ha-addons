@@ -32,6 +32,8 @@ paired by scanning its QR code in the add-on web UI.
 - **Recover missed messages:** opt selected accounts into a persistent inbox with
   [startup recovery and explicit processing acknowledgements](https://moryoav.github.io/ha-addons/examples/reliable-incoming-messages/).
   Accounts drain independently, and held messages raise a review notification.
+  Resolve held backlogs in bulk and recover failed storage through Home Assistant
+  actions. Shared workflows for multiple accounts need parallel mode.
 - **Process incoming attachments:** [download and decrypt media](#decrypted-incoming-media)
   for OCR, transcription, document processing, or AI automations.
 - **Look up recipients:** check phone numbers, fetch saved contacts and profiles,
@@ -408,6 +410,9 @@ The add-on pushes message, receipt, call, contact, and presence events into
 Home Assistant as they arrive. Supervisor discovery provides the local API
 connection, and actions call that API on demand. Status sensors read the app
 and account state every 30 seconds.
+For opt-in inbox accounts, update hints and a ten-second fallback poll deliver
+pending messages after Home Assistant starts. Processing requires explicit
+start and completion acknowledgements.
 
 ## Security notes
 
@@ -418,7 +423,7 @@ and account state every 30 seconds.
   Supervisor ingress proxy. Pairing QR codes appear there and in Home Assistant
   persistent notifications.
 - AppArmor restricts the Node bridge's writes to temporary files, persistent
-  session data, and attachments under `/media/whatsapp`. Container health checks
+  session data, private inbox snapshots, and attachments under `/media/whatsapp`. Container health checks
   use the local `/health` endpoint.
 
 API tokens, pairing QR codes, session data, and WhatsApp identifiers are

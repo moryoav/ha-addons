@@ -100,7 +100,7 @@ class WhatsappInbox:
                     self.hass,
                     f"{len(attention)} WhatsApp inbox message(s) need review. "
                     "Use WhatsApp: Get message inbox in Developer Tools > Actions. "
-                    "Inspect the attention list and explicitly retry or discard each reference. "
+                    "Inspect the attention list and use Resolve inbox message, or Resolve held inbox messages with account/reason filters. "
                     "Other messages can continue. Check whether actions already ran before retrying.",
                     title="WhatsApp message inbox needs attention",
                     notification_id="whatsapp_inbox_attention",
@@ -143,6 +143,17 @@ class WhatsappInbox:
                 healthy = True
                 self._handle_result(result)
             except WhatsappApiError as err:
+                if err.code == "unsupported_capability":
+                    persistent_notification.async_dismiss(
+                        self.hass, "whatsapp_inbox_connection"
+                    )
+                    persistent_notification.async_dismiss(
+                        self.hass, "whatsapp_inbox_attention"
+                    )
+                    _LOGGER.info(
+                        "WhatsApp inbox support is disabled; reload the integration after enabling it"
+                    )
+                    return
                 if err.code == "inbox_session_changed":
                     # A restored app snapshot may contain an older HA session.
                     # Reopen after the normal backoff; only one HA consumer is supported.
@@ -154,7 +165,8 @@ class WhatsappInbox:
                     persistent_notification.async_create(
                         self.hass,
                         "Message inbox delivery is unavailable. The integration will retry "
-                        "automatically. Check the app logs, connection and inbox storage. "
+                        "automatically. Use WhatsApp: Recover message inbox in Developer Tools > Actions "
+                        "to reload storage or reset unreadable state while preserving an archive. "
                         "If inbox storage failed, new messages use live delivery without restart recovery.",
                         title="WhatsApp message inbox unavailable",
                         notification_id="whatsapp_inbox_connection",

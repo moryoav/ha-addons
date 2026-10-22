@@ -50,14 +50,13 @@ test("incoming audio is durable before enrichment and survives failed HA event d
   assert.ok(!JSON.stringify(logs).includes(payload.key.remoteJid));
 });
 
-test("an incomplete preparation resumes only after an explicit retry following app restart", async (t) => {
+test("an incomplete preparation automatically resumes following app restart", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-prepare-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const old = await new MessageInbox({ directory, clientIds: ["default"] }).start();
   await old.enqueue("default", payload);
   const inbox = await new MessageInbox({ directory, clientIds: ["default"] }).start();
   await inbox.open(SESSION);
-  await inbox.resolve((await inbox.poll(SESSION)).inbox, "retry");
   const client = new EventEmitter(); client.disconnect = async () => {}; client.status = { connected: true };
   const runtime = createAddonRuntime({ clientIds: ["default"], messageInbox: inbox,
     clientFactory: () => client, logger: {}, httpClient: { post: async () => {} },
@@ -157,7 +156,6 @@ test("persisted media keys and hashes retain their byte types for actual audio d
   await original.enqueue("default", audio);
   const inbox = await new MessageInbox({ directory, clientIds: ["default"] }).start();
   await inbox.open(SESSION);
-  await inbox.resolve((await inbox.poll(SESSION)).inbox, "retry");
   const mediaStore = await new MediaStore({ root: path.join(root, "media"), enabled: true,
     isPinned: (id) => inbox.isMediaPinned(id), logger: {} }).start();
   t.after(() => mediaStore.close());
@@ -234,6 +232,45 @@ test("a corrupt inbox does not prevent app startup or unrelated legacy messages"
   assert.equal(delivered.find(({ body }) => body.clientId === "other").body.inbox_error, undefined);
   assert.equal(await fs.readFile(file, "utf8"), '{"version":');
   assert.ok(JSON.stringify(logs).includes("inbox storage could not be loaded"));
+});
+
+test("disabled inbox delivery retains recovery actions without preparing or capturing live messages", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-disabled-start-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const old = await new MessageInbox({ directory: path.join(root, "inbox"), clientIds: ["default"] }).start();
+  await old.enqueue("default", payload); await old.close();
+  const clients = {}; const requests = []; let retained;
+  const runtime = await startAddon({ dataRoot: root, logger: {},
+    apiTokenLoader: async () => "fictional-runtime-token",
+    optionsLoader: async () => ({ clientIds: ["default"], inboxClients: [], logLevel: "info" }),
+    messageInboxFactory: (options) => { retained = new MessageInbox(options); return retained; },
+    diagnosticsFactory: () => ({ start: async () => {}, stop: async () => {} }),
+    replayHealthDiagnosticsFn: async () => {}, readRecoveryRecordFn: async () => null,
+    clientFactory: ({ path: sessionPath }) => { const client = new EventEmitter(); client.status = { connected: true };
+      client.disconnect = async () => {}; clients[path.basename(sessionPath)] = client; return client; },
+    httpClient: { post: async (url, body) => requests.push({ url, body }) },
+    listenFn: async () => ({}), closeServerFn: async () => {},
+  });
+  t.after(() => runtime.close());
+  const server = await new Promise((resolve) => { const instance = runtime.apiApp.listen(0, "127.0.0.1", () => resolve(instance)); });
+  t.after(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  assert.ok((await (await fetch(base + "/health")).json()).capabilities.includes("message_inbox"));
+  runtime.preparePendingInbox(); await settle();
+  assert.equal(retained.state.entries[0].ready, false);
+  assert.equal(retained.unready("default").length, 0);
+  await retained.open(SESSION);
+  const status = await retained.poll(SESSION);
+  assert.equal(status.counts.blocked, 1); assert.equal(status.attention[0].reason, "account_disabled");
+  const response = await fetch(base + "/inbox/resolve_many", { method: "POST",
+    headers: { "Content-Type": "application/json", authorization: "Bearer fictional-runtime-token" },
+    body: JSON.stringify({ session: SESSION, reason: "account_disabled", resolution: "discard" }) });
+  assert.equal(response.status, 200); assert.equal((await response.json()).resolved, 1);
+  clients.default.emit("msg", { ...payload, key: { ...payload.key, id: "new-legacy" } });
+  await runtime.stopInbox();
+  assert.equal(requests.filter(({ url }) => url.endsWith("/new_whatsapp_message")).length, 1);
+  assert.equal(retained.state.entries.length, 1);
+  assert.equal(retained.state.entries[0].status, "completed");
 });
 
 test("a damaged pinned folder does not disable unrelated media and missing files are terminal", async (t) => {

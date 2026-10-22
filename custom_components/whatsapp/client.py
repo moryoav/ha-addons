@@ -74,14 +74,29 @@ def _valid_inbox_result(operation: str, result: Any, session: str | None) -> boo
     status = result.get("status")
     if not isinstance(status, str):
         return False
-    if operation == "open":
+    if operation in {"open", "recover"}:
         return (
             status == "ready"
+            and (
+                "archive" not in result
+                or isinstance(result["archive"], str)
+                and re.fullmatch(
+                    r"messages\.invalid-[a-f0-9-]{36}\.json", result["archive"]
+                )
+                is not None
+            )
             and isinstance(result.get("clients"), list)
             and all(
                 isinstance(value, str) and _CLIENT_ID_PATTERN.fullmatch(value)
                 for value in result["clients"]
             )
+        )
+    if operation == "resolve_many":
+        return (
+            status == "resolved"
+            and type(result.get("resolved")) is int
+            and 0 <= result["resolved"] <= 1000
+            and result.get("resolution") in ("retry", "discard")
         )
     if operation == "start":
         return (
@@ -134,6 +149,7 @@ def _valid_inbox_result(operation: str, result: Any, session: str | None) -> boo
                 "preparation_interrupted",
                 "processing_interrupted",
                 "workflow_failed",
+                "account_disabled",
             }
             for item in attention
         )
@@ -670,7 +686,15 @@ class WhatsappClient:
 
     async def async_inbox(self, operation: str, data: dict[str, Any]) -> dict[str, Any]:
         """Call the authenticated inbox protocol without exposing raw API errors."""
-        if operation not in {"open", "poll", "start", "complete", "resolve"}:
+        if operation not in {
+            "open",
+            "poll",
+            "start",
+            "complete",
+            "resolve",
+            "resolve_many",
+            "recover",
+        }:
             raise ValueError("Invalid inbox operation")
         if self._capabilities is not None and "message_inbox" not in self._capabilities:
             raise WhatsappUnsupportedCapability(

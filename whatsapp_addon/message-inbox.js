@@ -5,9 +5,10 @@ const path = require("node:path");
 const CAPABILITY = "message_inbox";
 const SESSION = /^[a-f0-9]{32}$/;
 const IDENTIFIER = /^[a-f0-9]{64}$/;
+const MEDIA_UUID = /\b[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\b/gi;
 const STATES = new Set(["pending", "processing", "interrupted", "blocked", "completed"]);
 const REASONS = new Set(["unclaimed", "preparation_timeout", "processing_timeout",
-  "preparation_interrupted", "processing_interrupted", "workflow_failed"]);
+  "preparation_interrupted", "processing_interrupted", "workflow_failed", "account_disabled"]);
 const TRANSIENT_MEDIA = new Set(["timeout", "download_failed", "queue_full",
   "storage_full", "storage_unavailable", "inbox_media_unavailable"]);
 const matches = (pattern, value) => typeof value === "string" && pattern.test(value);
@@ -42,21 +43,32 @@ class MessageInbox {
     maxReceipts = 1000, receiptRetentionMs = 7 * 86400000,
     claimTimeoutMs = 60000, preparationTimeoutMs = 15 * 60000,
     processingTimeoutMs = 30 * 60000, preparationRetryMs = 10000,
-    maxPreparationAttempts = 3 } = {}) {
+    maxPreparationAttempts = 3, logger = {} } = {}) {
     Object.assign(this, { directory, now, fsPromises, maxPending, maxBytes,
       maxMessageBytes, maxReceipts, receiptRetentionMs, claimTimeoutMs,
-      preparationTimeoutMs, processingTimeoutMs, preparationRetryMs, maxPreparationAttempts });
+      preparationTimeoutMs, processingTimeoutMs, preparationRetryMs, maxPreparationAttempts, logger });
     this.clients = new Set(clientIds);
     this.file = path.join(directory, "messages.json");
+    this.admissionGuards = new Set();
     this.state = { version: 1, sequence: 0, session: null, entries: [] };
     this.serialized = null;
     this.tail = Promise.resolve();
     this.storageFailed = false;
+    this.recoveryPins = new Set();
+    this.corruptStorage = false;
   }
 
   enabled(clientId) { return this.clients.has(clientId); }
 
-  markUnavailable() { this.storageFailed = true; }
+  markUnavailable(raw) {
+    this.storageFailed = true;
+    for (const entry of this.state.entries) {
+      if (entry.status !== "completed" && typeof entry.payload?.media?.id === "string") this.recoveryPins.add(entry.payload.media.id);
+    }
+    if (typeof raw === "string") {
+      for (const match of raw.matchAll(MEDIA_UUID)) this.recoveryPins.add(match[0].toLowerCase());
+    }
+  }
 
   validate(stored) {
     if (!stored || stored.version !== 1 || !Number.isSafeInteger(stored.sequence) || stored.sequence < 0 ||
@@ -67,7 +79,7 @@ class MessageInbox {
       if (!entry || !matches(IDENTIFIER, entry.id) || !matches(IDENTIFIER, entry.receipt) || ids.has(entry.id) ||
           !STATES.has(entry.status) || !Number.isSafeInteger(entry.sequence) ||
           entry.sequence <= previous || entry.sequence > stored.sequence ||
-          typeof entry.clientId !== "string" || !entry.clientId ||
+          typeof entry.clientId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(entry.clientId) ||
           (entry.reason !== undefined && !REASONS.has(entry.reason)) ||
           (entry.status === "blocked" && !REASONS.has(entry.reason)) ||
           ["offeredAt", "startedAt", "readyAt", "preparationAt", "nextAttemptAt", "mediaWaitAt"].some((key) =>
@@ -81,13 +93,19 @@ class MessageInbox {
           !entry.payload.message || typeof entry.payload.message !== "object" || Array.isArray(entry.payload.message) ||
           entry.payload.key?.fromMe !== false || entry.payload.key.id !== entry.messageId ||
           entry.payload.key.remoteJid !== entry.chatId || messageId(entry.clientId, entry.payload) !== entry.id ||
+          (entry.status === "processing" && (!entry.ready || entry.session !== stored.session)) ||
           (["processing", "interrupted"].includes(entry.status) && !matches(SESSION, entry.session)) ||
           (entry.attempts !== undefined && (!Number.isSafeInteger(entry.attempts) || entry.attempts < 0))) throw new Error();
       ids.add(entry.id); previous = entry.sequence;
     }
+    if (stored.entries.filter((entry) => entry.status !== "completed").length > this.maxPending) throw new Error();
   }
 
-  async start() {
+  start() { return this.exclusive(() => this.initialize()); }
+
+  async initialize() {
+    let raw;
+    this.corruptStorage = false;
     try {
       await this.fsPromises.mkdir(this.directory, { recursive: true, mode: 0o700 });
       if ((await this.fsPromises.lstat(this.directory)).isSymbolicLink()) throw new Error();
@@ -95,34 +113,114 @@ class MessageInbox {
       let stored;
       try {
         const stat = await this.fsPromises.lstat(this.file);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > this.maxBytes) throw new Error();
+        if (!stat.isFile() || stat.isSymbolicLink()) throw new Error();
         await this.fsPromises.chmod(this.file, 0o600);
-        stored = JSON.parse(await this.fsPromises.readFile(this.file, "utf8"));
+        const handle = await this.fsPromises.open(this.file, "r");
+        try {
+          const buffer = Buffer.alloc(Math.min(stat.size, this.maxBytes + 1));
+          let offset = 0;
+          while (offset < buffer.length) {
+            const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+            if (bytesRead === 0) break;
+            offset += bytesRead;
+          }
+          raw = buffer.subarray(0, offset).toString("utf8");
+        } finally { await handle.close(); }
+        try {
+          if (stat.size > this.maxBytes) throw new Error();
+          stored = JSON.parse(raw);
+          this.validate(stored);
+        } catch (error) { this.corruptStorage = true; throw error; }
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
       }
-      if (stored) {
-        this.validate(stored);
-        this.state = stored;
-        this.serialized = JSON.stringify(stored);
-      }
-      await this.transaction((state) => {
-        for (const entry of state.entries) {
-          if (entry.status === "interrupted" && !entry.reason) entry.reason = "processing_interrupted";
-          if (entry.status === "processing") {
-            entry.status = "interrupted"; entry.reason = "processing_interrupted";
-          } else if (entry.status === "pending" && !entry.ready) {
-            // Admission may have failed after rename, followed by live fallback.
-            // Keep incomplete preparation for review instead of replaying it.
+      this.state = stored || { version: 1, sequence: 0, session: null, entries: [] };
+      this.serialized = stored ? JSON.stringify(stored) : null;
+      // A new inbox directory must itself survive a crash, not only its files.
+      // Read existing references first so a flush error still protects their media.
+      await this.syncDirectory(path.dirname(this.directory));
+      // The filename records the identity atomically, without parsing a record
+      // that a crash could truncate. Only a matching admission can be uncertain.
+      this.admissionGuards = new Set((await this.fsPromises.readdir(this.directory))
+        .filter((name) => /^\.admission-[a-f0-9]{64}$/.test(name)));
+      const uncertainIds = new Set([...this.admissionGuards].map((name) => name.slice(11)));
+      this.storageFailed = false;
+      const next = { ...this.state, entries: this.state.entries.map((entry) => ({ ...entry })) };
+      for (const entry of next.entries) {
+        if (entry.status === "interrupted" && !entry.reason) entry.reason = "processing_interrupted";
+        if (entry.status === "processing") {
+          entry.status = "interrupted"; entry.reason = "processing_interrupted";
+        } else if (entry.status === "pending") {
+          if (entry.offeredAt !== undefined) entry.receipt = crypto.randomBytes(32).toString("hex");
+          delete entry.offeredAt; delete entry.preparationAt; delete entry.mediaWaitAt;
+          if (!entry.ready && uncertainIds.has(entry.id)) {
             entry.status = "blocked"; entry.reason = "preparation_interrupted";
           }
         }
-      });
+      }
+      await this.publish(next);
+      await this.clearAdmission();
+      await this.clearTemporarySnapshots();
+      this.recoveryPins.clear();
       return this;
     } catch {
-      this.markUnavailable();
+      this.markUnavailable(raw);
       throw new InboxError("inbox_storage_unavailable", 503);
     }
+  }
+
+  recover(mode) {
+    if (!["reload", "reset"].includes(mode)) throw new InboxError("invalid_inbox_recovery", 400);
+    return this.exclusive(async () => {
+      if (!this.storageFailed) return { status: "ready", clients: [...this.clients] };
+      try {
+        await this.initialize();
+        return { status: "ready", clients: [...this.clients] };
+      } catch (error) {
+        if (mode !== "reset" || !this.corruptStorage) throw error;
+      }
+      const archive = `messages.invalid-${crypto.randomUUID()}.json`;
+      try {
+        await this.fsPromises.rename(this.file, path.join(this.directory, archive));
+        await this.syncDirectory();
+        await this.initialize();
+        return { status: "ready", clients: [...this.clients], archive };
+      } catch {
+        this.markUnavailable();
+        throw new InboxError("inbox_storage_unavailable", 503);
+      }
+    });
+  }
+
+  async guardAdmission(id) {
+    const name = `.admission-${id}`;
+    this.admissionGuards.add(name);
+    const handle = await this.fsPromises.open(path.join(this.directory, name), "wx", 0o600);
+    try { await handle.sync(); }
+    finally { await handle.close(); }
+    await this.syncDirectory();
+  }
+
+  async clearAdmission() {
+    if (!this.admissionGuards.size) return;
+    for (const name of this.admissionGuards) {
+      try { await this.fsPromises.unlink(path.join(this.directory, name)); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+      this.admissionGuards.delete(name);
+    }
+    await this.syncDirectory();
+  }
+
+  async clearTemporarySnapshots() {
+    let removed = false;
+    for (const name of await this.fsPromises.readdir(this.directory)) {
+      if (!/^\.pending-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name)) continue;
+      const file = path.join(this.directory, name);
+      const info = await this.fsPromises.lstat(file);
+      if (!info.isFile() || info.isSymbolicLink()) continue;
+      await this.fsPromises.unlink(file); removed = true;
+    }
+    if (removed) await this.syncDirectory();
   }
 
   exclusive(callback) {
@@ -155,17 +253,17 @@ class MessageInbox {
     if (data === this.serialized) return;
     const temporary = path.join(this.directory, `.pending-${crypto.randomUUID()}`);
     let handle;
-    let published = false;
+    let publicationAttempted = false;
     try {
       handle = await this.fsPromises.open(temporary, "wx", 0o600);
       await handle.writeFile(data); await handle.sync(); await handle.close(); handle = null;
+      publicationAttempted = true;
       await this.fsPromises.rename(temporary, this.file);
-      published = true;
       await this.syncDirectory();
       this.state = next;
       this.serialized = data;
     } catch {
-      if (published) this.markUnavailable();
+      if (publicationAttempted) this.markUnavailable(data);
       throw new InboxError("inbox_storage_unavailable", 503);
     } finally {
       await handle?.close().catch(() => {});
@@ -180,14 +278,32 @@ class MessageInbox {
       // receipt update does not clone every queued attachment envelope.
       const next = { ...this.state, entries: this.state.entries.map((entry) => ({ ...entry })) };
       const result = await change(next);
-      await this.publish(next, admission && result !== null);
+      const guarded = admission && result !== null;
+      if (guarded) {
+        try { await this.guardAdmission(result); }
+        catch {
+          this.markUnavailable();
+          throw new InboxError("inbox_storage_unavailable", 503);
+        }
+      }
+      try { await this.publish(next, guarded); }
+      catch (error) {
+        if (guarded && !this.storageFailed) await this.clearAdmission().catch(() => this.markUnavailable());
+        throw error;
+      }
+      if (guarded) {
+        await this.clearAdmission().catch(() => {
+          this.markUnavailable();
+          this.logger.error?.("WhatsApp inbox admission guard could not be cleared; reload inbox storage after checking the app storage.");
+        });
+      }
       return result;
     });
   }
 
-  async syncDirectory() {
+  async syncDirectory(directoryPath = this.directory) {
     if (process.platform === "win32") return;
-    const directory = await this.fsPromises.open(this.directory, "r");
+    const directory = await this.fsPromises.open(directoryPath, "r");
     try { await directory.sync(); } finally { await directory.close(); }
   }
 
@@ -212,14 +328,14 @@ class MessageInbox {
       if (!Number.isSafeInteger(state.sequence + 1)) throw new InboxError("inbox_full", 507);
       state.entries.push({ id, receipt: crypto.randomBytes(32).toString("hex"),
         clientId, chatId: payload.key.remoteJid, messageId: payload.key.id,
-        receivedAt: this.now(), preparationAt: this.now(), sequence: ++state.sequence, status: "pending",
+        receivedAt: this.now(), sequence: ++state.sequence, status: "pending",
         ready: false, payload: JSON.parse(wire) });
       return id;
     }, true);
   }
 
   unready(clientId, limit = this.maxPending) {
-    if (this.storageFailed) return [];
+    if (this.storageFailed || !this.enabled(clientId)) return [];
     return this.state.entries.filter((entry) => entry.status === "pending" && !entry.ready &&
       entry.clientId === clientId && (entry.nextAttemptAt || 0) <= this.now()).slice(0, limit)
       .map((entry) => ({ ...structuredClone(entry), payload: JSON.parse(JSON.stringify(entry.payload), mediaValue) }));
@@ -250,14 +366,13 @@ class MessageInbox {
       }
       if (media) entry.payload = { ...entry.payload, media: structuredClone(media) };
       entry.ready = true; entry.readyAt = this.now();
-      delete entry.nextAttemptAt;
+      delete entry.nextAttemptAt; delete entry.preparationAt;
       return true;
     });
   }
 
   isMediaPinned(id) {
-    // Unreadable state may contain references that cannot safely be enumerated.
-    return this.storageFailed || this.state.entries.some((entry) => entry.status !== "completed" && entry.payload?.media?.id === id);
+    return this.recoveryPins.has(id) || this.state.entries.some((entry) => entry.status !== "completed" && entry.payload?.media?.id === id);
   }
 
   open(session) {
@@ -283,6 +398,22 @@ class MessageInbox {
       received_at: new Date(entry.receivedAt).toISOString() };
   }
 
+  heads(entries) {
+    const heads = new Map();
+    for (const entry of entries) {
+      if (this.enabled(entry.clientId) && ["pending", "processing"].includes(entry.status) &&
+          (!heads.has(entry.clientId) || entry.status === "processing")) heads.set(entry.clientId, entry);
+    }
+    return heads;
+  }
+
+  attention(entry, session) {
+    const disabled = !this.enabled(entry.clientId);
+    if (entry.status === "completed" || (!disabled && !["blocked", "interrupted"].includes(entry.status))) return null;
+    return { inbox: this.envelope(entry, session), clientId: entry.clientId,
+      status: disabled ? "blocked" : entry.status, reason: disabled ? "account_disabled" : entry.reason };
+  }
+
   async poll(session, renewMedia, clientReady = () => true, offer = true) {
     return this.exclusive(async () => {
       if (this.storageFailed) throw new InboxError("inbox_storage_unavailable", 503);
@@ -300,40 +431,54 @@ class MessageInbox {
         next.entries[next.entries.indexOf(entry)] = updated;
         return updated;
       };
-      const active = () => next.entries.filter((entry) => entry.status !== "completed" && this.enabled(entry.clientId));
+      const active = () => next.entries.filter((entry) => entry.status !== "completed");
+      const initialHeads = this.heads(active());
+      const clearWait = (entry) => {
+        const patch = {};
+        for (const key of ["offeredAt", "preparationAt", "mediaWaitAt"]) {
+          if (entry[key] !== undefined) patch[key] = undefined;
+        }
+        if (entry.offeredAt !== undefined) patch.receipt = crypto.randomBytes(32).toString("hex");
+        return Object.keys(patch).length ? replace(entry, patch) : entry;
+      };
       for (let entry of active()) {
         // Wall clocks can move backwards. Restart timeout windows from the new
         // time instead of leaving the queue stalled until the old date returns.
-        for (const key of ["offeredAt", "startedAt", "readyAt", "preparationAt", "mediaWaitAt"]) {
+        for (const key of ["offeredAt", "startedAt", "preparationAt", "mediaWaitAt"]) {
           if (entry[key] > this.now()) entry = replace(entry, { [key]: this.now() });
         }
         if (entry.nextAttemptAt > this.now() + this.preparationRetryMs * 2 ** this.maxPreparationAttempts) {
           entry = replace(entry, { nextAttemptAt: this.now() + this.preparationRetryMs });
         }
+        if (!this.enabled(entry.clientId)) continue;
         if (entry.status === "processing" && this.now() - (entry.startedAt ?? entry.receivedAt) >= this.processingTimeoutMs) {
           replace(entry, { status: "interrupted", reason: "processing_timeout" });
         } else if (entry.status === "pending") {
+          // Queue age and disconnection time are not preparation failures. Only
+          // an eligible account head receives a preparation or claim window.
+          if (initialHeads.get(entry.clientId)?.id !== entry.id || !clientReady(entry.clientId)) {
+            clearWait(entry); continue;
+          }
           if (entry.offeredAt !== undefined && this.now() - entry.offeredAt >= this.claimTimeoutMs) {
             replace(entry, { status: "blocked", reason: "unclaimed" });
-          } else if (((!entry.ready || !clientReady(entry.clientId)) &&
-              this.now() - (entry.readyAt ?? entry.preparationAt ?? entry.receivedAt) >= this.preparationTimeoutMs) ||
-              (entry.mediaWaitAt !== undefined && this.now() - entry.mediaWaitAt >= this.preparationTimeoutMs)) {
+          } else if (!entry.ready && entry.preparationAt !== undefined &&
+              this.now() - entry.preparationAt >= this.preparationTimeoutMs) {
             replace(entry, { status: "blocked", reason: "preparation_timeout" });
           }
         }
       }
       // A stalled account must not block a connected account. Held messages are
       // kept for explicit review, outside the automatic delivery path.
-      const heads = new Map();
-      for (const entry of active()) {
-        if (["pending", "processing"].includes(entry.status) &&
-            (!heads.has(entry.clientId) || entry.status === "processing")) heads.set(entry.clientId, entry);
-      }
+      const heads = this.heads(active());
       let selected;
       let waiting;
       let renewalError;
       for (let entry of heads.values()) {
-        if (entry.status !== "pending" || !entry.ready || !clientReady(entry.clientId)) { waiting ||= entry; continue; }
+        if (entry.status !== "pending" || !clientReady(entry.clientId)) { waiting ||= entry; continue; }
+        if (!entry.ready) {
+          if (entry.preparationAt === undefined) entry = replace(entry, { preparationAt: this.now() });
+          waiting ||= entry; continue;
+        }
         if (entry.payload.media?.status === "ready" && renewMedia) {
           let media;
           try { media = await renewMedia(entry.payload.media); }
@@ -341,7 +486,11 @@ class MessageInbox {
           if (media?.status !== "ready") {
             if (media?.error !== "inbox_media_missing") {
               renewalError = "inbox_media_unavailable";
-              if (entry.mediaWaitAt === undefined) replace(entry, { mediaWaitAt: this.now() });
+              if (entry.mediaWaitAt === undefined) entry = replace(entry, { mediaWaitAt: this.now() });
+              if (this.now() - entry.mediaWaitAt >= this.preparationTimeoutMs) {
+                replace(entry, { status: "blocked", reason: "preparation_timeout" });
+                continue;
+              }
               waiting ||= entry;
               continue;
             }
@@ -358,10 +507,9 @@ class MessageInbox {
       const counts = { pending: 0, processing: 0, interrupted: 0, blocked: 0 };
       const attention = [];
       for (const entry of active()) {
-        counts[entry.status]++;
-        if (["blocked", "interrupted"].includes(entry.status)) attention.push({
-          inbox: this.envelope(entry, session), clientId: entry.clientId, status: entry.status, reason: entry.reason,
-        });
+        const item = this.attention(entry, session);
+        counts[item?.status || entry.status]++;
+        if (item) attention.push(item);
       }
       const common = { counts, attention };
       if (selected) return { status: "pending", ...common,
@@ -373,11 +521,11 @@ class MessageInbox {
     });
   }
 
-  reference(state, reference) {
+  reference(state, reference, allowDisabled = false) {
     if (!reference || !matches(IDENTIFIER, reference.id) || !matches(IDENTIFIER, reference.receipt) ||
         !matches(SESSION, reference.session) || state.session !== reference.session) throw new InboxError("invalid_inbox_reference", 400);
     const entry = state.entries.find((item) => item.id === reference.id && item.receipt === reference.receipt);
-    if (!entry || !this.enabled(entry.clientId)) throw new InboxError("inbox_message_not_found", 404);
+    if (!entry || (!allowDisabled && !this.enabled(entry.clientId))) throw new InboxError("inbox_message_not_found", 404);
     return entry;
   }
 
@@ -408,7 +556,7 @@ class MessageInbox {
 
   resolve(reference, resolution) {
     return this.transaction((state) => {
-      const entry = this.reference(state, reference);
+      const entry = this.reference(state, reference, resolution === "discard");
       if (resolution === "hold" && ["processing", "interrupted"].includes(entry.status)) {
         entry.status = "interrupted"; entry.reason = "workflow_failed";
         return { status: "interrupted" };
@@ -417,19 +565,39 @@ class MessageInbox {
       if (!["pending", "interrupted", "blocked"].includes(entry.status) || !["retry", "discard"].includes(resolution)) {
         throw new InboxError("invalid_inbox_resolution", 400);
       }
-      if (resolution === "discard") {
-        entry.status = "completed"; entry.completedAt = this.now(); delete entry.payload;
-      } else {
-        entry.status = "pending"; entry.receipt = crypto.randomBytes(32).toString("hex");
-        for (const key of ["session", "reason", "offeredAt", "startedAt", "mediaWaitAt", "nextAttemptAt", "attempts"]) delete entry[key];
-        entry.preparationAt = this.now();
-        delete entry.readyAt;
-        if (entry.payload.media?.status === "error") {
-          entry.payload = { ...entry.payload }; delete entry.payload.media; entry.ready = false;
-        }
-        if (entry.ready) entry.readyAt = this.now();
-      }
+      this.resolveEntry(entry, resolution);
       return { status: entry.status };
+    });
+  }
+
+  resolveEntry(entry, resolution) {
+    if (resolution === "discard") {
+      entry.status = "completed"; entry.completedAt = this.now(); delete entry.payload;
+    } else {
+      entry.status = "pending"; entry.receipt = crypto.randomBytes(32).toString("hex");
+      for (const key of ["session", "reason", "offeredAt", "startedAt", "preparationAt", "mediaWaitAt", "nextAttemptAt", "attempts"]) delete entry[key];
+      if (entry.payload.media?.status === "error") {
+        entry.payload = { ...entry.payload }; delete entry.payload.media; entry.ready = false;
+      }
+    }
+  }
+
+  resolveMany({ session, resolution, reason, clientId } = {}) {
+    if (!["retry", "discard"].includes(resolution) || (!reason && !clientId) ||
+        (reason !== undefined && (typeof reason !== "string" || !REASONS.has(reason))) ||
+        (clientId !== undefined && (typeof clientId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(clientId)))) {
+      throw new InboxError("invalid_inbox_filter", 400);
+    }
+    return this.transaction((state) => {
+      if (!matches(SESSION, session) || state.session !== session) throw new InboxError("inbox_session_changed");
+      let resolved = 0;
+      for (const entry of state.entries) {
+        const item = this.attention(entry, session);
+        if (!item || (reason !== undefined && item.reason !== reason) || (clientId !== undefined && entry.clientId !== clientId)) continue;
+        if (resolution === "retry" && !this.enabled(entry.clientId)) throw new InboxError("inbox_disabled", 400);
+        this.resolveEntry(entry, resolution); resolved++;
+      }
+      return { status: "resolved", resolved, resolution };
     });
   }
 

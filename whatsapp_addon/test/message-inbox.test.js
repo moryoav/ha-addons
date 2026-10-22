@@ -145,7 +145,11 @@ test("failed atomic publication preserves the previous message and removes tempo
 
 test("an uncertain directory flush cannot overwrite a published message from stale memory", async (t) => {
   const { inbox, create } = await fixture(t); await enqueue(inbox);
-  inbox.syncDirectory = async () => { throw new Error("Fictional directory flush failure"); };
+  const sync = inbox.syncDirectory.bind(inbox); let flushes = 0;
+  inbox.syncDirectory = async () => {
+    if (++flushes === 2) throw new Error("Fictional snapshot directory flush failure");
+    return sync();
+  };
   await assert.rejects(inbox.enqueue("default", message("second")), { code: "inbox_storage_unavailable" });
   const published = await fs.readFile(inbox.file, "utf8");
   assert.ok(published.includes('"messageId":"second"'));
@@ -192,16 +196,16 @@ test("ready messages wait for the WhatsApp account to reconnect before delivery"
   assert.equal((await inbox.poll(SESSION, undefined, () => true)).status, "pending");
 });
 
-test("incomplete preparation survives restart for review while ready messages continue", async (t) => {
+test("incomplete preparation resumes after a normal app restart", async (t) => {
   const { inbox, create } = await fixture(t); await inbox.enqueue("default", message());
   await enqueue(inbox, message("second"));
   const next = await create().start(); await next.open(SESSION);
-  assert.equal(next.unready("default").length, 0);
-  const result = await next.poll(SESSION);
-  assert.equal(result.message.key.id, "second");
-  assert.equal(result.attention[0].reason, "preparation_interrupted");
-  await next.resolve(result.attention[0].inbox, "retry");
   assert.equal(next.unready("default").length, 1);
+  const result = await next.poll(SESSION);
+  assert.equal(result.status, "preparing");
+  assert.deepEqual(result.attention, []);
+  await next.ready(next.unready("default")[0].id);
+  assert.equal((await next.poll(SESSION)).message.key.id, "fictional-1");
 });
 
 test("a stale HA session cannot consume or mutate the current inbox", async (t) => {
@@ -282,6 +286,7 @@ test("unprepared messages can be discarded immediately or held by the watchdog",
   let result = await inbox.poll(SESSION);
   await inbox.resolve(result.inbox, "discard");
   await inbox.enqueue("default", message("stuck"));
+  await inbox.poll(SESSION);
   now += 61;
   result = await inbox.poll(SESSION);
   assert.equal(result.status, "blocked");
@@ -367,7 +372,11 @@ test("unchanged polls avoid snapshot cloning and disk writes with a full receipt
 
 test("an uncertain enqueue is held after restart rather than replaying a possible live fallback", async (t) => {
   const { inbox, create } = await fixture(t);
-  inbox.syncDirectory = async () => { throw new Error("Fictional flush failure"); };
+  const sync = inbox.syncDirectory.bind(inbox); let flushes = 0;
+  inbox.syncDirectory = async () => {
+    if (++flushes === 2) throw new Error("Fictional snapshot directory flush failure");
+    return sync();
+  };
   await assert.rejects(inbox.enqueue("default", message()), { code: "inbox_storage_unavailable" });
   const recovered = await create().start(); await recovered.open(OTHER_SESSION);
   const result = await recovered.poll(OTHER_SESSION);
@@ -411,10 +420,10 @@ test("failed media renewal is held after its watchdog and later messages continu
   await enqueue(inbox, message("later"));
   await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_unavailable" }));
   now += 61;
-  const result = await inbox.poll(SESSION);
-  assert.equal(result.message.key.id, "later");
+  const result = await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_unavailable" }));
   assert.equal(result.attention[0].reason, "preparation_timeout");
   assert.equal(inbox.isMediaPinned(media.id), true);
+  assert.equal((await inbox.poll(SESSION)).message.key.id, "later");
 });
 
 test("admission reserves room to prepare, start and complete messages at the storage limit", async (t) => {

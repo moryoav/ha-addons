@@ -51,6 +51,16 @@ and adding the start and completion gates to the processing automation.
   `resolution: retry` or `resolution: discard` after inspecting the action.
   Pending and unprepared messages can also be resolved. A failing workflow can
   use `resolution: hold` to retain a started message for immediate review.
+- `whatsapp.resolve_inbox_messages`: atomically retry or discard held messages
+  filtered by `reason`, `clientId`, or both. Requires `response_variable` and at
+  least one filter. Returns `status`, `resolution`, and the number `resolved`.
+  Leaves active processing and ordinary pending messages alone. Disabled-account
+  work is visible as `account_disabled` and can be discarded.
+- `whatsapp.recover_inbox`: reload failed private storage with `mode: reload`
+  (the default). Use `mode: reset` only to archive a proven invalid snapshot and
+  start a fresh inbox. Archived work is preserved but not replayed. Requires
+  `response_variable`; returns `status: ready`, enabled `clients`, and an
+  optional archive basename. Healthy storage is left running.
 
 See [Recover incoming messages](../examples/reliable-incoming-messages.md) for
 the migration example, restart behavior, storage limits, and media retention.

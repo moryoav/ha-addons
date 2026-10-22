@@ -18,6 +18,14 @@
   preserved unreadable state while keeping the rest of the app available.
 - Retried temporary media failures, isolated damaged attachments, synced media
   metadata, and avoided inbox snapshot work on unchanged polls.
+- Preserved ready backlogs across reconnects, resumed normal unfinished downloads
+  after app restarts, and isolated uncertain admissions for explicit review.
+- Added filtered bulk recovery for held backlogs and Home Assistant actions to
+  reload private storage or archive an invalid snapshot without restarting.
+- Kept disabled-account work visible for discard, limited recovery media pins to
+  identifiable attachments, and retained quota accounting after media publication.
+- Documented parallel workflows across accounts and verified the published example
+  with simultaneous messages from two accounts.
 
 ## 3.0.0
 

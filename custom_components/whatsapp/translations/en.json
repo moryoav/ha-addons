@@ -195,6 +195,34 @@
           "description": "Retry after checking whether actions already ran; discard skips the message; hold retains a started message for review and does not cancel running actions."
         }
       }
+    },
+    "resolve_inbox_messages": {
+      "name": "Resolve held inbox messages",
+      "description": "Retry or discard matching held messages in one operation. Choose an account, a reason, or both. Active processing and ordinary pending messages are excluded. Check whether actions already ran before retrying.",
+      "fields": {
+        "resolution": {
+          "name": "Resolution",
+          "description": "Retry matching held messages with new receipts, or discard them and release their media."
+        },
+        "reason": {
+          "name": "Hold reason",
+          "description": "Only resolve held messages with this reason. Required unless an account ID is supplied."
+        },
+        "clientId": {
+          "name": "Account ID",
+          "description": "Only resolve held messages for this account. Disabled accounts can be discarded but cannot be retried."
+        }
+      }
+    },
+    "recover_inbox": {
+      "name": "Recover message inbox",
+      "description": "Reload failed inbox storage. Reset archives unreadable state and starts a fresh inbox; archived messages will not be processed automatically. Healthy inboxes are left running.",
+      "fields": {
+        "mode": {
+          "name": "Recovery mode",
+          "description": "Reload retries loading the existing state. Reset also archives invalid state if it cannot be loaded. Check automation traces and create an app backup before resetting."
+        }
+      }
     }
   },
   "exceptions": {
@@ -251,6 +279,9 @@
     },
     "invalid_voice_target": {
       "message": "Enter a WhatsApp phone number, phone JID, or LID for a direct audio call."
+    },
+    "inbox_filter_required": {
+      "message": "Choose an account ID, a hold reason, or both before resolving held inbox messages."
     }
   },
   "entity": {

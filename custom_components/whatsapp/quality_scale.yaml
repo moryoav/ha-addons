@@ -3,14 +3,14 @@ rules:
   action-setup: done
   appropriate-polling:
     status: done
-    comment: One coordinator polls the local app every 30 seconds for all status entities; message, call, and presence events remain pushed.
+    comment: One coordinator polls app status every 30 seconds. Opt-in inbox delivery uses update hints and a ten-second fallback poll; other events remain pushed.
   brands: done
   common-modules: done
   config-flow-test-coverage: done
   config-flow: done
   dependency-transparency:
     status: done
-    comment: HTTP provides authenticated attachment downloads; documented app mounts contain decrypted media and optional recordings, and the read-only config mount supplies the selected OpenAI agent key for voice calls.
+    comment: HTTP provides authenticated attachment downloads. App data contains private inbox snapshots and recovery archives; media mounts contain decrypted attachments and optional recordings. The read-only config mount supplies the selected OpenAI agent key for voice calls.
   docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done

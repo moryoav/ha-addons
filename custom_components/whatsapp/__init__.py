@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import voluptuous as vol
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
@@ -475,12 +476,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "start_inbox_message": "start",
             "complete_inbox_message": "complete",
             "resolve_inbox_message": "resolve",
+            "resolve_inbox_messages": "resolve_many",
+            "recover_inbox": "recover",
         }
         data = (
             {"session": worker.session, "inspect": True}
             if call.service == "get_inbox"
             else dict(call.data)
         )
+        if call.service == "resolve_inbox_messages":
+            if not data.get("reason") and not data.get("clientId"):
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN, translation_key="inbox_filter_required"
+                )
+            data["session"] = worker.session
         result = await _async_call_api(
             hass,
             call.service,
@@ -489,6 +498,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
         if call.service != "get_inbox":
             worker.wake()
+        if call.service == "recover_inbox":
+            persistent_notification.async_dismiss(hass, "whatsapp_inbox_storage")
         return result
 
     for action in [
@@ -496,17 +507,49 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         "start_inbox_message",
         "complete_inbox_message",
         "resolve_inbox_message",
+        "resolve_inbox_messages",
+        "recover_inbox",
     ]:
-        fields = {} if action == "get_inbox" else {vol.Required("inbox"): dict}
+        fields = (
+            {}
+            if action in {"get_inbox", "resolve_inbox_messages", "recover_inbox"}
+            else {vol.Required("inbox"): dict}
+        )
         if action == "resolve_inbox_message":
             fields[vol.Required("resolution")] = vol.In(["retry", "discard", "hold"])
+        elif action == "resolve_inbox_messages":
+            fields = {
+                vol.Required("resolution"): vol.In(["retry", "discard"]),
+                vol.Optional("reason"): vol.In(
+                    [
+                        "unclaimed",
+                        "preparation_timeout",
+                        "processing_timeout",
+                        "preparation_interrupted",
+                        "processing_interrupted",
+                        "workflow_failed",
+                        "account_disabled",
+                    ]
+                ),
+                vol.Optional("clientId"): cv.string,
+            }
+        elif action == "recover_inbox":
+            fields = {
+                vol.Optional("mode", default="reload"): vol.In(["reload", "reset"])
+            }
         hass.services.async_register(
             DOMAIN,
             action,
             inbox_action,
             schema=vol.Schema(fields),
             supports_response=SupportsResponse.ONLY
-            if action in {"get_inbox", "start_inbox_message"}
+            if action
+            in {
+                "get_inbox",
+                "start_inbox_message",
+                "resolve_inbox_messages",
+                "recover_inbox",
+            }
             else SupportsResponse.OPTIONAL,
         )
 

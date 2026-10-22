@@ -272,3 +272,37 @@ resolve_inbox_message:
             - retry
             - discard
             - hold
+
+resolve_inbox_messages:
+  fields:
+    resolution:
+      required: true
+      selector:
+        select:
+          options:
+            - retry
+            - discard
+    reason:
+      selector:
+        select:
+          options:
+            - unclaimed
+            - preparation_timeout
+            - processing_timeout
+            - preparation_interrupted
+            - processing_interrupted
+            - workflow_failed
+            - account_disabled
+    clientId:
+      selector:
+        text:
+
+recover_inbox:
+  fields:
+    mode:
+      default: reload
+      selector:
+        select:
+          options:
+            - reload
+            - reset

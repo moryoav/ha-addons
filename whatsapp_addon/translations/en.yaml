@@ -15,7 +15,10 @@ configuration:
       processing acknowledgements. Leave empty for legacy delivery. Update the
       integration and add Start inbox message and Complete inbox message to your
       automation before enabling an account. Held or interrupted messages stay
-      stored for review while later messages continue.
+      stored for review while later messages continue. Use parallel mode for shared
+      workflows across accounts. Home Assistant actions can resolve held backlogs
+      in bulk or recover failed private storage. Disabled accounts retain recovery
+      access to existing work.
   download_media:
     name: Download media
     description: Save incoming photos, videos, voice messages, and documents for use

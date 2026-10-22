@@ -1504,14 +1504,20 @@ const startAddon = async ({
   };
   libsignalFilter?.setDecryptStormHandler?.(handleDecryptStorm);
   try {
-    if (options.inboxClients?.length) {
-      messageInbox = messageInboxFactory({ directory: path.join(dataRoot, "inbox"),
-        clientIds: options.inboxClients, fsPromises });
+    const inboxDirectory = path.join(dataRoot, "inbox");
+    let retainedInbox = false;
+    if (!options.inboxClients?.length && typeof fsPromises.lstat === "function") {
+      try { await fsPromises.lstat(inboxDirectory); retainedInbox = true; }
+      catch (error) { retainedInbox = error.code !== "ENOENT"; }
+    }
+    if (options.inboxClients?.length || retainedInbox) {
+      messageInbox = messageInboxFactory({ directory: inboxDirectory,
+        clientIds: options.inboxClients || [], fsPromises, logger });
       try {
         await messageInbox.start();
       } catch {
         messageInbox.markUnavailable();
-        logger.error?.("WhatsApp inbox storage could not be loaded. The original files are preserved; inbox accounts will use live delivery until storage is repaired and the app restarts.");
+        logger.error?.("WhatsApp inbox storage could not be loaded. The original files are preserved; use Recover message inbox in Home Assistant. Inbox accounts use live delivery until recovery succeeds.");
       }
     }
     if (options.mediaOptions) {

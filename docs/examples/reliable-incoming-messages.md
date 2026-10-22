@@ -48,6 +48,12 @@ process_whatsapp_inbox_message:
 
 Then use this automation. `continue_on_error` lets it record a failed workflow
 for review; it does not acknowledge a failed workflow as completed.
+Keep `mode: parallel` on both the automation and processing script when they
+handle several accounts. The inbox permits one active message per account, so
+one account's long workflow must leave room for another account to claim its
+message within 60 seconds. Alternatively, use a separate processing automation
+and script for each account. A shared `single` or `queued` workflow can leave
+other accounts' messages unclaimed.
 
 ```yaml
 alias: Process WhatsApp inbox messages
@@ -124,13 +130,18 @@ the atomic start gate permits only one execution.
 
 ## Messages that need review
 
-The integration delivers an unclaimed message at most three times per consumer
-session, at least 20 seconds apart. If it is still unclaimed 60 seconds after its
+The integration delivers an unclaimed message at most three times per delivery
+receipt, at least 20 seconds apart. If it is still unclaimed 60 seconds after its
 first offer, the app holds it as `blocked` with reason `unclaimed`. Later messages
-continue. A new HA consumer session gives pending messages a fresh claim window.
-The app also holds preparation stalled for 15 minutes, and marks
+continue. A new HA consumer session, app restart, or observed account disconnect
+gives pending messages a fresh claim window. App restarts and disconnects rotate
+offered receipts so the running integration can offer them again.
+The app holds preparation stalled for 15 minutes at a connected account's
+eligible queue head, and marks
 processing stalled for 30 minutes as `interrupted`. Held messages stay in private
-storage. They are never automatically retried or discarded.
+storage. Queue waiting time and account disconnection do not count as failed
+preparation. Ready messages wait for reconnection. Held messages are never
+automatically retried or discarded.
 
 Home Assistant creates a persistent notification and emits
 `whatsapp_inbox_attention` for held messages. Started messages interrupted by an
@@ -153,6 +164,30 @@ message's offer timer. Copy a current reference into
   any active workflow on the same account.
 - Use `hold` from a failing workflow to retain a started message for immediate
   review. Holding does not cancel actions that are already running.
+
+For a backlog, use `whatsapp.resolve_inbox_messages` with `resolution: retry` or
+`discard` and at least one filter: `reason` or `clientId`. If both are supplied,
+both must match. It changes all matching held messages in one atomic operation
+and returns the number resolved. It leaves ordinary pending and actively
+processing messages alone. Inspect `get_inbox` and the automation traces first:
+bulk retry can repeat actions that already happened. This example discards only
+unclaimed messages from the selected account:
+
+```yaml
+action: whatsapp.resolve_inbox_messages
+data:
+  clientId: default
+  reason: unclaimed
+  resolution: discard
+response_variable: resolved
+```
+
+Held messages count toward the 1,000-message limit and keep their attachments
+pinned. They do not expire automatically. Use filtered bulk discard for obsolete
+work to release its payloads, media protection, and queue capacity. Messages from
+disabled inbox accounts appear with reason `account_disabled`; discard them or
+reenable the account before retrying. The recovery actions remain available when
+all inbox accounts are disabled if private inbox storage already exists.
 
 A late completion from the same consumer can still finish an interrupted item.
 No uncertain action is automatically repeated. For delayed commands, use the
@@ -177,13 +212,32 @@ event path with an `inbox_error` code and no `inbox` reference. It also emits
 Live fallback cannot recover a message while Home Assistant is unavailable.
 
 Unreadable inbox state is preserved. The rest of the app starts, and inbox
-accounts use live fallback until the storage is repaired and the app restarts.
-An uncertain disk flush stops further inbox writes to protect the published
-state. After restart, incomplete preparation is held for explicit review: the
-app cannot know whether an uncertain admission was already delivered through
-live fallback. Ready pending messages resume automatically; started messages
-remain held. Existing media is conservatively protected while inbox state is
-unreadable, so repair storage promptly to avoid exhausting the media quota.
+accounts use live fallback until recovery succeeds. An uncertain disk flush
+stops further inbox writes to protect the published state. After a normal app
+restart, pending messages resume, including unfinished downloads. Only an
+unready admission with a surviving crash guard is held as
+`preparation_interrupted`: that specific message may already have used live
+fallback. Started messages remain held.
+
+On Home Assistant OS, use Developer Tools > Actions > **WhatsApp: Recover
+message inbox** (`whatsapp.recover_inbox`) without editing private app files.
+Choose `mode: reload` after resolving free-space or temporary storage failures.
+Recovery reloads the preserved snapshot and resumes delivery without restarting
+the app. Running it on healthy storage does not interrupt active work.
+
+If the snapshot is invalid and reload fails, back up the app, then choose
+`mode: reset`. Reset is permitted only for a snapshot proven invalid, not for
+a transient read error. It archives the original as
+`/data/inbox/messages.invalid-<UUID>.json` with private permissions, then starts a
+fresh inbox. The response contains the archive basename. Archived messages are
+preserved in the app data and backups but are **not automatically imported or
+replayed**. Review the archive separately before deciding how to recover that
+work. A reset cannot repair a full or failing disk.
+
+While state is unreadable, only media IDs identifiable in known state or the
+bounded raw snapshot remain protected. Unrelated media still expires normally.
+Recovery releases these temporary pins; resolve held messages promptly to avoid
+exhausting the media quota.
 
 With media downloading enabled, unfinished attachments are protected from expiry
 cleanup. Temporary download failures receive up to three attempts with backoff.
@@ -192,7 +246,8 @@ missing or corrupt attachment is delivered with `media.status: error` and
 `media.error: inbox_media_missing`. One damaged folder does not disable downloads
 for other messages. Existing media quotas still apply. Completion or discard
 releases protection. Resolve pending work before disabling an inbox account;
-disabled accounts are not drained.
+disabled accounts are not drained or prepared but their retained messages remain
+visible for explicit discard.
 
 Only one Home Assistant consumer is supported. The integration reopens its
 session automatically if an app restore supplies an older session. Competing HA

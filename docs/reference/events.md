@@ -35,12 +35,19 @@ Home Assistant starts and includes an `inbox` object with opaque `id`, `receipt`
 automation must call `whatsapp.start_inbox_message` and continue only when
 `started` is true. Call `whatsapp.complete_inbox_message` after the workflow and
 reply finish. Each account has its own queue. Unclaimed events are delivered at
-most three times per HA session before being held for review after 60 seconds.
-Stalled preparation and processing are held after 15 and 30 minutes respectively.
+most three times per delivery receipt before being held for review after 60
+seconds. Reconnects, app restarts, and new HA sessions refresh the claim window.
+Stalled preparation at a connected account's eligible head and processing are
+held after 15 and 30 minutes respectively. Use parallel processing for a shared
+automation and script handling multiple accounts.
 Held items remain stored while later messages continue. If admission fails, a
 live fallback event has `inbox_error` instead of an `inbox` reference and cannot
 provide restart recovery. Other accounts retain legacy live event delivery.
 See [Recover incoming messages](../examples/reliable-incoming-messages.md).
+
+The `attention` list also surfaces retained work from disabled inbox accounts as
+`blocked` with reason `account_disabled`. Filtered bulk resolution can discard
+these items without enabling delivery again.
 
 With incoming media downloads enabled,
 `new_whatsapp_message` also includes a `media` object with `status: ready`,
