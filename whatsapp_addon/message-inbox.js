@@ -89,9 +89,10 @@ class MessageInbox {
   salvage(saved) {
     try { this.validate(saved); return saved; } catch { /* Inspect individual rows. */ }
     const clean = { version: 1, pending: [], delivered: [] };
-    if (saved?.version !== 1 || !Array.isArray(saved.pending) || !Array.isArray(saved.delivered)) return clean;
+    if (saved?.version !== 1) return clean;
     const ids = new Set();
     for (const kind of ["pending", "delivered"]) {
+      if (!Array.isArray(saved[kind])) continue;
       for (const entry of saved[kind]) {
         if (clean[kind].length >= (kind === "pending" ? this.maxPending : 1000)) break;
         try {

@@ -122,6 +122,16 @@ test("corrupt rows are archived without dropping valid messages or changing stor
   assert.equal((await create().start()).state.pending.length, 2);
 });
 
+test("a damaged receipt list does not discard valid pending messages", async (t) => {
+  const { inbox, create } = await fixture(t); await inbox.enqueue("default", message());
+  const saved = JSON.parse(await fs.readFile(inbox.file, "utf8"));
+  saved.delivered = null; await fs.writeFile(inbox.file, JSON.stringify(saved));
+  const restored = await create().start();
+  assert.equal(restored.peek(() => true).payload.key.id, "fictional-id");
+  assert.deepEqual(restored.state.delivered, []);
+  assert.equal((await create().start()).state.pending.length, 1);
+});
+
 test("read or archive failures never replace the original snapshot, and retry needs no restart", async (t) => {
   const { inbox, create, directory } = await fixture(t); await inbox.enqueue("default", message());
   const original = await fs.readFile(inbox.file, "utf8"); const broken = create();
