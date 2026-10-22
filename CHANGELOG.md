@@ -24,6 +24,8 @@ All notable changes to this repository are documented here.
   metadata, and avoided inbox snapshot work on unchanged polls.
 - Preserved ready backlogs across reconnects, resumed normal unfinished downloads
   after app restarts, and isolated uncertain admissions for explicit review.
+- Rotated delivery offers across accounts so an unclaimed message does not delay
+  other eligible accounts until its watchdog expires.
 - Added filtered bulk recovery for held backlogs and Home Assistant actions to
   reload private storage or archive an invalid snapshot without restarting.
 - Kept disabled-account work visible for discard, limited recovery media pins to

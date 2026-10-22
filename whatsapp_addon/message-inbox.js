@@ -56,6 +56,7 @@ class MessageInbox {
     this.storageFailed = false;
     this.recoveryPins = new Set();
     this.corruptStorage = false;
+    this.lastOfferedClient = null;
   }
 
   enabled(clientId) { return this.clients.has(clientId); }
@@ -470,10 +471,15 @@ class MessageInbox {
       // A stalled account must not block a connected account. Held messages are
       // kept for explicit review, outside the automatic delivery path.
       const heads = this.heads(active());
+      let candidates = [...heads.values()];
+      if (offer && this.lastOfferedClient !== null) {
+        const last = candidates.findIndex((entry) => entry.clientId === this.lastOfferedClient);
+        if (last >= 0) candidates = [...candidates.slice(last + 1), ...candidates.slice(0, last + 1)];
+      }
       let selected;
       let waiting;
       let renewalError;
-      for (let entry of heads.values()) {
+      for (let entry of candidates) {
         if (entry.status !== "pending" || !clientReady(entry.clientId)) { waiting ||= entry; continue; }
         if (!entry.ready) {
           if (entry.preparationAt === undefined) entry = replace(entry, { preparationAt: this.now() });
@@ -504,6 +510,7 @@ class MessageInbox {
         selected = entry; break;
       }
       if (next !== this.state) await this.publish(next);
+      if (offer && selected) this.lastOfferedClient = selected.clientId;
       const counts = { pending: 0, processing: 0, interrupted: 0, blocked: 0 };
       const attention = [];
       for (const entry of active()) {

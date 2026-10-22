@@ -72,6 +72,18 @@ test("disconnect pauses an actual preparation wait and refreshes an unclaimed de
   await assert.rejects(inbox.begin(old), { code: "inbox_message_not_found" });
 });
 
+test("an unclaimed head cannot monopolize offers ahead of another eligible account", async (t) => {
+  const { inbox } = await fixture(t);
+  await add(inbox, "unclaimed", true, "default");
+  await add(inbox, "other-account", true, "other");
+  const first = await inbox.poll(SESSION);
+  assert.equal(first.message.clientId, "default");
+  const other = await inbox.poll(SESSION);
+  assert.equal(other.message.clientId, "other");
+  assert.equal((await inbox.begin(other.message.inbox)).started, true);
+  assert.equal((await inbox.poll(SESSION)).message.clientId, "default");
+});
+
 test("a normal app restart resumes every unprepared entry", async (t) => {
   const { inbox, create } = await fixture(t);
   for (let i = 0; i < 3; i++) await add(inbox, `unready-${i}`, false);

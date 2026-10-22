@@ -4,6 +4,8 @@ The persistent inbox keeps messages received by the WhatsApp app while Home
 Assistant is unavailable. After Home Assistant finishes starting, the integration
 delivers pending messages as `new_whatsapp_message`. Each account has its own
 ordered queue. A disconnected account does not block other accounts.
+Offers rotate between eligible accounts so one unclaimed head cannot monopolize
+delivery to Home Assistant.
 
 Update the app and integration to **3.1.0 or newer**. Inbox delivery is opt-in for
 each account. Accounts outside `inbox_clients` retain their existing event path.
