@@ -556,10 +556,13 @@ const createAddonRuntime = ({
   let inboxStopping = false;
   const prepareInbox = (entry) => {
     if (inboxStopping || inboxTasks.size >= 2 || inboxTasks.has(entry.id)) return;
+    const client = clients[entry.clientId];
+    if (!client?.status?.connected) return;
     let prepared = false;
     const task = (async () => {
-      const media = await mediaStore?.enrich(entry.payload, clients[entry.clientId]);
+      const media = await mediaStore?.enrich(entry.payload, client);
       if (media?.error === "stopped") return;
+      if (media?.status === "error" && !client.status?.connected) return;
       await messageInbox.ready(entry.id, media);
       prepared = true;
       await postSupervisor("/core/api/events/whatsapp_inbox_updated", {}, "inbox update delivery");

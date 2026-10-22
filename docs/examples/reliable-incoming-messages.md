@@ -109,6 +109,9 @@ state. Correct the storage problem and restart the app to reload that state.
 
 With media downloading enabled, pending attachment files are protected from
 normal expiry cleanup and their expiry metadata is renewed before delivery.
+Temporary renewal failures retain the original reference and keep the message
+pending for another attempt. Preparation and delivery wait for the WhatsApp
+account to be connected.
 Existing file-size and total-media quotas still apply. Completing the message
 releases its media protection. Disabling an inbox account returns it to legacy
 delivery; resolve its pending work first, because paused accounts are not drained

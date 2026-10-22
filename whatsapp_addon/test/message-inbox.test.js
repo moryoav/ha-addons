@@ -167,6 +167,31 @@ test("media is pinned before cleanup and unpinned only after completion", async 
   assert.equal(inbox.isMediaPinned(id), false);
 });
 
+test("a transient renewal failure keeps the attachment durable and pinned until retry succeeds", async (t) => {
+  const { inbox, create } = await fixture(t);
+  const media = { id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a", status: "ready", expires_at: "2000-01-01T00:00:00Z" };
+  await enqueue(inbox, message(), "default", media);
+  const failed = await inbox.poll(SESSION, async () => ({ status: "error", error: "inbox_media_unavailable" }));
+  assert.equal(failed.status, "preparing");
+  assert.equal(failed.error, "inbox_media_unavailable");
+  assert.equal(failed.message, undefined);
+  assert.equal(inbox.isMediaPinned(media.id), true);
+  const restarted = await create().start(); await restarted.open(SESSION);
+  assert.equal(restarted.isMediaPinned(media.id), true);
+  assert.deepEqual(restarted.state.entries[0].payload.media, media);
+  const renewed = await restarted.poll(SESSION, async (item) => ({ ...item, expires_at: "2099-01-01T00:00:00Z" }));
+  assert.equal(renewed.status, "pending");
+  assert.equal(renewed.message.media.id, media.id);
+});
+
+test("ready messages wait for the WhatsApp account to reconnect before delivery", async (t) => {
+  const { inbox } = await fixture(t); await enqueue(inbox);
+  const paused = await inbox.poll(SESSION, undefined, () => false);
+  assert.equal(paused.status, "preparing");
+  assert.equal(paused.message, undefined);
+  assert.equal((await inbox.poll(SESSION, undefined, () => true)).status, "pending");
+});
+
 test("unprepared media survives restart and blocks later ready messages", async (t) => {
   const { inbox, create } = await fixture(t); await inbox.enqueue("default", message());
   await enqueue(inbox, message("second"));
@@ -184,7 +209,8 @@ test("a stale HA session cannot consume or mutate the current inbox", async (t) 
 
 test("inbox API requires authentication and only explicit requests change processing state", async (t) => {
   const { inbox } = await fixture(t); await enqueue(inbox);
-  const app = createApiApp({ clients: {}, sharedSecret: "fictional-api-token", messageInbox: inbox });
+  const app = createApiApp({ clients: { default: { status: { connected: true } } },
+    sharedSecret: "fictional-api-token", messageInbox: inbox });
   const server = app.listen(0, "127.0.0.1"); await new Promise((resolve) => server.once("listening", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}/inbox/`;

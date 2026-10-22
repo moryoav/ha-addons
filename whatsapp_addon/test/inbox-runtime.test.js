@@ -27,7 +27,7 @@ test("incoming audio is durable before enrichment and survives failed HA event d
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-runtime-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const inbox = await new MessageInbox({ directory, clientIds: ["default"] }).start();
-  const client = new EventEmitter(); client.disconnect = async () => {};
+  const client = new EventEmitter(); client.disconnect = async () => {}; client.status = { connected: true };
   const requests = []; const logs = []; let finishMedia;
   const runtime = createAddonRuntime({ clientIds: ["default"], messageInbox: inbox,
     clientFactory: () => client, logger: { error: (...args) => logs.push(args), warn: (...args) => logs.push(args) },
@@ -56,7 +56,7 @@ test("an unprepared message resumes when its WhatsApp client becomes ready", asy
   const old = await new MessageInbox({ directory, clientIds: ["default"] }).start();
   await old.enqueue("default", payload);
   const inbox = await new MessageInbox({ directory, clientIds: ["default"] }).start();
-  const client = new EventEmitter(); client.disconnect = async () => {};
+  const client = new EventEmitter(); client.disconnect = async () => {}; client.status = { connected: true };
   const runtime = createAddonRuntime({ clientIds: ["default"], messageInbox: inbox,
     clientFactory: () => client, logger: {}, httpClient: { post: async () => {} },
     mediaStore: { enrich: async () => ({ status: "error", error: "download_failed" }) },
@@ -65,6 +65,29 @@ test("an unprepared message resumes when its WhatsApp client becomes ready", asy
   await runtime.stopInbox();
   await inbox.open(SESSION);
   assert.equal((await inbox.poll(SESSION)).message.media.error, "download_failed");
+});
+
+test("missing or disconnected clients leave audio unprepared until the ready event", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-client-ready-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const inbox = await new MessageInbox({ directory, clientIds: ["default"] }).start();
+  await inbox.enqueue("default", payload);
+  const client = new EventEmitter(); client.status = { connected: false };
+  let calls = 0;
+  const runtime = createAddonRuntime({ clientIds: ["default"], messageInbox: inbox,
+    clientFactory: () => client, logger: {}, httpClient: { post: async () => {} },
+    mediaStore: { enrich: async () => { calls++; return { status: "ready", id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a" }; } },
+  });
+  runtime.preparePendingInbox(); await settle();
+  assert.equal(calls, 0);
+  delete runtime.clients.default;
+  runtime.preparePendingInbox(); await settle();
+  assert.equal(calls, 0);
+  assert.equal(inbox.unready("default").length, 1);
+  runtime.clients.default = client; client.status.connected = true; client.emit("ready");
+  await runtime.stopInbox(); await inbox.open(SESSION);
+  assert.equal(calls, 1);
+  assert.equal((await inbox.poll(SESSION)).message.media.status, "ready");
 });
 
 test("unselected accounts keep the existing live event path", async (t) => {
@@ -94,8 +117,30 @@ test("pending attachment protection and renewed expiry survive media-store resta
   assert.deepEqual(await fs.readFile(media.local_path), bytes);
   const renewed = await store.renew(media);
   assert.ok(Date.parse(renewed.expires_at) > now);
+  assert.equal((await store.renew(media)).expires_at, renewed.expires_at);
   pinned.delete(media.id); now += 2000; await store.cleanup();
   await assert.rejects(fs.stat(media.local_path), { code: "ENOENT" });
+});
+
+test("temporary metadata unavailability during scan cannot delete a pinned attachment", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-media-scan-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const bytes = Buffer.from("Fictional pending attachment"); const pinned = new Set();
+  const options = { root, enabled: true, isPinned: (id) => pinned.has(id), logger: {} };
+  let store = await new MediaStore(options).start();
+  const media = await store.enrich(payload, {
+    getMediaContent: () => ({ mimetype: "audio/ogg", fileSha256: crypto.createHash("sha256").update(bytes).digest() }),
+    downloadMedia: async () => Readable.from([bytes]),
+  });
+  pinned.add(media.id); await store.close();
+  const metadata = path.join(root, media.id, "metadata.json");
+  await fs.rename(metadata, metadata+".saved");
+  store = await new MediaStore(options).start(); t.after(() => store.close());
+  assert.equal(store.available, false);
+  assert.deepEqual(await fs.readFile(media.local_path), bytes);
+  await fs.rename(metadata+".saved", metadata); await store.cleanup();
+  assert.equal(store.available, true);
+  assert.equal((await store.renew(media)).status, "ready");
 });
 
 test("persisted media keys and hashes retain their byte types for actual audio decoding", async (t) => {
@@ -112,7 +157,7 @@ test("persisted media keys and hashes retain their byte types for actual audio d
   const mediaStore = await new MediaStore({ root: path.join(root, "media"), enabled: true,
     isPinned: (id) => inbox.isMediaPinned(id), logger: {} }).start();
   t.after(() => mediaStore.close());
-  const client = new EventEmitter(); client.disconnect = async () => {};
+  const client = new EventEmitter(); client.disconnect = async () => {}; client.status = { connected: true };
   client.getMediaContent = (message) => message.message.audioMessage;
   client.downloadMedia = async (message) => {
     assert.ok(Buffer.isBuffer(message.message.audioMessage.fileSha256));

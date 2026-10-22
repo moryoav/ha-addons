@@ -200,7 +200,7 @@ class MessageInbox {
     });
   }
 
-  async poll(session, renewMedia) {
+  async poll(session, renewMedia, clientReady = () => true) {
     return this.transaction(async (state) => {
       if (!SESSION.test(session) || state.session !== session) throw new InboxError("inbox_session_changed");
       const active = state.entries.filter((entry) => entry.status !== "completed" && this.enabled(entry.clientId));
@@ -210,11 +210,16 @@ class MessageInbox {
       if (!entry) return { status: "empty", counts };
       const inbox = { id: entry.id, receipt: entry.receipt, session,
         received_at: new Date(entry.receivedAt).toISOString() };
-      if (entry.status !== "pending" || !entry.ready) {
+      if (entry.status !== "pending" || !entry.ready || !clientReady(entry.clientId)) {
         return { status: entry.status === "pending" ? "preparing" : entry.status, counts, inbox };
       }
       if (entry.payload.media?.status === "ready" && renewMedia) {
         const media = await renewMedia(entry.payload.media);
+        if (media?.status !== "ready") {
+          // Keep the original UUID pinned and retry later. Do not start a
+          // workflow with a transient storage failure in place of its audio.
+          return { status: "preparing", counts, inbox, error: "inbox_media_unavailable" };
+        }
         entry.payload.media = media;
       }
       return { status: "pending", counts, message: { ...structuredClone(entry.payload), clientId: entry.clientId, inbox } };

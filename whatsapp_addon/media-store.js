@@ -206,6 +206,7 @@ class MediaStore {
           });
           this.usedBytes += stat.size;
         } catch {
+          if (this.isPinned(item.name)) throw new MediaError("storage_error");
           await this.removeDirectory(item.name);
         }
       }
@@ -261,7 +262,9 @@ class MediaStore {
         return { status: "error", error: "inbox_media_unavailable" };
       }
       const entry = this.entries.get(media.id);
-      if (entry.expires > this.now() + this.retentionMs / 2) return media;
+      if (entry.expires > this.now() + this.retentionMs / 2) {
+        return { ...media, expires_at: new Date(entry.expires).toISOString() };
+      }
       const metadataPath = path.join(this.root, media.id, "metadata.json");
       const temporary = metadataPath + ".pending";
       try {
