@@ -76,23 +76,29 @@ class WhatsappInbox:
     def _handle_result(self, result: dict) -> None:
         """Bound event redelivery and report held messages without private content."""
         attention = result.get("attention", [])
+        initial = self._attention_count is None
+        new_count = 0
         announced = set()
         for item in attention:
             reference = item["inbox"]
             identity = (reference["id"], reference["receipt"], item["reason"])
             announced.add(identity)
             self._deliveries.pop(identity[:2], None)
-            if identity not in self._announced:
+            # The initial snapshot is a backlog reminder, not a new transition.
+            # Keep its notification without replaying per-message automations.
+            if not initial and identity not in self._announced:
+                new_count += 1
                 self.hass.bus.async_fire("whatsapp_inbox_attention", item)
                 if item["status"] == "interrupted":
                     self.hass.bus.async_fire(
                         "whatsapp_inbox_interrupted", {"inbox": reference}
                     )
-                _LOGGER.warning(
-                    "A WhatsApp inbox message needs review (%s); inspect get_inbox and resolve it explicitly",
-                    item["reason"],
-                )
         self._announced = announced
+        if (initial and attention) or new_count:
+            _LOGGER.warning(
+                "%s WhatsApp inbox message(s) need review; inspect get_inbox and resolve them explicitly",
+                len(attention) if initial else new_count,
+            )
         if len(attention) != self._attention_count:
             self._attention_count = len(attention)
             if attention:

@@ -28,6 +28,8 @@
   identifiable attachments, and retained quota accounting after media publication.
 - Documented parallel workflows across accounts and verified the published example
   with simultaneous messages from two accounts.
+- Returned a normal declined claim for superseded receipts while continuing to
+  reject stale completion and resolution requests.
 
 ## 3.0.0
 

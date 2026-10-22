@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Awaitable, Callable
 
 import voluptuous as vol
@@ -19,6 +20,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntry
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.setup import async_setup_component
 
@@ -539,7 +541,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             fields = {
                 vol.Optional("mode", default="reload"): vol.In(["reload", "reset"])
             }
-        hass.services.async_register(
+        register = (
+            partial(async_register_admin_service, hass)
+            if action in {"resolve_inbox_messages", "recover_inbox"}
+            else hass.services.async_register
+        )
+        register(
             DOMAIN,
             action,
             inbox_action,

@@ -74,7 +74,7 @@ actions:
         response_variable: claimed
       - if: "{{ not claimed.started }}"
         then:
-          - stop: This delivery is already claimed or completed
+          - stop: This delivery is not eligible for processing
   - if: >-
       {{ incoming.clientId != 'default'
          or incoming.key.remoteJid != '12025550123@s.whatsapp.net'
@@ -138,6 +138,8 @@ first offer, the app holds it as `blocked` with reason `unclaimed`. Later messag
 continue. A new HA consumer session, app restart, or observed account disconnect
 gives pending messages a fresh claim window. App restarts and disconnects rotate
 offered receipts so the running integration can offer them again.
+A claim already in flight with the old receipt returns `started: false`. The
+automation stops safely; only the current receipt can start or complete work.
 The app holds preparation stalled for 15 minutes at a connected account's
 eligible queue head, and marks
 processing stalled for 30 minutes as `interrupted`. Held messages stay in private
@@ -145,10 +147,12 @@ storage. Queue waiting time and account disconnection do not count as failed
 preparation. Ready messages wait for reconnection. Held messages are never
 automatically retried or discarded.
 
-Home Assistant creates a persistent notification and emits
-`whatsapp_inbox_attention` for held messages. Started messages interrupted by an
-app restart or a new HA session are also held, with
-`whatsapp_inbox_interrupted` retained for compatibility. The notification clears
+Home Assistant creates a persistent notification for held messages. The first
+successful poll after startup or integration reload records the existing backlog
+and logs one summary without replaying per-message events. Later new held
+transitions emit `whatsapp_inbox_attention`; new processing interruptions also
+emit `whatsapp_inbox_interrupted`. Started messages interrupted by an app restart
+or a new HA session remain held for review. The notification clears
 when all held messages are resolved. These limits are safeguards; workflows that
 may still be running must be checked before retrying.
 
@@ -183,6 +187,11 @@ data:
   resolution: discard
 response_variable: resolved
 ```
+
+User calls to bulk resolution and `whatsapp.recover_inbox` require an
+administrator. Unattended automations can still use these actions. The
+single-message start, complete, and resolve actions remain available to normal
+processing workflows.
 
 Held messages count toward the 1,000-message limit and keep their attachments
 pinned. They do not expire automatically. Use filtered bulk discard for obsolete

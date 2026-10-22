@@ -528,18 +528,22 @@ class MessageInbox {
     });
   }
 
-  reference(state, reference, allowDisabled = false) {
+  reference(state, reference, { allowDisabled = false, allowSuperseded = false } = {}) {
     if (!reference || !matches(IDENTIFIER, reference.id) || !matches(IDENTIFIER, reference.receipt) ||
         !matches(SESSION, reference.session) || state.session !== reference.session) throw new InboxError("invalid_inbox_reference", 400);
-    const entry = state.entries.find((item) => item.id === reference.id && item.receipt === reference.receipt);
+    const entry = state.entries.find((item) => item.id === reference.id && (allowSuperseded || item.receipt === reference.receipt));
     if (!entry || (!allowDisabled && !this.enabled(entry.clientId))) throw new InboxError("inbox_message_not_found", 404);
     return entry;
   }
 
   begin(reference) {
     return this.transaction((state) => {
-      const entry = this.reference(state, reference);
-      if (entry.status !== "pending" || !entry.ready) return { started: false, status: entry.status };
+      const entry = this.reference(state, reference, { allowSuperseded: true });
+      // A rotated offer may already have a claim in flight. Refuse it normally;
+      // only the current receipt can start work or acknowledge its completion.
+      if (entry.receipt !== reference.receipt || entry.status !== "pending" || !entry.ready) {
+        return { started: false, status: entry.status };
+      }
       const oldest = state.entries.find((item) => ["pending", "processing"].includes(item.status) && item.clientId === entry.clientId);
       if (oldest?.id !== entry.id || state.entries.some((item) => item.clientId === entry.clientId && item.status === "processing")) {
         throw new InboxError("inbox_message_out_of_order");
@@ -563,7 +567,7 @@ class MessageInbox {
 
   resolve(reference, resolution) {
     return this.transaction((state) => {
-      const entry = this.reference(state, reference, resolution === "discard");
+      const entry = this.reference(state, reference, { allowDisabled: resolution === "discard" });
       if (resolution === "hold" && ["processing", "interrupted"].includes(entry.status)) {
         entry.status = "interrupted"; entry.reason = "workflow_failed";
         return { status: "interrupted" };

@@ -33,7 +33,9 @@ paired by scanning its QR code in the add-on web UI.
   [startup recovery and explicit processing acknowledgements](https://moryoav.github.io/ha-addons/examples/reliable-incoming-messages/).
   Accounts drain independently, and held messages raise a review notification.
   Resolve held backlogs in bulk and recover failed storage through Home Assistant
-  actions. Shared workflows for multiple accounts need parallel mode.
+  actions with administrator access. Shared workflows for multiple accounts need
+  parallel mode. Existing held work gets one startup reminder without replaying
+  per-message alert events.
 - **Process incoming attachments:** [download and decrypt media](#decrypted-incoming-media)
   for OCR, transcription, document processing, or AI automations.
 - **Look up recipients:** check phone numbers, fetch saved contacts and profiles,

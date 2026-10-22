@@ -69,7 +69,7 @@ test("disconnect pauses an actual preparation wait and refreshes an unclaimed de
   const resumed = await inbox.poll(SESSION);
   assert.equal(resumed.status, "pending");
   assert.notEqual(resumed.message.inbox.receipt, old.receipt);
-  await assert.rejects(inbox.begin(old), { code: "inbox_message_not_found" });
+  assert.deepEqual(await inbox.begin(old), { started: false, status: "pending" });
 });
 
 test("an unclaimed head cannot monopolize offers ahead of another eligible account", async (t) => {
@@ -83,6 +83,32 @@ test("an unclaimed head cannot monopolize offers ahead of another eligible accou
   assert.equal((await inbox.begin(other.message.inbox)).started, true);
   assert.equal((await inbox.poll(SESSION)).message.clientId, "default");
 });
+
+for (const transition of ["reconnect", "restart", "explicit retry"]) {
+  test(`superseded claims after ${transition} are harmless while stale completions remain invalid`, async (t) => {
+    const { inbox: first, create } = await fixture(t);
+    let inbox = first;
+    await add(inbox, "stale-claim");
+    const old = (await inbox.poll(SESSION)).message.inbox;
+    if (transition === "restart") inbox = await create().start();
+    else if (transition === "reconnect") await inbox.poll(SESSION, undefined, () => false);
+    else { await inbox.begin(old); await inbox.resolve(old, "hold"); await inbox.resolve(old, "retry"); }
+    const current = (await inbox.poll(SESSION)).message.inbox;
+    assert.notEqual(current.receipt, old.receipt);
+    const before = JSON.stringify(inbox.state);
+    assert.deepEqual(await inbox.begin(old), { started: false, status: "pending" });
+    assert.equal(JSON.stringify(inbox.state), before);
+    assert.equal((await inbox.begin(current)).started, true);
+    assert.deepEqual(await inbox.begin(old), { started: false, status: "processing" });
+    await assert.rejects(inbox.complete(old), { code: "inbox_message_not_found" });
+    await assert.rejects(inbox.resolve(old, "discard"), { code: "inbox_message_not_found" });
+    await assert.rejects(inbox.begin({ ...old, session: "b".repeat(32) }), { code: "invalid_inbox_reference" });
+    await assert.rejects(inbox.begin({ ...old, receipt: "malformed" }), { code: "invalid_inbox_reference" });
+    await assert.rejects(inbox.begin({ ...old, id: "f".repeat(64) }), { code: "inbox_message_not_found" });
+    await inbox.complete(current);
+    assert.deepEqual(await inbox.begin(old), { started: false, status: "completed" });
+  });
+}
 
 test("a normal app restart resumes every unprepared entry", async (t) => {
   const { inbox, create } = await fixture(t);
@@ -437,8 +463,15 @@ test("authenticated HTTP recovery and bulk resolution work without an app restar
   assert.equal(await fs.readFile(path.join(directory, recovered.body.archive), "utf8"), "Fictional invalid private snapshot");
   assert.equal((await post("open", { session: SESSION })).status, 200);
   await add(broken, "held");
+  const previous = (await post("poll", { session: SESSION })).body.message.inbox;
+  await broken.poll(SESSION, undefined, () => false);
+  const stale = await post("start", { inbox: previous });
+  assert.equal(stale.status, 200);
+  assert.deepEqual(stale.body, { started: false, status: "pending" });
   const reference = (await post("poll", { session: SESSION })).body.message.inbox;
+  assert.notEqual(reference.receipt, previous.receipt);
   assert.equal((await post("start", { inbox: reference })).body.started, true);
+  assert.equal((await post("complete", { inbox: previous })).status, 404);
   assert.equal((await post("resolve", { inbox: reference, resolution: "hold" })).status, 200);
   await add(broken, "ordinary-pending");
   assert.equal((await post("resolve_many", { session: SESSION, resolution: "discard" })).status, 400);

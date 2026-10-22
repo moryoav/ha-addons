@@ -13,8 +13,8 @@ The add-on fires these Home Assistant events:
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_contacts_sync` | Available contact records from WhatsApp synchronization or contact updates. |
 | `whatsapp_inbox_updated` | A hint that durable incoming messages are ready; contains no message payload. |
-| `whatsapp_inbox_interrupted` | A started inbox message needs explicit review after interrupted processing. |
-| `whatsapp_inbox_attention` | A held message needs review; includes `clientId`, `status`, `reason`, and an opaque `inbox` reference. |
+| `whatsapp_inbox_interrupted` | A new interruption is observed after the consumer's initial snapshot. |
+| `whatsapp_inbox_attention` | A new held-message transition is observed after the initial snapshot; includes `clientId`, `status`, `reason`, and an opaque `inbox` reference. |
 | `whatsapp_inbox_error` | Inbox admission failed; includes `clientId` and a safe `error` code. Live delivery is attempted. |
 | `whatsapp_send_message_result` | Result event after a successful send action. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
@@ -48,6 +48,10 @@ See [Recover incoming messages](../examples/reliable-incoming-messages.md).
 The `attention` list also surfaces retained work from disabled inbox accounts as
 `blocked` with reason `account_disabled`. Filtered bulk resolution can discard
 these items without enabling delivery again.
+The first successful poll after startup or integration reload establishes the
+existing held backlog. It refreshes the persistent notification and logs one
+aggregate warning without firing per-message attention or interruption events.
+Later new held transitions emit events, with one aggregate warning per poll.
 
 With incoming media downloads enabled,
 `new_whatsapp_message` also includes a `media` object with `status: ready`,

@@ -13,10 +13,14 @@ import pytest
 import yaml
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import CoreState
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.core import Context, CoreState
+from homeassistant.exceptions import (
+    HomeAssistantError,
+    ServiceValidationError,
+    Unauthorized,
+)
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUser
 
 from custom_components.whatsapp import (
     WhatsappRuntimeData,
@@ -228,17 +232,25 @@ async def test_worker_announces_interruption_once_and_recovers_transient_failure
     client = Mock(spec=WhatsappClient)
     worker = WhatsappInbox(hass, client)
     calls = 0
+    polls = 0
 
     async def request(operation, data):
-        nonlocal calls
+        nonlocal calls, polls
         calls += 1
         if calls == 1:
             raise WhatsappApiError("Fictional private payload and credential")
         if operation == "open":
             return {"status": "ready", "clients": ["default"]}
+        polls += 1
+        if polls == 1:
+            return {
+                "status": "empty",
+                "counts": dict.fromkeys(COUNTS, 0),
+                "attention": [],
+            }
         return {
             "status": "interrupted",
-            "counts": COUNTS,
+            "counts": {"pending": 0, "processing": 0, "interrupted": 1, "blocked": 0},
             "inbox": {**REFERENCE, "session": worker.session},
             "attention": [
                 {
@@ -427,6 +439,10 @@ async def test_attention_is_visible_once_per_item_and_does_not_hide_deliverable_
             "custom_components.whatsapp.inbox.persistent_notification.async_dismiss"
         ) as dismiss,
     ):
+        worker._handle_result(
+            {"status": "empty", "counts": dict.fromkeys(COUNTS, 0), "attention": []}
+        )
+        dismiss.reset_mock()
         worker._handle_result(result)
         worker._handle_result(result)
         await hass.async_block_till_done()
@@ -465,7 +481,16 @@ def test_malformed_attention_is_rejected_without_raising(status, field, value):
 
 
 @pytest.mark.parametrize(
-    "case", ["success", "ignored", "failed_action", "failed_ack", "legacy", "duplicate"]
+    "case",
+    [
+        "success",
+        "ignored",
+        "failed_action",
+        "failed_ack",
+        "legacy",
+        "duplicate",
+        "superseded",
+    ],
 )
 async def test_documented_automation_runs_real_scripts_and_handles_failures(
     hass, enable_custom_integrations, case
@@ -490,6 +515,8 @@ async def test_documented_automation_runs_real_scripts_and_handles_failures(
         nonlocal started
         calls.append((operation, data))
         if operation == "start":
+            if case == "superseded":
+                return {"started": False, "status": "pending"}
             was_started = started
             started = True
             return {"started": not was_started, "status": "processing"}
@@ -532,6 +559,8 @@ async def test_documented_automation_runs_real_scripts_and_handles_failures(
         assert calls[-1][1]["resolution"] == "hold"
     elif case == "legacy":
         assert operations == ["send"]
+    elif case == "superseded":
+        assert operations == ["start"]
     else:
         assert operations.count("start") == (2 if case == "duplicate" else 1)
         assert operations.count("send") == 1
@@ -646,6 +675,164 @@ async def test_bulk_and_storage_recovery_services_are_scoped_and_wake_delivery(
         dismiss.assert_called_once_with(hass, "whatsapp_inbox_storage")
     client.async_inbox.assert_awaited_once_with("recover", {"mode": "reload"})
     assert worker.wake.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "action,data",
+    [
+        ("recover_inbox", {"mode": "reload"}),
+        ("recover_inbox", {"mode": "reset"}),
+        ("resolve_inbox_messages", {"resolution": "discard", "reason": "unclaimed"}),
+        ("resolve_inbox_messages", {"resolution": "retry", "client_id": "default"}),
+    ],
+)
+async def test_bulk_and_recovery_require_admin_but_allow_unattended_automations(
+    hass, enable_custom_integrations, hass_admin_user, action, data
+):
+    """Reject household-user calls before the app can change any inbox state."""
+    await async_setup(hass, {})
+    entry = MockConfigEntry(domain="whatsapp", data={"url": "http://addon:3000"})
+    entry.add_to_hass(hass)
+    client = Mock(spec=WhatsappClient)
+    client.async_inbox = AsyncMock(return_value={"status": "ready", "clients": []})
+    worker = Mock(spec=WhatsappInbox)
+    worker.session = SESSION
+    entry.runtime_data = WhatsappRuntimeData(client=client, inbox=worker)
+    user = MockUser().add_to_hass(hass)
+    assert not user.is_admin
+    with pytest.raises(Unauthorized):
+        await hass.services.async_call(
+            "whatsapp",
+            action,
+            data,
+            blocking=True,
+            return_response=True,
+            context=Context(user_id=user.id),
+        )
+    client.async_inbox.assert_not_awaited()
+    worker.wake.assert_not_called()
+    for context in [Context(user_id=hass_admin_user.id), Context()]:
+        await hass.services.async_call(
+            "whatsapp",
+            action,
+            data,
+            blocking=True,
+            return_response=True,
+            context=context,
+        )
+    assert client.async_inbox.await_count == 2
+    assert worker.wake.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "action,data,reply",
+    [
+        ("get_inbox", {}, pending()),
+        (
+            "start_inbox_message",
+            {"inbox": REFERENCE},
+            {"started": False, "status": "pending"},
+        ),
+        ("complete_inbox_message", {"inbox": REFERENCE}, {"status": "completed"}),
+        (
+            "resolve_inbox_message",
+            {"inbox": REFERENCE, "resolution": "hold"},
+            {"status": "interrupted"},
+        ),
+    ],
+)
+async def test_individual_workflow_actions_remain_available_to_household_users(
+    hass, enable_custom_integrations, action, data, reply
+):
+    """Keep normal processing and failure handling outside bulk-admin restrictions."""
+    await async_setup(hass, {})
+    entry = MockConfigEntry(domain="whatsapp", data={"url": "http://addon:3000"})
+    entry.add_to_hass(hass)
+    client = Mock(spec=WhatsappClient)
+    client.async_inbox = AsyncMock(return_value=reply)
+    worker = Mock(spec=WhatsappInbox)
+    worker.session = SESSION
+    entry.runtime_data = WhatsappRuntimeData(client=client, inbox=worker)
+    user = MockUser().add_to_hass(hass)
+    assert (
+        await hass.services.async_call(
+            "whatsapp",
+            action,
+            data,
+            blocking=True,
+            return_response=True,
+            context=Context(user_id=user.id),
+        )
+        == reply
+    )
+    client.async_inbox.assert_awaited_once()
+
+
+async def test_held_backlog_is_baselined_on_reload_and_only_new_transitions_emit_events(
+    hass, caplog
+):
+    """Keep backlog reminders without replaying per-message event automations."""
+
+    def held(index, status="blocked", reason="unclaimed"):
+        return {
+            "inbox": {**REFERENCE, "id": f"{index:064x}"},
+            "clientId": "default",
+            "status": status,
+            "reason": reason,
+        }
+
+    def snapshot(items):
+        return {
+            "status": "blocked",
+            "inbox": items[0]["inbox"],
+            "attention": items,
+            "counts": {
+                "pending": 0,
+                "processing": 0,
+                "blocked": sum(item["status"] == "blocked" for item in items),
+                "interrupted": sum(item["status"] == "interrupted" for item in items),
+            },
+        }
+
+    attention_events, interrupted_events = [], []
+    hass.bus.async_listen(
+        "whatsapp_inbox_attention", lambda event: attention_events.append(event.data)
+    )
+    hass.bus.async_listen(
+        "whatsapp_inbox_interrupted",
+        lambda event: interrupted_events.append(event.data),
+    )
+    old = [held(index) for index in range(250)]
+    new = [held(250), held(251, "interrupted", "workflow_failed"), held(252)]
+    first = WhatsappInbox(hass, Mock(spec=WhatsappClient))
+    with patch(
+        "custom_components.whatsapp.inbox.persistent_notification.async_create"
+    ) as notify:
+        first._handle_result(snapshot(old))
+        first._handle_result(snapshot(old))
+        await hass.async_block_till_done()
+        assert not attention_events and not interrupted_events
+        assert notify.call_count == 1
+        assert "250" in notify.call_args.args[1]
+        first._handle_result(snapshot(old + new))
+        first._handle_result(snapshot(old + new))
+        second = WhatsappInbox(hass, Mock(spec=WhatsappClient))
+        second._handle_result(snapshot(old + new))
+        await hass.async_block_till_done()
+    assert attention_events == new
+    assert interrupted_events == [{"inbox": new[1]["inbox"]}]
+    warnings = [
+        record
+        for record in caplog.records
+        if record.name == "custom_components.whatsapp.inbox"
+    ]
+    assert (
+        len(warnings) == 3
+    )  # One baseline per worker, one aggregate for new held work.
+    assert "250" in warnings[0].message
+    assert "3" in warnings[1].message
+    assert "253" in warnings[2].message
+    assert "12025550123" not in caplog.text
 
 
 async def test_worker_stops_cleanly_when_inbox_support_is_removed(hass):

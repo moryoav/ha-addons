@@ -198,7 +198,7 @@
     },
     "resolve_inbox_messages": {
       "name": "Resolve held inbox messages",
-      "description": "Retry or discard matching held messages in one operation. Choose an account, a reason, or both. Active processing and ordinary pending messages are excluded. Check whether actions already ran before retrying.",
+      "description": "Retry or discard matching held messages in one operation. User calls require an administrator. Choose an account, a reason, or both. Active processing and ordinary pending messages are excluded. Check whether actions already ran before retrying.",
       "fields": {
         "resolution": {
           "name": "Resolution",
@@ -216,7 +216,7 @@
     },
     "recover_inbox": {
       "name": "Recover message inbox",
-      "description": "Reload failed inbox storage. Reset archives unreadable state and starts a fresh inbox; archived messages will not be processed automatically. Healthy inboxes are left running.",
+      "description": "Reload failed inbox storage. User calls require an administrator. Reset archives unreadable state and starts a fresh inbox; archived messages will not be processed automatically. Healthy inboxes are left running.",
       "fields": {
         "mode": {
           "name": "Recovery mode",

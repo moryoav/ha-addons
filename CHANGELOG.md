@@ -32,6 +32,10 @@ All notable changes to this repository are documented here.
   identifiable attachments, and retained quota accounting after media publication.
 - Documented parallel workflows across accounts and verified the published example
   with simultaneous messages from two accounts.
+- Restricted bulk resolution and storage recovery to administrators for user calls.
+  Preserved unattended automation access and normal single-message workflows.
+- Returned a normal declined claim for superseded receipts and summarized existing
+  held work at startup without replaying per-message alert events.
 
 ## 3.0.0
 
