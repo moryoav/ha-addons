@@ -127,7 +127,8 @@ the atomic start gate permits only one execution.
 The integration delivers an unclaimed message at most three times per consumer
 session, at least 20 seconds apart. If it is still unclaimed 60 seconds after its
 first offer, the app holds it as `blocked` with reason `unclaimed`. Later messages
-continue. The app also holds preparation stalled for 15 minutes, and marks
+continue. A new HA consumer session gives pending messages a fresh claim window.
+The app also holds preparation stalled for 15 minutes, and marks
 processing stalled for 30 minutes as `interrupted`. Held messages stay in private
 storage. They are never automatically retried or discarded.
 

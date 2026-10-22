@@ -267,6 +267,9 @@ class MessageInbox {
         for (const entry of state.entries) {
           if (entry.status === "processing") {
             entry.status = "interrupted"; entry.reason = "processing_interrupted";
+          } else if (entry.status === "pending") {
+            // The new HA consumer has not received this offer yet.
+            delete entry.offeredAt;
           }
         }
         state.session = session;

@@ -8,7 +8,8 @@ All notable changes to this repository are documented here.
 
 - Added an opt-in inbox for selected accounts that persists incoming messages before
   delivery and resumes pending work after Home Assistant or the app restarts.
-- Added startup recovery, atomic start and completion acknowledgements, and explicit
+- Added startup recovery with a fresh claim window per HA session, atomic start
+  and completion acknowledgements, and explicit
   retry or discard for interrupted commands. Kept legacy delivery unchanged for
   accounts outside `inbox_clients`.
 - Preserved original sender metadata and message IDs, retained pending attachments,

@@ -14,8 +14,8 @@ configuration:
     description: Account IDs whose incoming messages should wait for Home Assistant
       processing acknowledgements. Leave empty for legacy delivery. Update the
       integration and add Start inbox message and Complete inbox message to your
-      automation before enabling an account. Interrupted messages pause delivery
-      until explicitly retried or discarded.
+      automation before enabling an account. Held or interrupted messages stay
+      stored for review while later messages continue.
   download_media:
     name: Download media
     description: Save incoming photos, videos, voice messages, and documents for use

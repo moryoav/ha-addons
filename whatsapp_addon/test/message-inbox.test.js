@@ -441,3 +441,23 @@ test("a backwards wall-clock correction cannot strand preparation backoff or wat
   now += 51;
   assert.equal((await inbox.poll(SESSION)).attention[0].reason, "preparation_timeout");
 });
+
+test("a new HA session gets a fresh claim window after a long outage, but reopening the same session does not", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
+  await enqueue(inbox);
+  const original = (await inbox.poll(SESSION)).message.inbox;
+  now += 1000000;
+  await inbox.open(OTHER_SESSION);
+  const recovered = await inbox.poll(OTHER_SESSION);
+  assert.equal(recovered.status, "pending");
+  assert.deepEqual(recovered.attention, []);
+  assert.equal(recovered.message.inbox.receipt, original.receipt);
+  assert.equal(recovered.message.inbox.received_at, original.received_at);
+  await assert.rejects(inbox.begin(original), { code: "invalid_inbox_reference" });
+  now += 61;
+  await inbox.open(OTHER_SESSION);
+  const blocked = await inbox.poll(OTHER_SESSION);
+  assert.equal(blocked.status, "blocked");
+  assert.equal(blocked.attention[0].reason, "unclaimed");
+});
