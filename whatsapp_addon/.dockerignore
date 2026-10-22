@@ -16,6 +16,7 @@
 !logo.png
 !media-store.js
 !message-dedupe.js
+!message-inbox.js
 !message-retry-cache.js
 !offline-sync.js
 !poll-store.js
