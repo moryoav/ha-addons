@@ -2,6 +2,20 @@
 
 All notable changes to this repository are documented here.
 
+## 3.1.0
+
+### Persistent incoming message inbox
+
+- Added an opt-in inbox for selected accounts that persists incoming messages before
+  delivery and resumes pending work after Home Assistant or the app restarts.
+- Added startup recovery, atomic start and completion acknowledgements, and explicit
+  retry or discard for interrupted commands. Kept legacy delivery unchanged for
+  accounts outside `inbox_clients`.
+- Preserved original sender metadata and message IDs, retained pending attachments,
+  and bounded private storage with completed payload cleanup and duplicate receipts.
+- Added Home Assistant inbox actions and an automation migration example. Update
+  both components and add the start/completion gates before enabling an account.
+
 ## 3.0.0
 
 ### WhatsApp voice calls

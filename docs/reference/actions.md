@@ -36,6 +36,23 @@ per-client rate limit.
 accepted the send operation. It does not guarantee delivery, receipt, or that
 the recipient read the message.
 
+## Message inbox
+
+Enable selected `inbox_clients` in the app only after updating the integration
+and adding the start and completion gates to the processing automation.
+
+- `whatsapp.get_inbox`: inspect the oldest unfinished message and queue counts;
+  requires `response_variable`.
+- `whatsapp.start_inbox_message`: submit the event's complete `inbox` object;
+  requires `response_variable`. Continue only if `started` is true.
+- `whatsapp.complete_inbox_message`: submit the same `inbox` object after the
+  workflow and reply finish. Optional response: `status: completed`.
+- `whatsapp.resolve_inbox_message`: submit an interrupted item's `inbox` object
+  with `resolution: retry` or `resolution: discard` after inspecting the action.
+
+See [Recover incoming messages](../examples/reliable-incoming-messages.md) for
+the migration example, restart behavior, storage limits, and media retention.
+
 ## Examples
 
 - [Messages and media](../examples/messages.md)

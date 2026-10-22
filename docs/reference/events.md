@@ -12,6 +12,8 @@ The add-on fires these Home Assistant events:
 | `whatsapp_call_log` | One record per finished call, incoming or outgoing. |
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_contacts_sync` | Available contact records from WhatsApp synchronization or contact updates. |
+| `whatsapp_inbox_updated` | A hint that durable incoming messages are ready; contains no message payload. |
+| `whatsapp_inbox_interrupted` | The oldest inbox message needs explicit review after interrupted processing. |
 | `whatsapp_send_message_result` | Result event after a successful send action. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
@@ -24,6 +26,15 @@ filters, text extraction, media types, and conversation replies.
 `clientId`, the detected message `type`, the Baileys message `key`, and the
 `message` payload. Other fields, such as `messageTimestamp`, are passed through
 when present.
+
+For an account in `inbox_clients`, the integration delivers the event after
+Home Assistant starts and includes an `inbox` object with opaque `id`, `receipt`,
+`session`, and `received_at` fields. Before any side effect, the processing
+automation must call `whatsapp.start_inbox_message` and continue only when
+`started` is true. Call `whatsapp.complete_inbox_message` after the workflow and
+reply finish. Unclaimed events may be redelivered; interrupted actions are paused
+for explicit review. Other accounts retain legacy live event delivery.
+See [Recover incoming messages](../examples/reliable-incoming-messages.md).
 
 With incoming media downloads enabled,
 `new_whatsapp_message` also includes a `media` object with `status: ready`,

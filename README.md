@@ -29,6 +29,8 @@ paired by scanning its QR code in the add-on web UI.
   locations, contacts, polls, reactions, edits, deletions, and quoted replies.
 - **Receive events:** incoming and outgoing messages, delivery and read receipts,
   calls, presence, contact updates, chat archive state, and decoded poll votes.
+- **Recover missed messages:** opt selected accounts into a persistent inbox with
+  [startup recovery and explicit processing acknowledgements](https://moryoav.github.io/ha-addons/examples/reliable-incoming-messages/).
 - **Process incoming attachments:** [download and decrypt media](#decrypted-incoming-media)
   for OCR, transcription, document processing, or AI automations.
 - **Look up recipients:** check phone numbers, fetch saved contacts and profiles,

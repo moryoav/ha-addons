@@ -240,3 +240,34 @@ hang_up:
       example: default
       selector:
         text:
+
+get_inbox:
+  fields: {}
+
+start_inbox_message:
+  fields:
+    inbox:
+      required: true
+      selector:
+        object:
+
+complete_inbox_message:
+  fields:
+    inbox:
+      required: true
+      selector:
+        object:
+
+resolve_inbox_message:
+  fields:
+    inbox:
+      required: true
+      selector:
+        object:
+    resolution:
+      required: true
+      selector:
+        select:
+          options:
+            - retry
+            - discard

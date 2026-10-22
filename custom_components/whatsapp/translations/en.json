@@ -157,6 +157,44 @@
       "name": "Hang up a voice call",
       "description": "End the active voice call without disconnecting WhatsApp messaging.",
       "fields": {}
+    },
+    "get_inbox": {
+      "name": "Get message inbox",
+      "description": "Returns the oldest unfinished inbox message and pending, processing, and interrupted counts. Requires response_variable."
+    },
+    "start_inbox_message": {
+      "name": "Start inbox message",
+      "description": "Atomically claims a pending message. Continue the automation only when the response has started=true. Requires response_variable.",
+      "fields": {
+        "inbox": {
+          "name": "Inbox reference",
+          "description": "The complete inbox object from the incoming event or Get message inbox response."
+        }
+      }
+    },
+    "complete_inbox_message": {
+      "name": "Complete inbox message",
+      "description": "Acknowledges a started message after processing and its reply finish. Releases the next pending message.",
+      "fields": {
+        "inbox": {
+          "name": "Inbox reference",
+          "description": "The complete inbox object from the incoming event or Get message inbox response."
+        }
+      }
+    },
+    "resolve_inbox_message": {
+      "name": "Resolve interrupted inbox message",
+      "description": "Explicitly retries or discards an interrupted message after checking whether its actions already completed.",
+      "fields": {
+        "inbox": {
+          "name": "Inbox reference",
+          "description": "The complete inbox object from the incoming event or Get message inbox response."
+        },
+        "resolution": {
+          "name": "Resolution",
+          "description": "Retry only after checking whether the interrupted action completed; discard advances the queue without executing it again."
+        }
+      }
     }
   },
   "exceptions": {

@@ -9,6 +9,13 @@ configuration:
     name: Log level
     description: Choose info for everyday use or debug for extra troubleshooting details.
       Debug logs omit message contents and private account identifiers.
+  inbox_clients:
+    name: Persistent inbox accounts
+    description: Account IDs whose incoming messages should wait for Home Assistant
+      processing acknowledgements. Leave empty for legacy delivery. Update the
+      integration and add Start inbox message and Complete inbox message to your
+      automation before enabling an account. Interrupted messages pause delivery
+      until explicitly retried or discarded.
   download_media:
     name: Download media
     description: Save incoming photos, videos, voice messages, and documents for use

@@ -42,7 +42,7 @@ COPY --from=node_dependencies /app/base/node_modules ./node_modules
 COPY package.json ./
 COPY --from=node_dependencies /opt/voice /opt/voice
 COPY api-token.js api.js app-state-sync.js call-log.js chat-archive-store.js decryption-diagnostics.js diagnostics.js event-buffer-flush.js index.js \
-    contact-snapshot.js libsignal-log-filter.js media-store.js message-dedupe.js message-retry-cache.js recovery.js runtime.js \
+    contact-snapshot.js libsignal-log-filter.js media-store.js message-dedupe.js message-inbox.js message-retry-cache.js recovery.js runtime.js \
     lid-sender-receipts.js offline-sync.js poll-store.js receipts.js validation.js webui.js whatsapp.js ./
 COPY logo.png ./
 COPY voice /app/voice

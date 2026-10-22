@@ -52,6 +52,78 @@ _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
+def _valid_inbox_reference(value: Any, session: str | None = None) -> bool:
+    """Validate opaque receipts before passing a message to the HA event bus."""
+    return (
+        isinstance(value, dict)
+        and all(
+            isinstance(value.get(key), str)
+            and re.fullmatch(r"[a-f0-9]{64}", value[key])
+            for key in ("id", "receipt")
+        )
+        and isinstance(value.get("session"), str)
+        and re.fullmatch(r"[a-f0-9]{32}", value["session"]) is not None
+        and (session is None or value["session"] == session)
+    )
+
+
+def _valid_inbox_result(operation: str, result: Any, session: str | None) -> bool:
+    """Reject malformed protocol replies without including private data in errors."""
+    if not isinstance(result, dict):
+        return False
+    status = result.get("status")
+    if not isinstance(status, str):
+        return False
+    if operation == "open":
+        return (
+            status == "ready"
+            and isinstance(result.get("clients"), list)
+            and all(
+                isinstance(value, str) and _CLIENT_ID_PATTERN.fullmatch(value)
+                for value in result["clients"]
+            )
+        )
+    if operation == "start":
+        return (
+            type(result.get("started")) is bool
+            and status in {"pending", "processing", "interrupted", "completed"}
+            and (not result["started"] or status == "processing")
+        )
+    if operation in {"complete", "resolve"}:
+        return status in (
+            {"completed"} if operation == "complete" else {"pending", "completed"}
+        )
+    if status not in {"empty", "preparing", "pending", "processing", "interrupted"}:
+        return False
+    counts = result.get("counts")
+    if not isinstance(counts, dict) or any(
+        type(counts.get(key)) is not int or counts[key] < 0
+        for key in ("pending", "processing", "interrupted")
+    ):
+        return False
+    if status == "empty":
+        return all(value == 0 for value in counts.values())
+    if status != "pending":
+        return _valid_inbox_reference(result.get("inbox"), session)
+    message = result.get("message")
+    if not isinstance(message, dict) or not _valid_inbox_reference(
+        message.get("inbox"), session
+    ):
+        return False
+    key = message.get("key")
+    return (
+        isinstance(message.get("clientId"), str)
+        and _CLIENT_ID_PATTERN.fullmatch(message["clientId"]) is not None
+        and isinstance(message.get("message"), dict)
+        and isinstance(key, dict)
+        and key.get("fromMe") is False
+        and all(
+            isinstance(key.get(field), str) and key[field]
+            for field in ("id", "remoteJid")
+        )
+    )
+
+
 class WhatsappApiError(Exception):
     """Base exception for WhatsApp add-on API errors."""
 
@@ -551,6 +623,27 @@ class WhatsappClient:
                 "get contacts returned an invalid response", code="invalid_response"
             )
         return {"contacts": contacts}
+
+    async def async_inbox(self, operation: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Call the authenticated inbox protocol without exposing raw API errors."""
+        if operation not in {"open", "poll", "start", "complete", "resolve"}:
+            raise ValueError("Invalid inbox operation")
+        if self._capabilities is not None and "message_inbox" not in self._capabilities:
+            raise WhatsappUnsupportedCapability(
+                "The app does not support a message inbox",
+                code="unsupported_capability",
+            )
+        response = await self._request(
+            "POST", f"inbox/{operation}", json=data, timeout=self._timeout
+        )
+        if response.status >= 400:
+            await self._raise_for_error(response, "message inbox")
+        result = await self._read_json(response, "message inbox", WhatsappApiError)
+        if not _valid_inbox_result(operation, result, data.get("session")):
+            raise WhatsappApiError(
+                "The app returned an invalid inbox response", code="invalid_response"
+            )
+        return result
 
     async def _post_lookup(
         self,

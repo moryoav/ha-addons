@@ -22,6 +22,7 @@ nav:
       - Voice calls: examples/voice-calls.md
       - Reusable scripts: examples/scripts.md
       - Incoming messages and agents: examples/incoming-messages.md
+      - Recover messages after restart: examples/reliable-incoming-messages.md
       - Decrypt incoming media: examples/incoming-media.md
       - AI-written notifications: examples/ai-notifications.md
       - Conversation history: examples/conversation-history.md

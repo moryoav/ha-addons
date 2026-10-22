@@ -118,6 +118,7 @@ class MediaStore {
     cleanupIntervalMs = 300000,
     now = Date.now,
     logger = console,
+    isPinned = () => false,
   } = {}) {
     Object.assign(this, {
       root: path.resolve(root),
@@ -132,6 +133,7 @@ class MediaStore {
       cleanupIntervalMs,
       now,
       logger,
+      isPinned,
     });
     this.usedBytes = 0;
     this.reservedBytes = 0;
@@ -233,7 +235,7 @@ class MediaStore {
 
   async prune() {
     for (const [id, entry] of this.entries) {
-      if (entry.expires > this.now()) continue;
+      if (entry.expires > this.now() || this.isPinned(id)) continue;
       await this.removeDirectory(id);
       this.entries.delete(id);
       this.usedBytes -= entry.size;
@@ -248,6 +250,31 @@ class MediaStore {
         await this.scan();
       } else {
         await this.prune();
+      }
+    });
+  }
+
+  /** Renew only an existing generated attachment while its inbox entry is pending. */
+  renew(media) {
+    return this.exclusive(async () => {
+      if (!UUID.test(media?.id) || !this.entries.has(media.id) || !this.isPinned(media.id)) {
+        return { status: "error", error: "inbox_media_unavailable" };
+      }
+      const entry = this.entries.get(media.id);
+      if (entry.expires > this.now() + this.retentionMs / 2) return media;
+      const metadataPath = path.join(this.root, media.id, "metadata.json");
+      const temporary = metadataPath + ".pending";
+      try {
+        const metadata = JSON.parse(await fs.promises.readFile(metadataPath, "utf8"));
+        metadata.expires_at = new Date(this.now() + this.retentionMs).toISOString();
+        await fs.promises.writeFile(temporary, JSON.stringify(metadata), { mode: 0o600 });
+        await fs.promises.rename(temporary, metadataPath);
+        entry.expires = Date.parse(metadata.expires_at);
+        return { ...media, expires_at: metadata.expires_at };
+      } catch {
+        return { status: "error", error: "inbox_media_unavailable" };
+      } finally {
+        await fs.promises.unlink(temporary).catch(() => {});
       }
     });
   }

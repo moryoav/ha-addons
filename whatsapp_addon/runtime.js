@@ -1,5 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
+const path = require("node:path");
+const { CAPABILITY: INBOX_CAPABILITY, MessageInbox } = require("./message-inbox");
 
 const axios = require("axios");
 const qrimage = require("qr-image");
@@ -151,12 +153,18 @@ const parseOptions = (content) => {
   }
 
   requirePlainObject(options, "options");
+  const inboxClients = options.inbox_clients ?? [];
+  if (!Array.isArray(inboxClients) || new Set(inboxClients).size !== inboxClients.length ||
+      inboxClients.some((id) => !normalizeConfiguredClientIds(options.clients).includes(id))) {
+    throw new RequestValidationError("inbox_clients must contain configured accounts without duplicates.");
+  }
   return {
     clientIds: normalizeConfiguredClientIds(options.clients),
     apiToken: normalizeApiToken(options.api_token),
     logLevel: normalizeLogLevel(options.log_level),
     // decryptionDiagnostics: normalizeDecryptionDiagnostics(options.decryption_diagnostics),
     mediaOptions: parseMediaOptions(options),
+    ...(inboxClients.length ? { inboxClients } : {}),
   };
 };
 
@@ -310,6 +318,7 @@ const createAddonRuntime = ({
   runId = createRunId(),
   diagnostics,
   mediaStore,
+  messageInbox,
   initialRecoveryRecord,
   recoveryPath = DEFAULT_RECOVERY_PATH,
   persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
@@ -543,7 +552,40 @@ const createAddonRuntime = ({
       });
     });
 
+  const inboxTasks = new Map();
+  let inboxStopping = false;
+  const prepareInbox = (entry) => {
+    if (inboxStopping || inboxTasks.size >= 2 || inboxTasks.has(entry.id)) return;
+    let prepared = false;
+    const task = (async () => {
+      const media = await mediaStore?.enrich(entry.payload, clients[entry.clientId]);
+      if (media?.error === "stopped") return;
+      await messageInbox.ready(entry.id, media);
+      prepared = true;
+      await postSupervisor("/core/api/events/whatsapp_inbox_updated", {}, "inbox update delivery");
+    })().catch(() => {
+      logger.error?.("WhatsApp inbox preparation failed. Check app storage; the pending message is retained.");
+    }).finally(() => {
+      inboxTasks.delete(entry.id);
+      if (prepared && !inboxStopping) {
+        for (const id of validatedClientIds) preparePendingInbox(id);
+      }
+    });
+    inboxTasks.set(entry.id, task);
+    return task;
+  };
+  const preparePendingInbox = (clientId) => {
+    for (const entry of messageInbox?.unready(clientId) || []) void prepareInbox(entry);
+  };
   const onMsg = (message, clientId, eventType) => {
+    if (eventType === "new_whatsapp_message" && messageInbox?.enabled(clientId)) {
+      void messageInbox.enqueue(clientId, message).then((id) => {
+        if (id) preparePendingInbox(clientId);
+      }).catch(() => {
+        logger.error?.("WhatsApp message could not be saved to the inbox. Check app storage and inbox capacity.");
+      });
+      return;
+    }
     if (!mediaStore || eventType !== "new_whatsapp_message") {
       void deliverMessage(message, clientId, eventType);
       return;
@@ -942,7 +984,7 @@ const createAddonRuntime = ({
       });
     });
     client.on("qr", (qr) => onQr(qr, clientId));
-    client.on("ready", () => onReady(clientId));
+    client.on("ready", () => { onReady(clientId); preparePendingInbox(clientId); });
     client.on("disconnected", (statusCode) =>
       onDisconnected(statusCode, clientId)
     );
@@ -1292,6 +1334,12 @@ const createAddonRuntime = ({
     retryRecovery,
     runId,
     stopCallDelivery,
+    preparePendingInbox() { for (const id of validatedClientIds) preparePendingInbox(id); },
+    async stopInbox() {
+      inboxStopping = true;
+      await Promise.allSettled([...inboxTasks.values()]);
+      await messageInbox?.close();
+    },
   };
 };
 
@@ -1310,6 +1358,7 @@ const startAddon = async ({
   closeServerFn = closeServer,
   diagnosticsFactory = createRuntimeDiagnostics,
   mediaStoreFactory = (options) => new MediaStore(options),
+  messageInboxFactory = (options) => new MessageInbox(options),
   replayHealthDiagnosticsFn = replayHealthcheckDiagnostics,
   readRecoveryRecordFn = readRecoveryRecord,
   persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
@@ -1365,6 +1414,7 @@ const startAddon = async ({
 
   let runtime;
   let mediaStore;
+  let messageInbox;
   let pendingDecryptStorm;
   let apiApp;
   let webUiApp;
@@ -1393,8 +1443,13 @@ const startAddon = async ({
   };
   libsignalFilter?.setDecryptStormHandler?.(handleDecryptStorm);
   try {
+    if (options.inboxClients?.length) {
+      messageInbox = await messageInboxFactory({ directory: path.join(dataRoot, "inbox"),
+        clientIds: options.inboxClients, fsPromises }).start();
+    }
     if (options.mediaOptions) {
-      mediaStore = mediaStoreFactory({ ...options.mediaOptions, logger });
+      mediaStore = mediaStoreFactory({ ...options.mediaOptions, logger,
+        isPinned: (id) => messageInbox?.isMediaPinned(id) || false });
       await mediaStore.start();
     }
     runtime = createAddonRuntime({
@@ -1410,6 +1465,7 @@ const startAddon = async ({
       runId: safeRunId,
       diagnostics,
       mediaStore,
+      messageInbox,
       initialRecoveryRecord,
       recoveryPath,
       persistRecoveryRecordSyncFn,
@@ -1429,7 +1485,10 @@ const startAddon = async ({
       logger,
       sharedSecret: apiToken,
       diagnostics,
-      additionalCapabilities,
+      messageInbox,
+      prepareInbox: runtime.preparePendingInbox,
+      renewInboxMedia: (media) => mediaStore.renew(media),
+      additionalCapabilities: [...additionalCapabilities, ...(messageInbox ? [INBOX_CAPABILITY] : [])],
     });
     webUiApp = createWebUiApp({
       clients: runtime.clients,
@@ -1443,11 +1502,14 @@ const startAddon = async ({
     webUiServer = await listenFn(webUiApp, ingressPort);
     diagnostics.markApiReady?.();
   } catch (error) {
+    const inboxStop = runtime?.stopInbox();
     await mediaStore?.close();
+    await inboxStop;
     if (runtime) {
       await Promise.allSettled(
         Object.values(runtime.clients).map((client) => client.disconnect?.())
       );
+      await runtime.stopInbox();
     }
     if (apiServer) await closeServerFn(apiServer);
     await diagnostics.stop?.();
@@ -1472,7 +1534,9 @@ const startAddon = async ({
         runId: safeRunId,
       });
       const callDeliveryTask = runtime.stopCallDelivery?.();
+      const inboxStop = runtime.stopInbox();
       await mediaStore?.close();
+      await inboxStop;
       await Promise.allSettled([
         ...Object.values(runtime.clients).map((client) =>
           client.disconnect?.()
@@ -1483,6 +1547,7 @@ const startAddon = async ({
         closeServerFn(apiServer),
         closeServerFn(webUiServer),
       ]);
+      await runtime.stopInbox();
       await diagnostics.stop?.();
       libsignalFilter?.setDecryptStormHandler?.();
       logger.info?.("WhatsApp add-on runtime stopped.", { runId: safeRunId });

@@ -64,6 +64,7 @@ from .const import (
 )
 from .coordinator import WhatsappStatusCoordinator
 from .entity import app_device_identifier
+from .inbox import WhatsappInbox
 from .media import WhatsAppMediaView
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
@@ -75,6 +76,7 @@ class WhatsappRuntimeData:
 
     client: WhatsappClient
     coordinator: WhatsappStatusCoordinator | None = None
+    inbox: WhatsappInbox | None = None
 
 
 SEND_MESSAGE_SCHEMA = vol.Schema(
@@ -453,6 +455,60 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         schema=REJECT_CALL_SCHEMA,
     )
 
+    async def inbox_action(call: ServiceCall) -> dict:
+        runtime = next(
+            (
+                entry.runtime_data
+                for entry in hass.config_entries.async_entries(DOMAIN)
+                if isinstance(getattr(entry, "runtime_data", None), WhatsappRuntimeData)
+            ),
+            None,
+        )
+        worker = runtime.inbox if runtime else None
+        if worker is None:
+            raise ServiceValidationError(
+                "Enable inbox_clients in the WhatsApp app and reload the integration first"
+            )
+        operations = {
+            "get_inbox": "poll",
+            "start_inbox_message": "start",
+            "complete_inbox_message": "complete",
+            "resolve_inbox_message": "resolve",
+        }
+        data = (
+            {"session": worker.session}
+            if call.service == "get_inbox"
+            else dict(call.data)
+        )
+        result = await _async_call_api(
+            hass,
+            call.service,
+            data,
+            lambda client, values: client.async_inbox(operations[call.service], values),
+        )
+        if call.service != "get_inbox":
+            worker.wake()
+        return result
+
+    for action in [
+        "get_inbox",
+        "start_inbox_message",
+        "complete_inbox_message",
+        "resolve_inbox_message",
+    ]:
+        fields = {} if action == "get_inbox" else {vol.Required("inbox"): dict}
+        if action == "resolve_inbox_message":
+            fields[vol.Required("resolution")] = vol.In(["retry", "discard"])
+        hass.services.async_register(
+            DOMAIN,
+            action,
+            inbox_action,
+            schema=vol.Schema(fields),
+            supports_response=SupportsResponse.ONLY
+            if action in {"get_inbox", "start_inbox_message"}
+            else SupportsResponse.OPTIONAL,
+        )
+
     return True
 
 
@@ -481,6 +537,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_type=dr.DeviceEntryType.SERVICE,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if client.capabilities is not None and "message_inbox" in client.capabilities:
+        inbox = WhatsappInbox(hass, client)
+        entry.runtime_data.inbox = inbox
+        entry.async_on_unload(inbox.stop)
+        inbox.start()
     entry.async_on_unload(entry.add_update_listener(_async_update_entry))
     return True
 

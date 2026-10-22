@@ -21,6 +21,8 @@ actions, and diagnostics in Home Assistant.
 - Receive incoming and outgoing messages, delivery and read receipts, calls,
   presence changes, contact updates, and decoded poll votes.
 - Download and decrypt received attachments for Home Assistant automations.
+- Retain incoming messages across Home Assistant restarts with the opt-in
+  [persistent inbox](https://moryoav.github.io/ha-addons/examples/reliable-incoming-messages/).
 - Look up saved contacts, phone numbers, profiles, and groups.
 - Monitor the app and each account with connection and session sensors.
 - Pair and manage multiple WhatsApp accounts through the web UI.
