@@ -608,7 +608,7 @@ async def test_bulk_and_storage_recovery_services_are_scoped_and_wake_delivery(
         {
             "resolution": "discard",
             "reason": "unclaimed",
-            "clientId": "default",
+            "client_id": "default",
         },
         blocking=True,
         return_response=True,

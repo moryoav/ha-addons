@@ -166,7 +166,7 @@ message's offer timer. Copy a current reference into
   review. Holding does not cancel actions that are already running.
 
 For a backlog, use `whatsapp.resolve_inbox_messages` with `resolution: retry` or
-`discard` and at least one filter: `reason` or `clientId`. If both are supplied,
+`discard` and at least one filter: `reason` or `client_id`. If both are supplied,
 both must match. It changes all matching held messages in one atomic operation
 and returns the number resolved. It leaves ordinary pending and actively
 processing messages alone. Inspect `get_inbox` and the automation traces first:
@@ -176,7 +176,7 @@ unclaimed messages from the selected account:
 ```yaml
 action: whatsapp.resolve_inbox_messages
 data:
-  clientId: default
+  client_id: default
   reason: unclaimed
   resolution: discard
 response_variable: resolved

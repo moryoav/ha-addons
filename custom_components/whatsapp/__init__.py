@@ -485,10 +485,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             else dict(call.data)
         )
         if call.service == "resolve_inbox_messages":
-            if not data.get("reason") and not data.get("clientId"):
+            if not data.get("reason") and not data.get("client_id"):
                 raise ServiceValidationError(
                     translation_domain=DOMAIN, translation_key="inbox_filter_required"
                 )
+            if "client_id" in data:
+                data["clientId"] = data.pop("client_id")
             data["session"] = worker.session
         result = await _async_call_api(
             hass,
@@ -531,7 +533,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                         "account_disabled",
                     ]
                 ),
-                vol.Optional("clientId"): cv.string,
+                vol.Optional("client_id"): cv.string,
             }
         elif action == "recover_inbox":
             fields = {

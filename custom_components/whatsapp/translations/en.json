@@ -208,7 +208,7 @@
           "name": "Hold reason",
           "description": "Only resolve held messages with this reason. Required unless an account ID is supplied."
         },
-        "clientId": {
+        "client_id": {
           "name": "Account ID",
           "description": "Only resolve held messages for this account. Disabled accounts can be discarded but cannot be retried."
         }

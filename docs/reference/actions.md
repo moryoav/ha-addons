@@ -52,7 +52,7 @@ and adding the start and completion gates to the processing automation.
   Pending and unprepared messages can also be resolved. A failing workflow can
   use `resolution: hold` to retain a started message for immediate review.
 - `whatsapp.resolve_inbox_messages`: atomically retry or discard held messages
-  filtered by `reason`, `clientId`, or both. Requires `response_variable` and at
+  filtered by `reason`, `client_id`, or both. Requires `response_variable` and at
   least one filter. Returns `status`, `resolution`, and the number `resolved`.
   Leaves active processing and ordinary pending messages alone. Disabled-account
   work is visible as `account_disabled` and can be discarded.

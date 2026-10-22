@@ -293,7 +293,7 @@ resolve_inbox_messages:
             - processing_interrupted
             - workflow_failed
             - account_disabled
-    clientId:
+    client_id:
       selector:
         text:
 
