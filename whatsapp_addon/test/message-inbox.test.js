@@ -143,6 +143,18 @@ test("failed atomic publication preserves the previous message and removes tempo
   assert.deepEqual((await fs.readdir(directory)).filter((name) => name.startsWith(".pending-")), []);
 });
 
+test("an uncertain directory flush cannot overwrite a published message from stale memory", async (t) => {
+  const { inbox, create } = await fixture(t); await enqueue(inbox);
+  inbox.syncDirectory = async () => { throw new Error("Fictional directory flush failure"); };
+  await assert.rejects(inbox.enqueue("default", message("second")), { code: "inbox_storage_unavailable" });
+  const published = await fs.readFile(inbox.file, "utf8");
+  assert.ok(published.includes('"messageId":"second"'));
+  await assert.rejects(inbox.enqueue("default", message("third")), { code: "inbox_storage_unavailable" });
+  assert.equal(await fs.readFile(inbox.file, "utf8"), published);
+  const recovered = await create().start();
+  assert.equal(recovered.state.entries.length, 2);
+});
+
 test("media is pinned before cleanup and unpinned only after completion", async (t) => {
   const { inbox } = await fixture(t);
   const id = "1bcdfb31-7cd3-47df-8595-17fcaf84943a";

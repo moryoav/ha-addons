@@ -104,6 +104,9 @@ messages are never evicted to admit new ones. Adequate free storage remains
 necessary. The inbox cannot recover events discarded before this feature was
 enabled or messages the app never received.
 
+An uncertain disk flush pauses further inbox writes to protect the published
+state. Correct the storage problem and restart the app to reload that state.
+
 With media downloading enabled, pending attachment files are protected from
 normal expiry cleanup and their expiry metadata is renewed before delivery.
 Existing file-size and total-media quotas still apply. Completing the message

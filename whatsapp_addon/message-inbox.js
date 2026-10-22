@@ -41,6 +41,7 @@ class MessageInbox {
     this.file = path.join(directory, "messages.json");
     this.state = { version: 1, sequence: 0, session: null, entries: [] };
     this.tail = Promise.resolve();
+    this.storageFailed = false;
   }
 
   enabled(clientId) { return this.clients.has(clientId); }
@@ -105,6 +106,7 @@ class MessageInbox {
 
   async transaction(change) {
     return this.exclusive(async () => {
+      if (this.storageFailed) throw new InboxError("inbox_storage_unavailable", 503);
       const next = structuredClone(this.state);
       const result = await change(next);
       this.prune(next);
@@ -113,17 +115,18 @@ class MessageInbox {
       if (data === JSON.stringify(this.state)) return result;
       const temporary = path.join(this.directory, `.pending-${crypto.randomUUID()}`);
       let handle;
+      let published = false;
       try {
         handle = await this.fsPromises.open(temporary, "wx", 0o600);
         await handle.writeFile(data); await handle.sync(); await handle.close(); handle = null;
         await this.fsPromises.rename(temporary, this.file);
-        // POSIX directory fsync makes the atomic rename survive a host crash.
-        if (process.platform !== "win32") {
-          const directory = await this.fsPromises.open(this.directory, "r");
-          try { await directory.sync(); } finally { await directory.close(); }
-        }
+        published = true;
+        await this.syncDirectory();
         this.state = next;
       } catch {
+        // The file may already contain the new state. Never overwrite it from
+        // stale memory after an uncertain directory flush; reload it on restart.
+        if (published) this.storageFailed = true;
         throw new InboxError("inbox_storage_unavailable", 503);
       } finally {
         await handle?.close().catch(() => {});
@@ -131,6 +134,12 @@ class MessageInbox {
       }
       return result;
     });
+  }
+
+  async syncDirectory() {
+    if (process.platform === "win32") return;
+    const directory = await this.fsPromises.open(this.directory, "r");
+    try { await directory.sync(); } finally { await directory.close(); }
   }
 
   async enqueue(clientId, payload) {
