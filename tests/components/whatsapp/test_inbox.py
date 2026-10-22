@@ -18,6 +18,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
     ServiceValidationError,
     Unauthorized,
+    UnknownUser,
 )
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUser
@@ -711,6 +712,16 @@ async def test_bulk_and_recovery_require_admin_but_allow_unattended_automations(
         )
     client.async_inbox.assert_not_awaited()
     worker.wake.assert_not_called()
+    with pytest.raises(UnknownUser):
+        await hass.services.async_call(
+            "whatsapp",
+            action,
+            data,
+            blocking=True,
+            return_response=True,
+            context=Context(user_id="fictional-deleted-user"),
+        )
+    client.async_inbox.assert_not_awaited()
     for context in [Context(user_id=hass_admin_user.id), Context()]:
         await hass.services.async_call(
             "whatsapp",

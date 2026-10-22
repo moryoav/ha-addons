@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, Awaitable, Callable
 
 import voluptuous as vol
@@ -15,12 +14,13 @@ from homeassistant.exceptions import (
     ConfigEntryError,
     HomeAssistantError,
     ServiceValidationError,
+    Unauthorized,
+    UnknownUser,
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntry
-from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.setup import async_setup_component
 
@@ -459,6 +459,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
 
     async def inbox_action(call: ServiceCall) -> dict:
+        # The 2024.12 admin-service helper cannot declare response support.
+        # Apply its permission check here so all supported versions return results.
+        if (
+            call.service in {"resolve_inbox_messages", "recover_inbox"}
+            and call.context.user_id
+        ):
+            user = await hass.auth.async_get_user(call.context.user_id)
+            if user is None:
+                raise UnknownUser(context=call.context)
+            if not user.is_admin:
+                raise Unauthorized(context=call.context)
         runtime = next(
             (
                 entry.runtime_data
@@ -541,12 +552,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             fields = {
                 vol.Optional("mode", default="reload"): vol.In(["reload", "reset"])
             }
-        register = (
-            partial(async_register_admin_service, hass)
-            if action in {"resolve_inbox_messages", "recover_inbox"}
-            else hass.services.async_register
-        )
-        register(
+        hass.services.async_register(
             DOMAIN,
             action,
             inbox_action,
