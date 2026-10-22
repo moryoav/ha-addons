@@ -9,6 +9,11 @@ configuration:
     name: Log level
     description: Choose info for everyday use or debug for extra troubleshooting details.
       Debug logs omit message contents and private account identifiers.
+  inbox_clients:
+    name: Persistent inbox accounts
+    description: Account IDs whose incoming messages should wait for Home Assistant
+      when it is unavailable. Update the integration first. Existing automations
+      keep using new_whatsapp_message without changes. Leave empty for live delivery.
   download_media:
     name: Download media
     description: Save incoming photos, videos, voice messages, and documents for use
