@@ -467,7 +467,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         worker = runtime.inbox if runtime else None
         if worker is None:
             raise ServiceValidationError(
-                "Enable inbox_clients in the WhatsApp app and reload the integration first"
+                translation_domain=DOMAIN,
+                translation_key="inbox_disabled",
             )
         operations = {
             "get_inbox": "poll",
@@ -476,7 +477,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "resolve_inbox_message": "resolve",
         }
         data = (
-            {"session": worker.session}
+            {"session": worker.session, "inspect": True}
             if call.service == "get_inbox"
             else dict(call.data)
         )
@@ -498,7 +499,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     ]:
         fields = {} if action == "get_inbox" else {vol.Required("inbox"): dict}
         if action == "resolve_inbox_message":
-            fields[vol.Required("resolution")] = vol.In(["retry", "discard"])
+            fields[vol.Required("resolution")] = vol.In(["retry", "discard", "hold"])
         hass.services.async_register(
             DOMAIN,
             action,

@@ -86,25 +86,69 @@ def _valid_inbox_result(operation: str, result: Any, session: str | None) -> boo
     if operation == "start":
         return (
             type(result.get("started")) is bool
-            and status in {"pending", "processing", "interrupted", "completed"}
+            and status
+            in {"pending", "processing", "interrupted", "blocked", "completed"}
             and (not result["started"] or status == "processing")
         )
     if operation in {"complete", "resolve"}:
         return status in (
-            {"completed"} if operation == "complete" else {"pending", "completed"}
+            {"completed"}
+            if operation == "complete"
+            else {"pending", "completed", "interrupted"}
         )
-    if status not in {"empty", "preparing", "pending", "processing", "interrupted"}:
+    if status not in {
+        "empty",
+        "preparing",
+        "pending",
+        "processing",
+        "interrupted",
+        "blocked",
+    }:
         return False
     counts = result.get("counts")
-    if not isinstance(counts, dict) or any(
-        type(counts.get(key)) is not int or counts[key] < 0
-        for key in ("pending", "processing", "interrupted")
+    count_keys = {"pending", "processing", "interrupted", "blocked"}
+    if (
+        not isinstance(counts, dict)
+        or counts.keys() != count_keys
+        or any(type(counts[key]) is not int or counts[key] < 0 for key in count_keys)
+        or sum(counts.values()) > 1000
     ):
         return False
+    attention = result.get("attention")
+    if (
+        not isinstance(attention, list)
+        or len(attention) > 1000
+        or any(
+            not isinstance(item, dict)
+            or not _valid_inbox_reference(item.get("inbox"), session)
+            or not isinstance(item.get("clientId"), str)
+            or _CLIENT_ID_PATTERN.fullmatch(item["clientId"]) is None
+            or not isinstance(item.get("status"), str)
+            or item["status"] not in {"blocked", "interrupted"}
+            or not isinstance(item.get("reason"), str)
+            or item["reason"]
+            not in {
+                "unclaimed",
+                "preparation_timeout",
+                "processing_timeout",
+                "preparation_interrupted",
+                "processing_interrupted",
+                "workflow_failed",
+            }
+            for item in attention
+        )
+    ):
+        return False
+    if len(attention) != counts["blocked"] + counts["interrupted"]:
+        return False
     if status == "empty":
-        return all(value == 0 for value in counts.values())
+        return not attention and all(value == 0 for value in counts.values())
     if status != "pending":
-        return _valid_inbox_reference(result.get("inbox"), session)
+        return counts[
+            "pending" if status == "preparing" else status
+        ] > 0 and _valid_inbox_reference(result.get("inbox"), session)
+    if counts["pending"] == 0:
+        return False
     message = result.get("message")
     if not isinstance(message, dict) or not _valid_inbox_reference(
         message.get("inbox"), session

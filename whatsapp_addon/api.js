@@ -418,7 +418,7 @@ const createApiApp = ({
         else if (operation === "poll") {
           prepareInbox?.();
           result = await messageInbox.poll(body.session, renewInboxMedia,
-            (clientId) => clients[clientId]?.status?.connected === true);
+            (clientId) => clients[clientId]?.status?.connected === true, body.inspect !== true);
         }
         else if (operation === "start") result = await messageInbox.begin(body.inbox);
         else if (operation === "complete") result = await messageInbox.complete(body.inbox);

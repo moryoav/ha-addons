@@ -2,28 +2,61 @@
 
 The persistent inbox keeps messages received by the WhatsApp app while Home
 Assistant is unavailable. After Home Assistant finishes starting, the integration
-delivers the oldest pending message as `new_whatsapp_message`. It delivers the
-next message only after the automation acknowledges completion.
+delivers pending messages as `new_whatsapp_message`. Each account has its own
+ordered queue. A disconnected account does not block other accounts.
 
 Update the app and integration to **3.1.0 or newer**. Inbox delivery is opt-in for
 each account. Accounts outside `inbox_clients` retain their existing event path.
 
 ## Migrate the processing automation first
 
-Add a start gate before any action with side effects, and complete the message
-only after processing and the WhatsApp reply finish. Preserve the original event
-data when calling your existing workflow. This fictional example echoes text;
-replace the middle action with your existing processing and reply actions.
+Claim each inbox message before any action with side effects. Complete it after
+successful processing and the WhatsApp reply. Deliberately ignored messages also
+need completion. Put chat and message-type checks inside the actions, after the
+claim, so a trigger filter cannot silently strand the message.
+
+This fictional example accepts text from one private chat. Replace the chat ID
+and the processing script with your own workflow. Keep the start gate, ignored
+branch, success response and failure handling.
+
+First, add this example to `scripts.yaml`. A failed action aborts the script
+before it can return `success: true`. Keep your processing actions inside this
+script and give long operations a timeout below the inbox's 30-minute watchdog.
+
+```yaml
+process_whatsapp_inbox_message:
+  alias: Process a WhatsApp inbox message
+  mode: parallel
+  fields:
+    incoming:
+      required: true
+      selector:
+        object:
+  sequence:
+    - action: whatsapp.send_message
+      data:
+        clientId: "{{ incoming.clientId }}"
+        to: "{{ incoming.key.remoteJid }}"
+        body:
+          text: "{{ incoming.message.conversation }}"
+    - variables:
+        outcome:
+          success: true
+    - stop: Processing and reply completed
+      response_variable: outcome
+```
+
+Then use this automation. `continue_on_error` lets it record a failed workflow
+for review; it does not acknowledge a failed workflow as completed.
 
 ```yaml
 alias: Process WhatsApp inbox messages
 triggers:
   - trigger: event
     event_type: new_whatsapp_message
-    event_data:
-      clientId: default
 actions:
   - variables:
+      incoming: "{{ trigger.event.data }}"
       inbox: "{{ trigger.event.data.get('inbox') }}"
   - if: "{{ inbox is not none }}"
     then:
@@ -34,24 +67,48 @@ actions:
       - if: "{{ not claimed.started }}"
         then:
           - stop: This delivery is already claimed or completed
-  # Put your allowed-chat checks here. A deliberately ignored message must
-  # still reach the completion action so it does not block the queue.
-  - action: whatsapp.send_message
+  - if: >-
+      {{ incoming.clientId != 'default'
+         or incoming.key.remoteJid != '12025550123@s.whatsapp.net'
+         or not incoming.message.get('conversation') }}
+    then:
+      - if: "{{ inbox is not none }}"
+        then:
+          - action: whatsapp.complete_inbox_message
+            data:
+              inbox: "{{ inbox }}"
+      - stop: Deliberately ignored chat or message type
+  - action: script.process_whatsapp_inbox_message
+    continue_on_error: true
     data:
-      clientId: "{{ trigger.event.data.clientId }}"
-      to: "{{ trigger.event.data.key.remoteJid }}"
-      body:
-        text: "{{ trigger.event.data.message.get('conversation', '') }}"
+      incoming: "{{ incoming }}"
+    response_variable: processed
   - if: "{{ inbox is not none }}"
     then:
-      - action: whatsapp.complete_inbox_message
-        data:
-          inbox: "{{ inbox }}"
-mode: queued
-max: 10
+      - if: >-
+          {{ processed is defined and processed is mapping
+             and processed.get('success', false) }}
+        then:
+          - action: whatsapp.complete_inbox_message
+            continue_on_error: true
+            data:
+              inbox: "{{ inbox }}"
+        else:
+          - action: whatsapp.resolve_inbox_message
+            continue_on_error: true
+            data:
+              inbox: "{{ inbox }}"
+              resolution: hold
+mode: parallel
+max: 20
 ```
 
-Then add the account IDs to the app configuration and restart the app:
+If the completion or hold request fails, the message remains started. The
+watchdog retains it for review after 30 minutes. Inspect its automation trace
+before retrying, because some actions may already have happened. Use the event's
+original message ID and sender fields for conversation history and routing.
+
+After migrating, enable the selected account in the app configuration:
 
 ```yaml
 inbox_clients:
@@ -60,64 +117,83 @@ download_media: true
 ```
 
 Reload the WhatsApp integration if it was already loaded before inbox support
-became available. No extra startup automation is required. An update hint wakes
-the consumer when messages arrive, and a ten-second poll recovers missed hints.
+became available. No extra startup automation is required. Update hints wake the
+consumer, and a ten-second poll recovers missed hints. Only one automation should
+claim a message. Other listeners can observe repeated events before the claim;
+the atomic start gate permits only one execution.
 
-Only one processing automation should claim each message. Other event listeners
-may observe redeliveries before the claim succeeds. The atomic start gate permits
-only one execution; do not omit it from a workflow with side effects. Reuse the
-event's original message ID and sender fields for conversation history and routing.
+## Messages that need review
 
-## Resolve an interrupted message
+The integration delivers an unclaimed message at most three times per consumer
+session, at least 20 seconds apart. If it is still unclaimed 60 seconds after its
+first offer, the app holds it as `blocked` with reason `unclaimed`. Later messages
+continue. The app also holds preparation stalled for 15 minutes, and marks
+processing stalled for 30 minutes as `interrupted`. Held messages stay in private
+storage. They are never automatically retried or discarded.
 
-An automation failure after the start gate leaves the message in `processing`.
-Inspect its trace before recovering it. Reloading the integration establishes a
-new consumer session and marks unfinished processing as `interrupted`.
-An app restart also marks started messages as interrupted. Pending messages that
-never passed the start gate resume automatically.
+Home Assistant creates a persistent notification and emits
+`whatsapp_inbox_attention` for held messages. Started messages interrupted by an
+app restart or a new HA session are also held, with
+`whatsapp_inbox_interrupted` retained for compatibility. The notification clears
+when all held messages are resolved. These limits are safeguards; workflows that
+may still be running must be checked before retrying.
 
-Run `whatsapp.get_inbox` with a response variable in Developer Tools or a script.
-It returns counts and the oldest unfinished item. When its status is
-`interrupted`, copy its `inbox` object into `whatsapp.resolve_inbox_message`:
+Run `whatsapp.get_inbox` in Developer Tools > Actions. Its response contains
+queue counts, the next eligible item, and an `attention` list of held items with
+opaque `inbox` references and reasons. Inspection does not start an unclaimed
+message's offer timer. Copy a current reference into
+`whatsapp.resolve_inbox_message`:
 
-- Choose `discard` if the action already happened or should no longer run.
-- Choose `retry` only after checking the action did not finish. The next delivery
-  receives a new receipt, so stale acknowledgements cannot complete that retry.
+- Choose `discard` for a message that should not run, including pending or
+  unprepared messages. An actively processing message must first finish or be
+  held for review.
+- Choose `retry` after checking that its actions did not finish. This rotates the
+  receipt so stale acknowledgements cannot complete the retry. A retry waits for
+  any active workflow on the same account.
+- Use `hold` from a failing workflow to retain a started message for immediate
+  review. Holding does not cancel actions that are already running.
 
-The integration also emits `whatsapp_inbox_interrupted` once per interrupted item.
-No message is automatically repeated after an uncertain action. For delayed
-commands, use the original `messageTimestamp` or `inbox.received_at` in your
-automation to decide whether the request is still relevant.
+A late completion from the same consumer can still finish an interrupted item.
+No uncertain action is automatically repeated. For delayed commands, use the
+original `messageTimestamp` or `inbox.received_at` to decide whether the request
+is still relevant. Explicit retries preserve the original receipt time.
 
-## Storage and limits
+## Storage and failures
 
-The inbox stores only incoming messages for enabled accounts in the app's private
-`/data/inbox/messages.json`, with owner-only file permissions. Message IDs, sender
-metadata and payloads remain in private storage and authenticated API responses;
-they are omitted from logs and diagnostics. Completed payloads are removed
-immediately. Duplicate receipts are retained for up to seven days and 10,000
-completed messages; this is bounded duplicate protection, not permanent history.
+The app keeps `/data/inbox/messages.json` with owner-only permissions. Private
+message data is omitted from logs and diagnostics. Completed payloads are
+removed immediately. Compact duplicate receipts are retained for up to seven
+days and 1,000 completed messages. This is bounded protection, not permanent
+history. Unchanged polls do not clone or rewrite the stored inbox; mutations use
+an atomic, synced snapshot.
 
-The default limits are 1,000 unfinished messages, 32 MiB of inbox state, and 1 MiB
-per message payload. Capacity or storage errors are logged explicitly; unfinished
-messages are never evicted to admit new ones. Adequate free storage remains
-necessary. The inbox cannot recover events discarded before this feature was
-enabled or messages the app never received.
+Limits are 1,000 unfinished messages, 32 MiB of state, and 1 MiB per payload.
+Admission reserves space for media metadata and later state transitions.
+Unfinished messages are never evicted to admit new ones. If admission fails
+because of capacity, payload size or storage, the app attempts the original live
+event path with an `inbox_error` code and no `inbox` reference. It also emits
+`whatsapp_inbox_error`, logs a safe error and attempts a persistent notification.
+Live fallback cannot recover a message while Home Assistant is unavailable.
 
-An uncertain disk flush pauses further inbox writes to protect the published
-state. Correct the storage problem and restart the app to reload that state.
+Unreadable inbox state is preserved. The rest of the app starts, and inbox
+accounts use live fallback until the storage is repaired and the app restarts.
+An uncertain disk flush stops further inbox writes to protect the published
+state. After restart, incomplete preparation is held for explicit review: the
+app cannot know whether an uncertain admission was already delivered through
+live fallback. Ready pending messages resume automatically; started messages
+remain held. Existing media is conservatively protected while inbox state is
+unreadable, so repair storage promptly to avoid exhausting the media quota.
 
-With media downloading enabled, pending attachment files are protected from
-normal expiry cleanup and their expiry metadata is renewed before delivery.
-Temporary renewal failures retain the original reference and keep the message
-pending for another attempt. Preparation and delivery wait for the WhatsApp
-account to be connected.
-Existing file-size and total-media quotas still apply. Completing the message
-releases its media protection. Disabling an inbox account returns it to legacy
-delivery; resolve its pending work first, because paused accounts are not drained
-and media protection ends when inbox support is disabled.
+With media downloading enabled, unfinished attachments are protected from expiry
+cleanup. Temporary download failures receive up to three attempts with backoff.
+Temporary renewal failures keep the original reference pinned and retry; a
+missing or corrupt attachment is delivered with `media.status: error` and
+`media.error: inbox_media_missing`. One damaged folder does not disable downloads
+for other messages. Existing media quotas still apply. Completion or discard
+releases protection. Resolve pending work before disabling an inbox account;
+disabled accounts are not drained.
 
-The app owns a single active Home Assistant consumer session. Reloading one
-integration supersedes its previous consumer; competing Home Assistant instances
-should not drain the same app. Keep completion acknowledgements explicit:
-an HTTP response accepting an event does not prove the automation finished.
+Only one Home Assistant consumer is supported. The integration reopens its
+session automatically if an app restore supplies an older session. Competing HA
+instances must not drain the same app. The inbox cannot recover messages the
+app never received or events discarded before this feature was enabled.

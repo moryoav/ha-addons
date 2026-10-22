@@ -13,7 +13,9 @@ The add-on fires these Home Assistant events:
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_contacts_sync` | Available contact records from WhatsApp synchronization or contact updates. |
 | `whatsapp_inbox_updated` | A hint that durable incoming messages are ready; contains no message payload. |
-| `whatsapp_inbox_interrupted` | The oldest inbox message needs explicit review after interrupted processing. |
+| `whatsapp_inbox_interrupted` | A started inbox message needs explicit review after interrupted processing. |
+| `whatsapp_inbox_attention` | A held message needs review; includes `clientId`, `status`, `reason`, and an opaque `inbox` reference. |
+| `whatsapp_inbox_error` | Inbox admission failed; includes `clientId` and a safe `error` code. Live delivery is attempted. |
 | `whatsapp_send_message_result` | Result event after a successful send action. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
@@ -32,8 +34,12 @@ Home Assistant starts and includes an `inbox` object with opaque `id`, `receipt`
 `session`, and `received_at` fields. Before any side effect, the processing
 automation must call `whatsapp.start_inbox_message` and continue only when
 `started` is true. Call `whatsapp.complete_inbox_message` after the workflow and
-reply finish. Unclaimed events may be redelivered; interrupted actions are paused
-for explicit review. Other accounts retain legacy live event delivery.
+reply finish. Each account has its own queue. Unclaimed events are delivered at
+most three times per HA session before being held for review after 60 seconds.
+Stalled preparation and processing are held after 15 and 30 minutes respectively.
+Held items remain stored while later messages continue. If admission fails, a
+live fallback event has `inbox_error` instead of an `inbox` reference and cannot
+provide restart recovery. Other accounts retain legacy live event delivery.
 See [Recover incoming messages](../examples/reliable-incoming-messages.md).
 
 With incoming media downloads enabled,

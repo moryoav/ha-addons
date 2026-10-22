@@ -271,3 +271,4 @@ resolve_inbox_message:
           options:
             - retry
             - discard
+            - hold

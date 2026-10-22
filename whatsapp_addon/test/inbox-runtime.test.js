@@ -8,7 +8,7 @@ const { Readable } = require("node:stream");
 const test = require("node:test");
 const { MessageInbox } = require("../message-inbox");
 const { MediaStore } = require("../media-store");
-const { createAddonRuntime, parseOptions } = require("../runtime");
+const { createAddonRuntime, parseOptions, startAddon } = require("../runtime");
 
 const payload = { key: { id: "fictional-audio", remoteJid: "12025550123@s.whatsapp.net", fromMe: false },
   type: "audioMessage", message: { audioMessage: { ptt: false } } };
@@ -50,21 +50,23 @@ test("incoming audio is durable before enrichment and survives failed HA event d
   assert.ok(!JSON.stringify(logs).includes(payload.key.remoteJid));
 });
 
-test("an unprepared message resumes when its WhatsApp client becomes ready", async (t) => {
+test("an incomplete preparation resumes only after an explicit retry following app restart", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-prepare-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const old = await new MessageInbox({ directory, clientIds: ["default"] }).start();
   await old.enqueue("default", payload);
   const inbox = await new MessageInbox({ directory, clientIds: ["default"] }).start();
+  await inbox.open(SESSION);
+  await inbox.resolve((await inbox.poll(SESSION)).inbox, "retry");
   const client = new EventEmitter(); client.disconnect = async () => {}; client.status = { connected: true };
   const runtime = createAddonRuntime({ clientIds: ["default"], messageInbox: inbox,
     clientFactory: () => client, logger: {}, httpClient: { post: async () => {} },
-    mediaStore: { enrich: async () => ({ status: "error", error: "download_failed" }) },
+    mediaStore: { enrich: async () => ({ status: "error", error: "invalid_metadata" }) },
   });
   client.emit("ready");
   await runtime.stopInbox();
   await inbox.open(SESSION);
-  assert.equal((await inbox.poll(SESSION)).message.media.error, "download_failed");
+  assert.equal((await inbox.poll(SESSION)).message.media.error, "invalid_metadata");
 });
 
 test("missing or disconnected clients leave audio unprepared until the ready event", async (t) => {
@@ -136,7 +138,7 @@ test("temporary metadata unavailability during scan cannot delete a pinned attac
   const metadata = path.join(root, media.id, "metadata.json");
   await fs.rename(metadata, metadata+".saved");
   store = await new MediaStore(options).start(); t.after(() => store.close());
-  assert.equal(store.available, false);
+  assert.equal(store.available, true);
   assert.deepEqual(await fs.readFile(media.local_path), bytes);
   await fs.rename(metadata+".saved", metadata); await store.cleanup();
   assert.equal(store.available, true);
@@ -154,6 +156,8 @@ test("persisted media keys and hashes retain their byte types for actual audio d
   const original = await new MessageInbox({ directory, clientIds: ["default"] }).start();
   await original.enqueue("default", audio);
   const inbox = await new MessageInbox({ directory, clientIds: ["default"] }).start();
+  await inbox.open(SESSION);
+  await inbox.resolve((await inbox.poll(SESSION)).inbox, "retry");
   const mediaStore = await new MediaStore({ root: path.join(root, "media"), enabled: true,
     isPinned: (id) => inbox.isMediaPinned(id), logger: {} }).start();
   t.after(() => mediaStore.close());
@@ -170,4 +174,146 @@ test("persisted media keys and hashes retain their byte types for actual audio d
   const result = await inbox.poll(SESSION);
   assert.equal(result.message.media.status, "ready");
   assert.deepEqual(await fs.readFile(result.message.media.local_path), bytes);
+});
+
+for (const failure of ["capacity", "message_size", "state_size", "storage_write", "storage_latched"]) {
+  test(`inbox ${failure} failure falls back to live delivery with a visible error`, async (t) => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-fallback-"));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const options = { directory, clientIds: ["default"] };
+    if (failure === "capacity") options.maxPending = 0;
+    if (failure === "message_size") options.maxMessageBytes = 10;
+    const inbox = await new MessageInbox(options).start();
+    if (failure === "state_size") inbox.maxBytes = 100;
+    if (failure === "storage_write") inbox.fsPromises = { ...fs, rename: async () => { throw new Error("Fictional private path"); } };
+    if (failure === "storage_latched") inbox.markUnavailable();
+    const client = new EventEmitter(); client.status = { connected: true };
+    const requests = []; const logs = [];
+    const runtime = createAddonRuntime({ clientIds: ["default"], messageInbox: inbox,
+      clientFactory: () => client, logger: { error: (...args) => logs.push(args) },
+      httpClient: { post: async (url, body) => requests.push({ url, body }) },
+      mediaStore: { enrich: async () => ({ status: "error", error: "download_failed" }) },
+    });
+    client.emit("msg", payload);
+    await runtime.stopInbox();
+    const delivered = requests.find(({ url }) => url.endsWith("/new_whatsapp_message"));
+    assert.ok(delivered);
+    assert.equal(delivered.body.key.id, payload.key.id);
+    assert.equal(delivered.body.inbox, undefined);
+    assert.ok(delivered.body.inbox_error.startsWith("inbox_"));
+    assert.equal(delivered.body.media.error, "download_failed");
+    assert.ok(requests.some(({ url }) => url.endsWith("/whatsapp_inbox_error")));
+    assert.ok(requests.some(({ body }) => body.notification_id === "whatsapp_inbox_storage"));
+    assert.ok(!JSON.stringify(logs).includes(payload.key.remoteJid));
+    assert.ok(!JSON.stringify(logs).includes("Fictional private path"));
+  });
+}
+
+test("a corrupt inbox does not prevent app startup or unrelated legacy messages", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-corrupt-start-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.mkdir(path.join(root, "inbox"));
+  const file = path.join(root, "inbox", "messages.json");
+  await fs.writeFile(file, '{"version":');
+  const clients = {}; const requests = []; const logs = [];
+  const runtime = await startAddon({ dataRoot: root, logger: { error: (...args) => logs.push(args) },
+    apiTokenLoader: async () => "fictional-runtime-token",
+    optionsLoader: async () => ({ clientIds: ["default", "other"], inboxClients: ["default"], logLevel: "info" }),
+    diagnosticsFactory: () => ({ start: async () => {}, stop: async () => {} }),
+    replayHealthDiagnosticsFn: async () => {}, readRecoveryRecordFn: async () => null,
+    clientFactory: ({ path: sessionPath }) => { const client = new EventEmitter(); client.status = { connected: true };
+      client.disconnect = async () => {}; clients[path.basename(sessionPath)] = client; return client; },
+    httpClient: { post: async (url, body) => requests.push({ url, body }) },
+    listenFn: async () => ({}), closeServerFn: async () => {},
+  });
+  clients.default.emit("msg", payload); clients.other.emit("msg", payload);
+  await runtime.close();
+  const delivered = requests.filter(({ url }) => url.endsWith("/new_whatsapp_message"));
+  assert.equal(delivered.length, 2);
+  assert.equal(delivered.find(({ body }) => body.clientId === "default").body.inbox_error, "inbox_storage_unavailable");
+  assert.equal(delivered.find(({ body }) => body.clientId === "other").body.inbox_error, undefined);
+  assert.equal(await fs.readFile(file, "utf8"), '{"version":');
+  assert.ok(JSON.stringify(logs).includes("inbox storage could not be loaded"));
+});
+
+test("a damaged pinned folder does not disable unrelated media and missing files are terminal", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-isolated-media-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const bytes = Buffer.from("Fictional attachment"); const pinned = new Set();
+  const options = { root, enabled: true, logger: {}, isPinned: (id) => pinned.has(id) };
+  const client = { getMediaContent: () => ({ mimetype: "audio/ogg", fileSha256: crypto.createHash("sha256").update(bytes).digest() }),
+    downloadMedia: async () => Readable.from([bytes]) };
+  let store = await new MediaStore(options).start();
+  const broken = await store.enrich(payload, client); pinned.add(broken.id); await store.close();
+  await fs.writeFile(path.join(root, broken.id, "metadata.json"), "invalid json");
+  store = await new MediaStore(options).start(); t.after(() => store.close());
+  assert.equal(store.available, true);
+  assert.equal((await store.enrich(payload, client)).status, "ready");
+  assert.equal((await store.renew(broken)).error, "inbox_media_missing");
+  assert.deepEqual(await fs.readFile(broken.local_path), bytes);
+  const missing = await store.enrich(payload, client); pinned.add(missing.id);
+  await fs.unlink(missing.local_path);
+  assert.equal((await store.renew(missing)).error, "inbox_media_missing");
+});
+
+test("temporary media read errors retry and renewal metadata is synced before rename", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-renew-sync-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  let now = Date.now(); const bytes = Buffer.from("Fictional attachment");
+  const store = await new MediaStore({ root, enabled: true, retentionMs: 1000, now: () => now,
+    logger: {}, isPinned: () => true }).start(); t.after(() => store.close());
+  const media = await store.enrich(payload, { getMediaContent: () => ({ mimetype: "audio/ogg",
+    fileSha256: crypto.createHash("sha256").update(bytes).digest() }), downloadMedia: async () => Readable.from([bytes]) });
+  const read = store.readMetadata.bind(store);
+  store.readMetadata = async () => { throw Object.assign(new Error("Fictional private path"), { code: "EIO" }); };
+  assert.equal((await store.renew(media)).error, "inbox_media_unavailable");
+  store.readMetadata = read; now += 2000;
+  const write = store.writeMetadata.bind(store); const calls = [];
+  store.writeMetadata = async (...args) => { await write(...args); calls.push("file_synced"); };
+  store.syncDirectory = async () => { calls.push("directory_synced"); };
+  assert.equal((await store.renew(media)).status, "ready");
+  assert.deepEqual(calls, ["file_synced", "directory_synced"]);
+});
+
+test("media preparation is bounded and rotates accounts before returning to a busy backlog", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-fair-preparation-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const inbox = await new MessageInbox({ directory, clientIds: ["default", "other", "third"] }).start();
+  for (const [account, id] of [["default", "a1"], ["default", "a2"], ["other", "b"], ["third", "c"]]) {
+    await inbox.enqueue(account, { ...payload, key: { ...payload.key, id } });
+  }
+  const pending = new Map(); const calls = [];
+  const runtime = createAddonRuntime({ clientIds: ["default", "other", "third"], messageInbox: inbox,
+    clientFactory: () => { const client = new EventEmitter(); client.status = { connected: true }; return client; },
+    logger: {}, httpClient: { post: async () => {} },
+    mediaStore: { enrich: async (message) => { calls.push(message.key.id);
+      return new Promise((resolve) => pending.set(message.key.id, resolve)); } },
+  });
+  runtime.preparePendingInbox(); await settle();
+  assert.deepEqual(calls, ["a1", "b"]);
+  pending.get("a1")(undefined);
+  for (let i = 0; i < 100 && !pending.has("c"); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(calls, ["a1", "b", "c"]);
+  const stopped = runtime.stopInbox();
+  pending.get("b")(undefined); pending.get("c")(undefined); await stopped;
+  assert.equal(inbox.unready("default").length, 1);
+});
+
+test("temporary media failures retry while HA is offline without any inbox polls", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "inbox-offline-retry-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const inbox = await new MessageInbox({ directory, clientIds: ["default"], preparationRetryMs: 5 }).start();
+  const client = new EventEmitter(); client.status = { connected: true }; let attempts = 0;
+  const runtime = createAddonRuntime({ clientIds: ["default"], messageInbox: inbox,
+    clientFactory: () => client, logger: {},
+    httpClient: { post: async () => { throw new Error("Fictional HA outage"); } },
+    mediaStore: { enrich: async () => { attempts++;
+      if (attempts === 1) throw new Error("Fictional download failure");
+      return { status: "ready", id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a" }; } },
+  });
+  client.emit("msg", payload);
+  for (let i = 0; i < 100 && !inbox.state.entries[0]?.ready; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  await runtime.stopInbox(); await inbox.open(SESSION);
+  assert.equal(attempts, 2);
+  assert.equal((await inbox.poll(SESSION)).message.media.status, "ready");
 });

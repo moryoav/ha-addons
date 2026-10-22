@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from time import monotonic
 from uuid import uuid4
 
+from homeassistant.components import persistent_notification
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, callback
 
@@ -13,6 +15,8 @@ from .client import WhatsappApiError, WhatsappClient
 
 _LOGGER = logging.getLogger(__name__)
 POLL_SECONDS = 10
+REDELIVERY_SECONDS = 20
+MAX_DELIVERIES = 3
 
 
 class WhatsappInbox:
@@ -26,7 +30,9 @@ class WhatsappInbox:
         self._wake = asyncio.Event()
         self._remove_started = None
         self._remove_updated = None
-        self._interrupted: str | None = None
+        self._announced: set[tuple[str, str, str]] = set()
+        self._deliveries: dict[tuple[str, str], tuple[int, float]] = {}
+        self._attention_count: int | None = None
 
     @callback
     def start(self) -> None:
@@ -66,9 +72,62 @@ class WhatsappInbox:
     async def poll(self) -> dict:
         return await self.client.async_inbox("poll", {"session": self.session})
 
+    @callback
+    def _handle_result(self, result: dict) -> None:
+        """Bound event redelivery and report held messages without private content."""
+        attention = result.get("attention", [])
+        announced = set()
+        for item in attention:
+            reference = item["inbox"]
+            identity = (reference["id"], reference["receipt"], item["reason"])
+            announced.add(identity)
+            self._deliveries.pop(identity[:2], None)
+            if identity not in self._announced:
+                self.hass.bus.async_fire("whatsapp_inbox_attention", item)
+                if item["status"] == "interrupted":
+                    self.hass.bus.async_fire(
+                        "whatsapp_inbox_interrupted", {"inbox": reference}
+                    )
+                _LOGGER.warning(
+                    "A WhatsApp inbox message needs review (%s); inspect get_inbox and resolve it explicitly",
+                    item["reason"],
+                )
+        self._announced = announced
+        if len(attention) != self._attention_count:
+            self._attention_count = len(attention)
+            if attention:
+                persistent_notification.async_create(
+                    self.hass,
+                    f"{len(attention)} WhatsApp inbox message(s) need review. "
+                    "Use WhatsApp: Get message inbox in Developer Tools > Actions. "
+                    "Inspect the attention list and explicitly retry or discard each reference. "
+                    "Other messages can continue. Check whether actions already ran before retrying.",
+                    title="WhatsApp message inbox needs attention",
+                    notification_id="whatsapp_inbox_attention",
+                )
+            else:
+                persistent_notification.async_dismiss(
+                    self.hass, "whatsapp_inbox_attention"
+                )
+        if result["status"] == "pending":
+            message = result["message"]
+            reference = message["inbox"]
+            identity = (reference["id"], reference["receipt"])
+            attempts, last = self._deliveries.get(identity, (0, float("-inf")))
+            if attempts < MAX_DELIVERIES and monotonic() - last >= REDELIVERY_SECONDS:
+                self.hass.bus.async_fire("new_whatsapp_message", message)
+                self._deliveries[identity] = (attempts + 1, monotonic())
+            # The app has at most 1,000 unfinished entries. Keep this cache bounded
+            # even if an operator continually discards and adds messages.
+            while len(self._deliveries) > 1000:
+                self._deliveries.pop(next(iter(self._deliveries)))
+        elif result["status"] == "empty":
+            self._deliveries.clear()
+
     async def _run(self) -> None:
         opened = False
         unavailable = False
+        healthy = False
         while True:
             self._wake.clear()
             try:
@@ -76,31 +135,29 @@ class WhatsappInbox:
                     await self.client.async_inbox("open", {"session": self.session})
                     opened = True
                 result = await self.poll()
+                if unavailable or not healthy:
+                    persistent_notification.async_dismiss(
+                        self.hass, "whatsapp_inbox_connection"
+                    )
                 unavailable = False
-                if result["status"] == "pending":
-                    # Until the automation passes the atomic start gate, an event
-                    # may be redelivered. Only one start request can succeed.
-                    self.hass.bus.async_fire("new_whatsapp_message", result["message"])
-                    self._interrupted = None
-                elif result["status"] == "interrupted":
-                    reference = result["inbox"]
-                    if self._interrupted != reference["id"]:
-                        self._interrupted = reference["id"]
-                        self.hass.bus.async_fire(
-                            "whatsapp_inbox_interrupted", {"inbox": reference}
-                        )
-                        _LOGGER.warning(
-                            "WhatsApp inbox paused for an interrupted message; inspect get_inbox and resolve it explicitly"
-                        )
+                healthy = True
+                self._handle_result(result)
             except WhatsappApiError as err:
                 if err.code == "inbox_session_changed":
-                    _LOGGER.warning(
-                        "WhatsApp inbox consumer was replaced; reload this integration only if it should own delivery"
-                    )
-                    return
+                    # A restored app snapshot may contain an older HA session.
+                    # Reopen after the normal backoff; only one HA consumer is supported.
+                    opened = False
                 if not unavailable:
                     _LOGGER.warning(
-                        "WhatsApp inbox is temporarily unavailable; pending messages remain in the app"
+                        "WhatsApp inbox is unavailable; delivery will retry automatically. Check the app connection and inbox storage"
+                    )
+                    persistent_notification.async_create(
+                        self.hass,
+                        "Message inbox delivery is unavailable. The integration will retry "
+                        "automatically. Check the app logs, connection and inbox storage. "
+                        "If inbox storage failed, new messages use live delivery without restart recovery.",
+                        title="WhatsApp message inbox unavailable",
+                        notification_id="whatsapp_inbox_connection",
                     )
                 unavailable = True
             try:

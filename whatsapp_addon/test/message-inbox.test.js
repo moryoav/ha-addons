@@ -36,7 +36,7 @@ test("pending messages survive app restart with original metadata and arrival or
   const restarted = await create().start(); await restarted.open(OTHER_SESSION);
   const result = await restarted.poll(OTHER_SESSION);
   assert.equal(result.status, "pending");
-  assert.deepEqual(result.counts, { pending: 2, processing: 0, interrupted: 0 });
+  assert.deepEqual(result.counts, { pending: 2, processing: 0, interrupted: 0, blocked: 0 });
   assert.equal(result.message.inbox.id, id);
   assert.deepEqual(result.message.key, original.key);
   assert.deepEqual(result.message.message, original.message);
@@ -72,14 +72,14 @@ test("processing becomes interrupted after either HA session change or app resta
   }
 });
 
-test("an interrupted action blocks later messages until explicit resolution", async (t) => {
+test("an interrupted action is retained for review while later messages continue", async (t) => {
   const { inbox } = await fixture(t); await enqueue(inbox); await enqueue(inbox, message("later"));
   const reference = (await inbox.poll(SESSION)).message.inbox;
   await inbox.begin(reference); await inbox.open(OTHER_SESSION);
   const interrupted = await inbox.poll(OTHER_SESSION);
-  assert.equal(interrupted.inbox.id, reference.id);
-  assert.equal(interrupted.status, "interrupted");
-  await inbox.resolve(interrupted.inbox, "discard");
+  assert.equal(interrupted.attention[0].inbox.id, reference.id);
+  assert.equal(interrupted.status, "pending");
+  await inbox.resolve(interrupted.attention[0].inbox, "discard");
   assert.equal((await inbox.poll(OTHER_SESSION)).message.key.id, "later");
 });
 
@@ -192,12 +192,16 @@ test("ready messages wait for the WhatsApp account to reconnect before delivery"
   assert.equal((await inbox.poll(SESSION, undefined, () => true)).status, "pending");
 });
 
-test("unprepared media survives restart and blocks later ready messages", async (t) => {
+test("incomplete preparation survives restart for review while ready messages continue", async (t) => {
   const { inbox, create } = await fixture(t); await inbox.enqueue("default", message());
   await enqueue(inbox, message("second"));
   const next = await create().start(); await next.open(SESSION);
+  assert.equal(next.unready("default").length, 0);
+  const result = await next.poll(SESSION);
+  assert.equal(result.message.key.id, "second");
+  assert.equal(result.attention[0].reason, "preparation_interrupted");
+  await next.resolve(result.attention[0].inbox, "retry");
   assert.equal(next.unready("default").length, 1);
-  assert.equal((await next.poll(SESSION)).status, "preparing");
 });
 
 test("a stale HA session cannot consume or mutate the current inbox", async (t) => {
@@ -224,4 +228,216 @@ test("inbox API requires authentication and only explicit requests change proces
   const reference = result.message.inbox;
   assert.equal((await (await post("start", { inbox: reference })).json()).started, true);
   assert.equal((await (await post("complete", { inbox: reference })).json()).status, "completed");
+});
+
+test("offline, unprepared, and processing account heads cannot block another account", async (t) => {
+  for (const state of ["offline", "unprepared", "processing", "interrupted"]) {
+    const { inbox } = await fixture(t);
+    const firstId = await inbox.enqueue("default", message());
+    if (state !== "unprepared") await inbox.ready(firstId);
+    if (["processing", "interrupted"].includes(state)) {
+      await inbox.begin((await inbox.poll(SESSION)).message.inbox);
+      if (state === "interrupted") { await inbox.open(OTHER_SESSION); await inbox.open(SESSION); }
+    }
+    await enqueue(inbox, message("other-account"), "other");
+    const result = await inbox.poll(SESSION, undefined, (id) => state !== "offline" || id !== "default");
+    assert.equal(result.message.clientId, "other", state);
+    assert.equal((await inbox.begin(result.message.inbox)).started, true, state);
+  }
+});
+
+test("unclaimed messages time out durably and do not hold later messages hostage", async (t) => {
+  let now = 1000;
+  const { inbox, create } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
+  await enqueue(inbox); await enqueue(inbox, message("later"));
+  const original = (await inbox.poll(SESSION)).message.inbox;
+  now += 61;
+  const result = await inbox.poll(SESSION);
+  assert.equal(result.message.key.id, "later");
+  assert.equal(result.attention[0].reason, "unclaimed");
+  assert.equal((await inbox.begin(original)).started, false);
+  const restarted = await create().start(); await restarted.open(OTHER_SESSION);
+  const recovered = await restarted.poll(OTHER_SESSION);
+  assert.equal(recovered.attention[0].inbox.id, original.id);
+  assert.equal(recovered.counts.blocked, 1);
+});
+
+test("processing watchdog retains uncertain actions without automatic replay", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, processingTimeoutMs: 60 });
+  await enqueue(inbox); await enqueue(inbox, message("later"));
+  const reference = (await inbox.poll(SESSION)).message.inbox;
+  await inbox.begin(reference); now += 61;
+  const result = await inbox.poll(SESSION);
+  assert.equal(result.message.key.id, "later");
+  assert.equal(result.attention[0].reason, "processing_timeout");
+  assert.equal((await inbox.begin(reference)).started, false);
+  assert.deepEqual(await inbox.complete(reference), { status: "completed" });
+});
+
+test("unprepared messages can be discarded immediately or held by the watchdog", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, preparationTimeoutMs: 60 });
+  await inbox.enqueue("default", message());
+  let result = await inbox.poll(SESSION);
+  await inbox.resolve(result.inbox, "discard");
+  await inbox.enqueue("default", message("stuck"));
+  now += 61;
+  result = await inbox.poll(SESSION);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.attention[0].reason, "preparation_timeout");
+  await inbox.resolve(result.inbox, "discard");
+  assert.equal((await inbox.poll(SESSION)).status, "empty");
+});
+
+test("retries preserve arrival time and cannot overlap a later active message", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
+  await enqueue(inbox); await enqueue(inbox, message("later"));
+  const first = (await inbox.poll(SESSION)).message.inbox;
+  now += 61;
+  const later = (await inbox.poll(SESSION)).message.inbox;
+  await inbox.begin(later);
+  await inbox.resolve(first, "retry");
+  assert.equal((await inbox.poll(SESSION)).status, "processing");
+  const retriedEntry = inbox.state.entries[0];
+  await assert.rejects(inbox.begin({ ...first, receipt: retriedEntry.receipt }), { code: "inbox_message_out_of_order" });
+  await inbox.complete(later);
+  const retried = await inbox.poll(SESSION);
+  assert.equal(retried.message.inbox.received_at, first.received_at);
+  assert.equal((await inbox.begin(retried.message.inbox)).started, true);
+});
+
+test("temporary preparation errors back off and succeed or become terminal after a bounded budget", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, preparationRetryMs: 10 });
+  const id = await inbox.enqueue("default", message());
+  const failure = { status: "error", error: "download_failed" };
+  assert.equal(await inbox.ready(id, failure), false);
+  assert.equal(inbox.unready("default").length, 0);
+  now += 10;
+  assert.equal(inbox.unready("default").length, 1);
+  assert.equal(await inbox.ready(id, failure), false);
+  now += 19; assert.equal(inbox.unready("default").length, 0);
+  now += 1;
+  assert.equal(await inbox.ready(id, failure), true);
+  const result = await inbox.poll(SESSION);
+  assert.equal(result.message.media.error, "download_failed");
+  await inbox.resolve(result.message.inbox, "retry");
+  assert.equal(inbox.unready("default").length, 1);
+  await inbox.ready(id, { status: "ready", id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a" });
+  assert.equal((await inbox.poll(SESSION)).message.media.status, "ready");
+});
+
+test("missing media is delivered as an explicit error while temporary failures retain the pin", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now });
+  const media = { status: "ready", id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a" };
+  await enqueue(inbox, message(), "default", media);
+  await enqueue(inbox, message("other"), "other");
+  const temporary = await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_unavailable" }));
+  assert.equal(temporary.message.clientId, "other");
+  assert.equal(inbox.isMediaPinned(media.id), true);
+  now += 100;
+  const missing = await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_missing" }));
+  assert.equal(missing.message.clientId, "default");
+  assert.equal(missing.message.media.error, "inbox_media_missing");
+  assert.equal(inbox.state.entries[0].mediaWaitAt, undefined);
+});
+
+test("unchanged polls avoid snapshot cloning and disk writes with a full receipt history", async (t) => {
+  const { inbox } = await fixture(t);
+  // Seed a real persisted history in one transaction, avoiding thousands of test fsyncs.
+  await inbox.transaction((state) => {
+    for (let i = 0; i < 10000; i++) state.entries.push({
+      id: i.toString(16).padStart(64, "0"), receipt: "c".repeat(64), clientId: "default",
+      sequence: ++state.sequence, status: "completed", completedAt: Date.now(),
+      chatId: "12025550123@s.whatsapp.net", messageId: `old-${i}`, receivedAt: 1, ready: true,
+    });
+  });
+  assert.equal(inbox.state.entries.length, 1000);
+  assert.ok((await fs.stat(inbox.file)).size < 300000);
+  await enqueue(inbox);
+  await inbox.poll(SESSION); // First offer is deliberately durable.
+  const snapshot = inbox.state;
+  inbox.fsPromises = { ...fs, open: async () => { throw new Error("Unexpected write on read-only poll"); } };
+  for (let i = 0; i < 100; i++) assert.equal((await inbox.poll(SESSION)).status, "pending");
+  assert.equal(inbox.state, snapshot);
+});
+
+test("an uncertain enqueue is held after restart rather than replaying a possible live fallback", async (t) => {
+  const { inbox, create } = await fixture(t);
+  inbox.syncDirectory = async () => { throw new Error("Fictional flush failure"); };
+  await assert.rejects(inbox.enqueue("default", message()), { code: "inbox_storage_unavailable" });
+  const recovered = await create().start(); await recovered.open(OTHER_SESSION);
+  const result = await recovered.poll(OTHER_SESSION);
+  assert.equal(result.status, "blocked");
+  assert.equal(result.attention[0].reason, "preparation_interrupted");
+});
+
+test("inspection does not begin the claim deadline and workflow failures can be held immediately", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, claimTimeoutMs: 60 });
+  await enqueue(inbox);
+  await inbox.poll(SESSION, undefined, undefined, false);
+  now += 60000;
+  const result = await inbox.poll(SESSION);
+  assert.equal(result.status, "pending");
+  await inbox.begin(result.message.inbox);
+  assert.equal((await inbox.resolve(result.message.inbox, "hold")).status, "interrupted");
+  assert.equal((await inbox.poll(SESSION)).attention[0].reason, "workflow_failed");
+});
+
+test("receipt expiry admits the first new delivery and failed preparation cannot mutate the prior snapshot", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, receiptRetentionMs: 60 });
+  await enqueue(inbox);
+  const reference = (await inbox.poll(SESSION)).message.inbox;
+  await inbox.begin(reference); await inbox.complete(reference); now += 61;
+  const id = await inbox.enqueue("default", message());
+  assert.equal(id, reference.id);
+  assert.equal(inbox.state.entries.length, 1);
+  const snapshot = JSON.stringify(inbox.state);
+  inbox.fsPromises = { ...fs, rename: async () => { throw new Error("Fictional write failure"); } };
+  await assert.rejects(inbox.ready(id, { status: "error", error: "invalid_metadata" }));
+  assert.equal(JSON.stringify(inbox.state), snapshot);
+});
+
+test("failed media renewal is held after its watchdog and later messages continue", async (t) => {
+  let now = 1000;
+  const { inbox } = await fixture(t, { now: () => now, preparationTimeoutMs: 60 });
+  const media = { id: "1bcdfb31-7cd3-47df-8595-17fcaf84943a", status: "ready" };
+  await enqueue(inbox, message(), "default", media);
+  await enqueue(inbox, message("later"));
+  await inbox.poll(SESSION, async () => ({ ...media, status: "error", error: "inbox_media_unavailable" }));
+  now += 61;
+  const result = await inbox.poll(SESSION);
+  assert.equal(result.message.key.id, "later");
+  assert.equal(result.attention[0].reason, "preparation_timeout");
+  assert.equal(inbox.isMediaPinned(media.id), true);
+});
+
+test("admission reserves room to prepare, start and complete messages at the storage limit", async (t) => {
+  const { inbox } = await fixture(t, { maxBytes: 16000 });
+  const large = message(); large.message.conversation = "x".repeat(6000);
+  const id = await inbox.enqueue("default", large);
+  await assert.rejects(inbox.enqueue("default", { ...large, key: { ...large.key, id: "next" } }), { code: "inbox_full" });
+  await inbox.ready(id, { status: "ready", original_filename: "x".repeat(2000) });
+  const reference = (await inbox.poll(SESSION)).message.inbox;
+  assert.equal((await inbox.begin(reference)).started, true);
+  await inbox.complete(reference);
+  assert.equal((await inbox.poll(SESSION)).status, "empty");
+});
+
+test("a backwards wall-clock correction cannot strand preparation backoff or watchdogs", async (t) => {
+  let now = 100000;
+  const { inbox } = await fixture(t, { now: () => now, preparationRetryMs: 10, preparationTimeoutMs: 60 });
+  const id = await inbox.enqueue("default", message());
+  await inbox.ready(id, { status: "error", error: "timeout" });
+  now = 1000;
+  assert.equal((await inbox.poll(SESSION)).status, "preparing");
+  now += 10;
+  assert.equal(inbox.unready("default").length, 1);
+  now += 51;
+  assert.equal((await inbox.poll(SESSION)).attention[0].reason, "preparation_timeout");
 });

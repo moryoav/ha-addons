@@ -41,14 +41,16 @@ the recipient read the message.
 Enable selected `inbox_clients` in the app only after updating the integration
 and adding the start and completion gates to the processing automation.
 
-- `whatsapp.get_inbox`: inspect the oldest unfinished message and queue counts;
-  requires `response_variable`.
+- `whatsapp.get_inbox`: inspect the next eligible message, queue counts and held
+  items in `attention`; requires `response_variable`.
 - `whatsapp.start_inbox_message`: submit the event's complete `inbox` object;
   requires `response_variable`. Continue only if `started` is true.
 - `whatsapp.complete_inbox_message`: submit the same `inbox` object after the
   workflow and reply finish. Optional response: `status: completed`.
-- `whatsapp.resolve_inbox_message`: submit an interrupted item's `inbox` object
-  with `resolution: retry` or `resolution: discard` after inspecting the action.
+- `whatsapp.resolve_inbox_message`: submit a current `inbox` reference with
+  `resolution: retry` or `resolution: discard` after inspecting the action.
+  Pending and unprepared messages can also be resolved. A failing workflow can
+  use `resolution: hold` to retain a started message for immediate review.
 
 See [Recover incoming messages](../examples/reliable-incoming-messages.md) for
 the migration example, restart behavior, storage limits, and media retention.

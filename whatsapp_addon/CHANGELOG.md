@@ -11,6 +11,12 @@
   and bounded private storage with completed payload cleanup and duplicate receipts.
 - Added Home Assistant inbox actions and an automation migration example. Update
   both components and add the start/completion gates before enabling an account.
+- Isolated delivery and media preparation by account, bounded unclaimed
+  redelivery, and retained stalled work for explicit review with notifications.
+- Added live fallback and visible errors when inbox admission or storage fails;
+  preserved unreadable state while keeping the rest of the app available.
+- Retried temporary media failures, isolated damaged attachments, synced media
+  metadata, and avoided inbox snapshot work on unchanged polls.
 
 ## 3.0.0
 

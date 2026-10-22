@@ -160,7 +160,7 @@
     },
     "get_inbox": {
       "name": "Get message inbox",
-      "description": "Returns the oldest unfinished inbox message and pending, processing, and interrupted counts. Requires response_variable."
+      "description": "Inspect the next eligible message, queue counts and held messages needing review."
     },
     "start_inbox_message": {
       "name": "Start inbox message",
@@ -183,8 +183,8 @@
       }
     },
     "resolve_inbox_message": {
-      "name": "Resolve interrupted inbox message",
-      "description": "Explicitly retries or discards an interrupted message after checking whether its actions already completed.",
+      "name": "Resolve inbox message",
+      "description": "Retry or discard a pending or held message after inspection, or hold a started message for review after a workflow failure.",
       "fields": {
         "inbox": {
           "name": "Inbox reference",
@@ -192,12 +192,15 @@
         },
         "resolution": {
           "name": "Resolution",
-          "description": "Retry only after checking whether the interrupted action completed; discard advances the queue without executing it again."
+          "description": "Retry after checking whether actions already ran; discard skips the message; hold retains a started message for review and does not cancel running actions."
         }
       }
     }
   },
   "exceptions": {
+    "inbox_disabled": {
+      "message": "Enable inbox_clients in the WhatsApp app and reload the integration first."
+    },
     "addon_too_old": {
       "message": "The installed WhatsApp app does not support this action. Update the app and try again."
     },
