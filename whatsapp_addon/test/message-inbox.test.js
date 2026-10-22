@@ -67,6 +67,19 @@ test("capacity and payload limits never evict queued messages", async (t) => {
   assert.equal(inbox.state.pending.length, 1);
 });
 
+test("existing duplicate rules preserve changed payloads and ignore routing and media URL changes", async (t) => {
+  const { inbox } = await fixture(t);
+  await inbox.enqueue("default", message());
+  await inbox.enqueue("default", { ...message(), key: { ...message().key, remoteJid: "999999999999999@lid" } });
+  assert.equal(inbox.state.pending.length, 1);
+  await inbox.enqueue("default", { ...message(), message: { conversation: "Corrected content" } });
+  assert.equal(inbox.state.pending.length, 2);
+  const audio = { ...message(), type: "audioMessage", message: { audioMessage: { mediaKey: Buffer.from([1, 2]), url: "https://example.invalid/first", mimetype: "audio/ogg" } } };
+  await inbox.enqueue("default", audio);
+  await inbox.enqueue("default", { ...audio, message: { audioMessage: { ...audio.message.audioMessage, url: "https://example.invalid/renewed" } } });
+  assert.equal(inbox.state.pending.length, 3);
+});
+
 test("unreadable or invalid snapshots are preserved, and oversize state is refused before reading", async (t) => {
   const { inbox, create } = await fixture(t);
   for (const raw of ['{"version":', '{"version":1,"pending":[null],"delivered":[]}', '{"version":2,"pending":[],"delivered":[]}']) {

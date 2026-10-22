@@ -1,10 +1,12 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { hashMessagePayload } = require("./message-dedupe");
 
 /** Identify a message without storing chat identifiers in filenames or logs. */
 const messageId = (clientId, message) => crypto.createHash("sha256")
-  .update(JSON.stringify([clientId, message?.key?.remoteJid, message?.key?.id])).digest("hex");
+  .update(JSON.stringify([clientId, message?.key?.id, message?.type,
+    hashMessagePayload(message?.message?.[message?.type] ?? message?.message)])).digest("hex");
 
 /** Preserve Baileys binary media keys and protobuf integers in private JSON. */
 const encode = (_, value) => typeof value === "bigint" ? value.toString()
@@ -110,7 +112,8 @@ class MessageInbox {
   enqueue(clientId, payload) {
     const wire = JSON.stringify(payload, encode);
     if (Buffer.byteLength(wire) > this.maxMessageBytes) throw new Error("WhatsApp inbox message is too large.");
-    const entry = { id: messageId(clientId, payload), clientId, payload: JSON.parse(wire) };
+    const stored = JSON.parse(wire);
+    const entry = { id: messageId(clientId, stored), clientId, payload: stored };
     this.validate({ version: 1, pending: [entry], delivered: [] });
     return this.update((next) => {
       if ([...next.pending, ...next.delivered].some((item) => item.id === entry.id)) return false;
