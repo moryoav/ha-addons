@@ -2,6 +2,14 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+### Build performance
+
+- Aligned CI image caches with the release builder's architecture scopes so
+  releases can reuse native build layers from trusted main builds. Kept the
+  previous cache scopes as additional import sources during the transition.
+
 ## 3.2.0
 
 - Aligned the HACS integration package with the 3.2.0 add-on release.
