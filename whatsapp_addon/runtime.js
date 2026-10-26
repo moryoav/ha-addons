@@ -1157,8 +1157,12 @@ const createAddonRuntime = ({
     /** Keep codes in the protected pairing UI and notification, never the public status API. */
     client.on("pairing_update", (state) => {
       if (clients[clientId] !== client) return;
+      const current = clientStates[clientId]?.state;
       setClientState(clientId, {
-        ...(state.method === "qr" && clientStates[clientId]?.state === "pairing" ? { state: "connecting" } : {}),
+        // Phone codes are generated on a fresh socket, after its reconnect replaced the QR state.
+        ...(state.method === "phone" && ["connecting", "reconnecting", "restarting", "pairing"].includes(current)
+          ? { state: "pairing" } : {}),
+        ...(state.method === "qr" && current === "pairing" ? { state: "connecting" } : {}),
         pairingMethod: state.method,
         pairingPending: state.pending === true,
         pairingCode: state.code || null,

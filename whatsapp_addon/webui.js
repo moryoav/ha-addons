@@ -610,7 +610,8 @@ const renderWebUi = ({ ingressPath } = {}) => {
     const postPairingAction = async (item, endpoint, body) => {
       const message = item.querySelector("[data-pairing-message]");
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      // Phone codes wait for a fresh WhatsApp handshake before the request itself.
+      const timeout = setTimeout(() => controller.abort(), 30000);
       item.dataset.pairingBusy = "true";
       message.textContent = "";
       renderPairing(item, item.clientStatus);

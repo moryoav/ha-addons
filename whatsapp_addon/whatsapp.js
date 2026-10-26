@@ -23,7 +23,12 @@ const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
 const { PollStore } = require("./poll-store");
-const { PairingActionError, PairingSession, clearUnregisteredPairing } = require("./pairing");
+const {
+  PairingActionError,
+  PairingSession,
+  clearUnregisteredPairing,
+  normalizePairingPhone,
+} = require("./pairing");
 const { chatReadsFrom, messageStatusesFrom } = require("./receipts");
 const {
   RequestValidationError,
@@ -64,6 +69,8 @@ const MAX_UNIX_SECONDS = 4_102_444_800;
 // Baileys waits for WhatsApp's answer without a timeout of its own. Stay below
 // the integration's 10 second request timeout so a stuck query fails cleanly.
 const QUERY_TIMEOUT_MS = 8_000;
+// Bound the fresh socket a phone code waits for, including its reconnect.
+const PAIRING_HANDSHAKE_TIMEOUT_MS = 15_000;
 // WhatsApp answers lookups of hidden or missing profile data with these codes.
 const UNAVAILABLE_CODES = new Set([401, 403, 404]);
 
@@ -267,6 +274,7 @@ class WhatsappClient extends EventEmitter {
   #contactsRequest;
   #pollStore;
   #pairingSession;
+  #pairingHandshake;
   #credentialWrite = Promise.resolve();
 
   #status = {
@@ -555,18 +563,45 @@ class WhatsappClient extends EventEmitter {
     await this.#credentialWrite;
   };
 
-  /** Request a phone-number code only for the current unpaired socket. */
+  /** Request a phone-number code on a fresh socket so it lasts the full pairing window. */
   requestPairingCode = async (phoneNumber) => {
     if (!this.#pairingSession) throw new PairingActionError(409, "pairing_unavailable", "Wait for a QR code before requesting a pairing code.");
-    return this.#pairingSession.requestCode(phoneNumber);
+    const phone = normalizePairingPhone(phoneNumber);
+    const session = await this.#restartPairing(true);
+    return session.requestCode(phone);
   };
 
   /** Restart an unfinished pairing handshake to display a fresh QR code. */
   useQrPairing = async () => {
     if (!this.#pairingSession) throw new PairingActionError(409, "pairing_unavailable", "Wait for the pairing page to be ready, then try again.");
-    this.#pairingSession.requireAvailable();
-    await this.disconnect(true);
-    await this.connect();
+    await this.#restartPairing(false);
+  };
+
+  /** Replace an unpaired socket; a phone code takes its handshake instead of showing its QR. */
+  #restartPairing = async (forPhoneCode) => {
+    const previous = this.#pairingSession;
+    previous.requireAvailable();
+    if (this.#pairingHandshake) throw new PairingActionError(409, "pairing_busy", "A pairing request is already in progress.");
+    if (!forPhoneCode) {
+      await this.disconnect(true);
+      await this.connect();
+      return undefined;
+    }
+    let handshake;
+    const ready = new Promise((resolve) => {
+      handshake = this.#pairingHandshake = { previous, resolve };
+    });
+    try {
+      return await withTimeout((async () => {
+        await this.disconnect(true);
+        await this.connect();
+        return ready;
+      })(), "Pairing handshake", PAIRING_HANDSHAKE_TIMEOUT_MS);
+    } catch {
+      throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Wait for a new QR code, then try again.");
+    } finally {
+      if (this.#pairingHandshake === handshake) this.#pairingHandshake = undefined;
+    }
   };
 
   restart = async () => {
@@ -782,7 +817,16 @@ class WhatsappClient extends EventEmitter {
   };
 
   #onConnectionUpdate = (event) => {
-    if (event?.qr && this.#pairingSession?.onQr()) this.emit("qr", event.qr);
+    if (event?.qr && this.#pairingSession?.onQr()) {
+      const handshake = this.#pairingHandshake;
+      if (handshake && handshake.previous !== this.#pairingSession) {
+        // The waiting phone-code request owns this fresh handshake, so its QR stays hidden.
+        this.#pairingHandshake = undefined;
+        handshake.resolve(this.#pairingSession);
+      } else {
+        this.emit("qr", event.qr);
+      }
+    }
     if (event?.isNewLogin || event?.connection === "open") this.#pairingSession?.complete();
     if (event?.connection === "open") this.#onConnected();
     else if (event?.connection === "close") this.#onDisconnected(event);

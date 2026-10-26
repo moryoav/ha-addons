@@ -142,13 +142,17 @@ const clientFixture = async (t, initialCreds = { registered: false }) => {
     }),
     default: (options) => {
       const ev = new EventEmitter();
-      const socket = { ev, ws: new EventEmitter(), authState: options.auth,
+      const socket = { ev, ws: new EventEmitter(), authState: options.auth, requests: [], ended: false,
         requestPairingCode: async (number) => {
+          socket.requests.push(number);
           Object.assign(creds, { pairingCode: CODE, me: { id: `${number}@s.whatsapp.net`, name: "~" } });
           ev.emit("creds.update", creds);
           return CODE;
         },
-        end: async () => ev.emit("connection.update", { connection: "close" }),
+        end: async () => {
+          socket.ended = true;
+          ev.emit("connection.update", { connection: "close" });
+        },
       };
       sockets.push(socket);
       return socket;
@@ -160,6 +164,53 @@ const clientFixture = async (t, initialCreds = { registered: false }) => {
   return { client, sockets, creds, saves };
 };
 
+/** Wait for asynchronous bridge work without fixed delays, even while timers are mocked. */
+const waitFor = async (condition) => {
+  const deadline = Date.now() + 2_000;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, "The bridge did not reach the expected state.");
+    await flush();
+  }
+};
+
+/** Request a code, then complete the fresh handshake the bridge opens for it. */
+const requestFreshCode = async (fixture) => {
+  const count = fixture.sockets.length;
+  const code = fixture.client.requestPairingCode(PHONE);
+  await waitFor(() => fixture.sockets.length > count);
+  fixture.sockets.at(-1).ev.emit("connection.update", { qr: "handshake-fictional-qr" });
+  return code;
+};
+
+/** Give each code a fresh socket, so the previous socket's QR timer cannot expire it. */
+test("phone codes are requested on a fresh socket whose QR stays hidden", async (t) => {
+  const fixture = await clientFixture(t);
+  const qrEvents = [];
+  fixture.client.on("qr", (qr) => qrEvents.push(qr));
+  fixture.sockets[0].ev.emit("connection.update", { qr: "first-fictional-qr" });
+  assert.equal(await requestFreshCode(fixture), "ABCD-1234");
+  assert.equal(fixture.sockets[0].ended, true);
+  assert.deepEqual(fixture.sockets.map((socket) => socket.requests), [[], [PHONE]]);
+  fixture.sockets[1].ev.emit("connection.update", { qr: "rotated-fictional-qr" });
+  assert.deepEqual(qrEvents, ["first-fictional-qr"]);
+});
+
+/** Show the fresh socket's QR again when its handshake misses the request deadline. */
+test("a phone request fails cleanly when its fresh socket never becomes ready", async (t) => {
+  const fixture = await clientFixture(t);
+  fixture.sockets[0].ev.emit("connection.update", { qr: "first-fictional-qr" });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const rejected = assert.rejects(fixture.client.requestPairingCode(PHONE), { code: "pairing_failed", status: 502 });
+  await waitFor(() => fixture.sockets.length === 2);
+  t.mock.timers.tick(15_000);
+  await rejected;
+  const qrEvents = [];
+  fixture.client.on("qr", (qr) => qrEvents.push(qr));
+  fixture.sockets[1].ev.emit("connection.update", { qr: "late-fictional-qr" });
+  assert.deepEqual(qrEvents, ["late-fictional-qr"]);
+  assert.deepEqual(fixture.sockets[1].requests, []);
+});
+
 /** Verify switching back to QR uses fresh unregistered credentials and ignores old sockets. */
 test("the bridge clears abandoned phone credentials before reconnecting for QR", async (t) => {
   const fixture = await clientFixture(t);
@@ -167,13 +218,16 @@ test("the bridge clears abandoned phone credentials before reconnecting for QR",
   const qrEvents = [];
   fixture.client.on("qr", (qr) => qrEvents.push(qr));
   first.ev.emit("connection.update", { qr: "first-fictional-qr" });
-  await fixture.client.requestPairingCode(PHONE);
-  first.ev.emit("connection.update", { qr: "suppressed-fictional-qr" });
+  await requestFreshCode(fixture);
+  const phoneSocket = fixture.sockets[1];
+  phoneSocket.ev.emit("connection.update", { qr: "suppressed-fictional-qr" });
   await fixture.client.useQrPairing();
   assert.deepEqual(fixture.creds, { registered: false });
   assert.deepEqual(fixture.saves.at(-1), { registered: false });
-  first.ev.emit("connection.update", { qr: "stale-fictional-qr", connection: "close" });
-  fixture.sockets[1].ev.emit("connection.update", { qr: "fresh-fictional-qr" });
+  for (const stale of [first, phoneSocket]) {
+    stale.ev.emit("connection.update", { qr: "stale-fictional-qr", connection: "close" });
+  }
+  fixture.sockets[2].ev.emit("connection.update", { qr: "fresh-fictional-qr" });
   assert.deepEqual(qrEvents, ["first-fictional-qr", "fresh-fictional-qr"]);
 });
 
@@ -197,9 +251,9 @@ test("startup keeps a linked identity when a QR scan followed a phone-code reque
 /** Preserve a QR scan that completes on a socket where a phone code was requested. */
 test("a QR scan after a phone-code request survives the restart-required reconnect", async (t) => {
   const fixture = await clientFixture(t);
-  const socket = fixture.sockets[0];
-  socket.ev.emit("connection.update", { qr: "fictional-qr-code" });
-  await fixture.client.requestPairingCode(PHONE);
+  fixture.sockets[0].ev.emit("connection.update", { qr: "fictional-qr-code" });
+  await requestFreshCode(fixture);
+  const socket = fixture.sockets[1];
   // Baileys merges pair-success into the same credentials before asking for a restart.
   const linked = { account: { details: "fictional-account" }, me: { id: `${PHONE}:7@s.whatsapp.net` } };
   Object.assign(fixture.creds, linked);
@@ -215,9 +269,9 @@ test("a QR scan after a phone-code request survives the restart-required reconne
 /** Preserve successful phone linking across the restart-required socket replacement. */
 test("successful phone pairing survives the subsequent reconnect", async (t) => {
   const fixture = await clientFixture(t);
-  const socket = fixture.sockets[0];
-  socket.ev.emit("connection.update", { qr: "fictional-qr-code" });
-  await fixture.client.requestPairingCode(PHONE);
+  fixture.sockets[0].ev.emit("connection.update", { qr: "fictional-qr-code" });
+  await requestFreshCode(fixture);
+  const socket = fixture.sockets[1];
   fixture.creds.registered = true;
   socket.ev.emit("creds.update", fixture.creds);
   socket.ev.emit("connection.update", { isNewLogin: true });
@@ -225,7 +279,7 @@ test("successful phone pairing survives the subsequent reconnect", async (t) => 
   await fixture.client.connect();
   assert.equal(fixture.creds.registered, true);
   assert.equal(fixture.creds.me.id, `${PHONE}@s.whatsapp.net`);
-  fixture.sockets[1].ev.emit("connection.update", { connection: "open" });
+  fixture.sockets[2].ev.emit("connection.update", { connection: "open" });
   await assert.rejects(fixture.client.requestPairingCode(PHONE), { code: "pairing_unavailable" });
 });
 
@@ -281,6 +335,21 @@ test("phone pairing is explicit, rate limited, and scoped to its account", async
   assert.ok(notifications.at(-1).url.endsWith("/dismiss"));
 });
 
+/** Show a code from the fresh socket even though the QR socket disconnected to make room for it. */
+test("a phone code returns the account to pairing after its fresh socket connects", async () => {
+  const fixture = runtimeFixture();
+  fixture.accounts[0].emit("qr", "fictional-qr-code");
+  fixture.accounts[0].emit("disconnected", null);
+  assert.equal(fixture.runtime.clientStates.default.state, "reconnecting");
+  fixture.accounts[0].emit("pairing_update", { method: "phone", pending: false, code: "ABCD-1234" });
+  await fixture.runtime.flushPairingNotifications();
+  assert.equal(fixture.runtime.clientStates.default.state, "pairing");
+  assert.equal(fixture.runtime.clientStates.default.pairingCode, "ABCD-1234");
+  const notification = fixture.requests.filter((request) => request.body.notification_id === "whatsapp_addon_qrcode_default").at(-1);
+  assert.ok(notification.url.endsWith("/create"));
+  assert.match(notification.body.message, /ABCD-1234/);
+});
+
 /** Serialize updates through a slow Supervisor lookup so linking cannot resurrect a QR. */
 test("a delayed link lookup cannot recreate a notification after successful pairing", async () => {
   const info = deferred();
@@ -324,6 +393,9 @@ test("recovery clears displayed phone codes and blocks pairing actions", async (
   await fixture.runtime.flushPairingNotifications();
   assert.equal(fixture.runtime.clientStates.default.pairingCode, null);
   await assert.rejects(fixture.runtime.requestPairingCode("default", PHONE), { code: "pairing_unavailable" });
+  fixture.accounts[0].emit("pairing_update", { method: "phone", pending: false, code: "ABCD-1234" });
+  assert.equal(fixture.runtime.clientStates.default.state, "recovery_paused");
+  await fixture.runtime.flushPairingNotifications();
   const notifications = fixture.requests.filter((request) => request.body.notification_id === "whatsapp_addon_qrcode_default");
   assert.ok(notifications.at(-1).url.endsWith("/dismiss"));
 });
