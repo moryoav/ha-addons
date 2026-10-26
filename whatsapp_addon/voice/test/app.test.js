@@ -196,6 +196,17 @@ test("live messaging always publishes discovery and events; offline mode blocks 
   assert.equal(calls.length,2);
 });
 
+test("inbox readiness requests reach the live transport and stay isolated offline",async()=>{
+  const calls=[];
+  const client={get:async(...args)=>{calls.push(args);return {data:{ready:true}};}};
+  const url="http://supervisor/core/api/whatsapp/inbox";
+  const options={headers:{Authorization:"Bearer synthetic-token"},timeout:10000};
+  assert.deepEqual(await isolatedHttpClient(client,{live:true}).get(url,options),{data:{ready:true}});
+  assert.deepEqual(calls,[[url,options]]);
+  assert.deepEqual(await isolatedHttpClient(client,{live:false}).get(url,options),{data:{ready:false}});
+  assert.equal(calls.length,1);
+});
+
 async function request(app,url,options) {
   const server=app.listen(0,"127.0.0.1");await new Promise(resolve=>server.once("listening",resolve));
   try { return await fetch("http://127.0.0.1:"+server.address().port+url,options); }

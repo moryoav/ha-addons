@@ -5,7 +5,7 @@ Home Assistant and the integration finish starting, the app delivers the queued
 messages through the existing `new_whatsapp_message` event. **Existing
 automations need no changes.** There are no additional actions or events.
 
-Update both the app and integration to **3.1.0 or newer**, then add the account
+Update both the app and integration to **3.1.1 or newer**, then add the account
 IDs to **Persistent inbox accounts** in the app configuration:
 
 ```yaml

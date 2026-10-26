@@ -20,7 +20,12 @@ class OfflineClient extends EventEmitter {
 }
 
 function isolatedHttpClient(client, { live }) {
-  return { post(url, data, options) {
+  return { get(url, options) {
+    if (!live) {
+      return Promise.resolve({ data:{ready:false} });
+    }
+    return client.get(url, options);
+  }, post(url, data, options) {
     // A live app owns messaging, events, and discovery together. Offline
     // simulation never contacts Home Assistant or takes over its integration.
     if (!live) {

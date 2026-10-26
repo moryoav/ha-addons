@@ -1,3 +1,11 @@
+## 3.1.1
+
+### Fixed
+
+- Fixed incoming message delivery for persistent inbox accounts while Home Assistant
+  is running and after restarts.
+- Restored replay of pending messages saved by 3.1.0 without automation changes.
+
 ## 3.1.0
 
 ### Persistent incoming message inbox
