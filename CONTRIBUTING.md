@@ -109,6 +109,21 @@ For add-on changes, verify that the add-on can:
 
 For HACS readiness, the HACS and Hassfest GitHub Actions should pass without ignored checks before opening a HACS/default submission.
 
+### Release build cache
+
+I share the `amd64` and `aarch64` image-cache scopes between CI and the release
+builder. CI also imports the older `voice-*` scopes during the transition, but
+exports the full build cache to the shared scopes.
+
+Before publishing a release tag, I wait for both add-on image jobs on `main`
+to finish successfully. Release tags can reuse those default-branch caches;
+caches written only by a pull request or feature branch do not warm `main`.
+
+For the next release, I compare the architecture build-and-push steps and the
+Rust compilation stage with the [v3.2.0 baseline](https://github.com/moryoav/ha-addons/actions/runs/40330347550)
+(33 minutes 31 seconds overall). A native source, toolchain, lockfile, or patch
+change can still require compilation even when cache sharing works.
+
 ## Documentation
 
 I keep the knowledge base source in `docs/` and its navigation in `mkdocs.yml`.
