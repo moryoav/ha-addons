@@ -23,7 +23,7 @@ names include their device name, so each account's entities are distinct.
 | `connected` | Connected | The account is connected to WhatsApp. |
 | `disconnected` | Disconnected | The account connection has stopped. |
 | `logged_out` | Logged out | WhatsApp has logged the account out. |
-| `pairing` | Pairing required | Scan the QR code in the app to pair this account. |
+| `pairing` | Pairing required | Scan the QR code or choose phone-number pairing in the app web UI. |
 | `reconnecting` | Reconnecting | The app is attempting to reconnect this account. |
 | `restarting` | Restarting | The app is restarting this account's connection. |
 | `recovery_paused` | Paused for recovery | The app paused connections after repeated encryption errors. Use the app web UI to review recovery. |

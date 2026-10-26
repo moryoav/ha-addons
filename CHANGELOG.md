@@ -2,6 +2,14 @@
 
 All notable changes to this repository are documented here.
 
+## 3.2.0
+
+- Added an Open pairing page link below the initial QR notification.
+- Added per-account phone-number pairing with clear codes and mobile instructions
+  in the app web UI, plus an option to return to QR pairing.
+- Cleared temporary codes when pairing ends and limited repeat code requests
+  while preserving existing saved sessions and account privacy.
+
 ## 3.1.1
 
 ### Persistent incoming message inbox

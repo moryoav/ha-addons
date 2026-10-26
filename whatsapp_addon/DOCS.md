@@ -14,8 +14,9 @@ Follow the [installation guide](../README.md#installation) to install the
 add-on and integration.
 
 1. Start the add-on and select **Open Web UI** on its Home Assistant page.
-2. Scan the pairing QR code with WhatsApp on your phone. A QR code also appears
-   in a Home Assistant persistent notification.
+2. Scan the pairing QR code with WhatsApp on your phone, or use **Link with phone
+   number** in the web UI. The initial Home Assistant notification keeps the QR
+   code and includes an **Open pairing page** link.
 3. Add **WhatsApp** under **Settings > Devices & services**. Supervisor discovery
    supplies the local API address and automatically managed credential.
 4. Use the configured session name, `default` unless changed, as `clientId`
@@ -97,7 +98,30 @@ behavior has a configuration switch; old saved switch values are ignored.
 
 ## Web UI
 
-Open the add-on page and select Open Web UI. The Ingress UI shows each configured WhatsApp session, its connection state, and the current pairing QR code when a session is waiting for pairing.
+Follow **Open pairing page** in the pairing notification, or select **Open Web
+UI** on the add-on page. Home Assistant handles access through Ingress using
+your current Home Assistant address. The UI shows each configured account,
+its connection state, and the current pairing QR code.
+
+To pair using your phone number:
+
+1. Select **Link with phone number** for the unpaired account.
+2. Enter the WhatsApp account's phone number including the country code.
+   A leading `+`, spaces, parentheses, and hyphens are accepted.
+3. Select **Generate pairing code**. The eight-character code appears on the
+   page and replaces the QR image in the existing notification.
+4. On your phone, open WhatsApp and select **Linked devices > Link a device >
+   Link with phone number instead**. Enter the displayed code.
+
+Use **Use QR code** to cancel phone pairing and obtain a fresh QR code. When
+the connection changes, the old code is cleared. If WhatsApp rejects a code,
+enter your number again and request a new one, waiting 30 seconds between code
+requests. Pairing requests are independent for each configured account. Saved
+accounts reconnect normally without another pairing request.
+
+Pairing codes and QR images are private credentials. They are available in the
+protected web UI and Home Assistant notification, and are excluded from logs,
+diagnostics, and the integration's status API.
 
 ## Decrypted incoming media
 

@@ -18,7 +18,7 @@ This project has two parts, installed separately:
   diagnostics, and setup in Home Assistant.
 
 The integration connects to the add-on's local API. Each WhatsApp account is
-paired by scanning its QR code in the add-on web UI.
+paired by scanning its QR code or using phone-number pairing in the add-on web UI.
 
 ## What it can do
 
@@ -59,7 +59,13 @@ https://github.com/moryoav/ha-addons
 
 [![Open the WhatsApp add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
+Install and start the `WhatsApp` add-on. Home Assistant shows a persistent
+notification with a QR code and an **Open pairing page** link. Scan the QR code
+with WhatsApp, or follow the link and choose **Link with phone number**.
+Enter the account's number including its country code, select **Generate pairing
+code**, and enter the displayed code in WhatsApp under **Linked devices >
+Link a device > Link with phone number instead**. The web UI is also available
+through **Open Web UI** on the add-on page.
 
 ### 2. Install the integration
 
@@ -113,7 +119,8 @@ saves it privately, and keeps it across restarts. Supervisor discovery shares
 it with the integration, which applies credential changes automatically.
 There is no token to enter or manage in the app configuration.
 
-Each client gets its own QR-code pairing flow and persisted add-on session data.
+Each client gets its own pairing flow and persisted add-on session data.
+Phone numbers are entered on demand in the web UI, rather than add-on options.
 
 Supplemental delivery receipts for decrypted own-device LID messages are always
 enabled for every account. They do not mark chats as read. Detailed decryption
@@ -121,7 +128,12 @@ tracing is disabled; neither behavior has a configuration switch.
 
 The add-on page includes an Open Web UI action through Home Assistant Ingress.
 The web UI shows each configured session, its connection state, and the current
-QR code when a session is waiting for pairing. If the add-on detects a sustained
+QR code when a session is waiting for pairing. Each unpaired account also offers
+phone-number pairing, with a clearly displayed eight-character code and a
+**Use QR code** option. Codes are cleared when the connection changes; request
+a fresh code if WhatsApp rejects one, allowing 30 seconds between requests.
+The notification follows the chosen method and is dismissed after connection.
+If the add-on detects a sustained
 burst of libsignal decryption failures, it pauses all WhatsApp clients while
 keeping the add-on healthy. The web UI then offers Retry connection, which
 keeps the saved sessions, and Reset and re-pair for a selected client, which

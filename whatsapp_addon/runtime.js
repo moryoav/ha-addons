@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 
 const axios = require("axios");
+const { PairingActionError, REQUEST_COOLDOWN_MS, normalizePairingPhone, pairingWebUiPath } = require("./pairing");
 const qrimage = require("qr-image");
 
 const { loadOrCreateApiToken, normalizeApiToken } = require("./api-token");
@@ -333,6 +334,12 @@ const createAddonRuntime = ({
   const clients = Object.create(null);
   const clientStates = Object.create(null);
   const logoutTasks = new Map();
+  const pairingTasks = new Map();
+  const lastPairingRequests = new Map();
+  const pairingNotifications = new Map();
+  const pairingNotificationVersions = new Map();
+  let webUiPath;
+  let addonInfoTask;
   const logRef = (value) => fingerprint(value, fingerprintKey);
   const debugEnabled = normalizeLogLevel(logLevel) === "debug";
   // const decryptionDiagnosticsEnabled = normalizeDecryptionDiagnostics(decryptionDiagnostics);
@@ -389,6 +396,107 @@ const createAddonRuntime = ({
     }
     return result.delivered;
   };
+
+  /** Discover the installed repository-prefixed slug without a configured HA URL. */
+  const resolveWebUiPath = async () => {
+    if (webUiPath) return webUiPath;
+    if (!addonInfoTask) {
+      addonInfoTask = Promise.resolve().then(async () => {
+        const options = { headers: supervisorHeaders, timeout: 5_000 };
+        const [addon, core] = await Promise.allSettled([
+          httpClient.get("http://supervisor/addons/self/info", options),
+          httpClient.get("http://supervisor/core/info", options),
+        ]);
+        const coreVersion = core.value?.data?.data?.version;
+        if (typeof coreVersion !== "string") return null;
+        webUiPath = pairingWebUiPath(addon.value?.data?.data?.slug, coreVersion);
+        return webUiPath;
+      }).catch(() => null).finally(() => { addonInfoTask = undefined; });
+    }
+    return addonInfoTask;
+  };
+
+  /** Publish the latest pairing state after discovering its authenticated entry link. */
+  const publishPairingNotification = async (clientId) => {
+    const path = clientStates[clientId]?.state === "pairing" ? await resolveWebUiPath() : webUiPath;
+    const state = clientStates[clientId];
+    if (state?.state !== "pairing" || (!state.qrDataUrl && state.pairingMethod !== "phone")) {
+      await postSupervisor("/core/api/services/persistent_notification/dismiss",
+        { notification_id: `whatsapp_addon_qrcode_${clientId}` }, "notification dismissal", 5_000);
+      return;
+    }
+    const link = path
+      ? `[Open pairing page](${path})`
+      : "Open the WhatsApp app's Web UI from its Home Assistant page.";
+    const message = state.pairingMethod === "phone"
+      ? state.pairingCode
+        ? `Enter **${state.pairingCode}** in WhatsApp under **Linked devices > Link a device > Link with phone number instead**.\n\n${link} to request a new code or return to QR pairing.`
+        : `Generating a phone-number pairing code for **${clientId}**.\n\n${link}`
+      : `Scan this QR code using WhatsApp > Linked devices for **${clientId}**.\n\n![QR code](${state.qrDataUrl})\n\n**Prefer to link with your phone number?**\n\n${link}`;
+    await postSupervisor("/core/api/services/persistent_notification/create", {
+      title: `WhatsApp pairing (${clientId})`, message,
+      notification_id: `whatsapp_addon_qrcode_${clientId}`,
+    }, "pairing notification", 5_000);
+  };
+
+  /** Coalesce updates into one worker per account and serialize creates with dismissals. */
+  const syncPairingNotification = (clientId) => {
+    pairingNotificationVersions.set(clientId, (pairingNotificationVersions.get(clientId) || 0) + 1);
+    if (pairingNotifications.has(clientId)) return pairingNotifications.get(clientId);
+    const task = Promise.resolve().then(async () => {
+      try {
+        let revision;
+        do {
+          revision = pairingNotificationVersions.get(clientId);
+          await publishPairingNotification(clientId);
+        } while (revision !== pairingNotificationVersions.get(clientId));
+      } finally {
+        pairingNotifications.delete(clientId);
+        pairingNotificationVersions.delete(clientId);
+      }
+    });
+    pairingNotifications.set(clientId, task);
+    return task;
+  };
+
+  /** Validate and serialize an explicit pairing choice for one configured account. */
+  const runPairingAction = async (clientId, method, phoneNumber) => {
+    let id;
+    try { id = normalizeClientId(clientId); }
+    catch { throw new PairingActionError(400, "invalid_request", "A valid account ID is required."); }
+    if (!validatedClientIds.includes(id)) throw new PairingActionError(404, "client_not_found", "The account was not found.");
+    const client = clients[id];
+    if (callDeliveryStopped || recovery.active || recovery.operationPending || logoutTasks.has(id) || clientStates[id]?.state !== "pairing" || typeof client?.[method] !== "function") {
+      throw new PairingActionError(409, "pairing_unavailable", "Wait for the account to be ready for pairing, then try again.");
+    }
+    if (pairingTasks.has(id)) throw new PairingActionError(409, "pairing_busy", "A pairing request is already in progress.");
+    if (method === "requestPairingCode") {
+      phoneNumber = normalizePairingPhone(phoneNumber);
+      const now = nowDate().getTime();
+      if (now - (lastPairingRequests.get(id) ?? -Infinity) < REQUEST_COOLDOWN_MS) {
+        throw new PairingActionError(429, "pairing_rate_limited", "Wait 30 seconds before requesting another pairing code.");
+      }
+      lastPairingRequests.set(id, now);
+    }
+    pairingTasks.set(id, true);
+    try {
+      await client[method](phoneNumber);
+      if (clients[id] !== client || recovery.active || callDeliveryStopped) {
+        throw new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
+      }
+    } catch (error) {
+      if (error instanceof PairingActionError) throw error;
+      throw new PairingActionError(502, "pairing_failed", "The pairing request failed. Refresh the page and try again.");
+    } finally {
+      pairingTasks.delete(id);
+    }
+  };
+
+  /** Generate an account-specific phone code after the user submits its phone number. */
+  const requestPairingCode = (clientId, phoneNumber) => runPairingAction(clientId, "requestPairingCode", phoneNumber);
+
+  /** Return one unpaired account to a fresh QR handshake. */
+  const useQrPairing = (clientId) => runPairingAction(clientId, "useQrPairing");
 
   const waitForCallRetry = (delayMs) => {
     if (callDeliveryStopped) return Promise.resolve(false);
@@ -465,17 +573,16 @@ const createAddonRuntime = ({
       disconnectedAt: null,
       lastErrorCode: null,
       qrDataUrl: null,
+      pairingCode: null,
+      pairingPending: false,
+      pairingMethod: "qr",
     });
     logger.info?.("WhatsApp client connected.", {
       runId,
       clientRef: logRef(clientId),
     });
     diagnostics?.recordConnection?.("connected");
-    void postSupervisor(
-      "/core/api/services/persistent_notification/dismiss",
-      { notification_id: `whatsapp_addon_qrcode_${clientId}` },
-      "notification dismissal"
-    );
+    void syncPairingNotification(clientId);
   };
 
   const onQr = (qr, clientId) => {
@@ -490,17 +597,12 @@ const createAddonRuntime = ({
         state: "pairing",
         lastQrAt: currentIsoTime(),
         qrDataUrl,
+        pairingCode: null,
+        pairingPending: false,
+        pairingMethod: "qr",
       });
 
-      void postSupervisor(
-        "/core/api/services/persistent_notification/create",
-        {
-          title: `Whatsapp QRCode (${clientId})`,
-          message: `Please scan the following QRCode for **${clientId}** client... ![QRCode](${qrDataUrl})`,
-          notification_id: `whatsapp_addon_qrcode_${clientId}`,
-        },
-        "pairing notification"
-      );
+      void syncPairingNotification(clientId);
     } catch {
       logger.error?.("WhatsApp QR image generation failed.", {
         runId,
@@ -515,7 +617,10 @@ const createAddonRuntime = ({
       disconnectedAt: currentIsoTime(),
       lastErrorCode: Number.isInteger(statusCode) ? statusCode : null,
       qrDataUrl: null,
+      pairingCode: null,
+      pairingPending: false,
     });
+    void syncPairingNotification(clientId);
     diagnostics?.recordConnection?.("disconnected");
     logger.warn?.("WhatsApp client disconnected; reconnect scheduled.", {
       runId,
@@ -1049,6 +1154,18 @@ const createAddonRuntime = ({
       });
     });
     client.on("qr", (qr) => onQr(qr, clientId));
+    /** Keep codes in the protected pairing UI and notification, never the public status API. */
+    client.on("pairing_update", (state) => {
+      if (clients[clientId] !== client) return;
+      setClientState(clientId, {
+        ...(state.method === "qr" && clientStates[clientId]?.state === "pairing" ? { state: "connecting" } : {}),
+        pairingMethod: state.method,
+        pairingPending: state.pending === true,
+        pairingCode: state.code || null,
+        qrDataUrl: null,
+      });
+      void syncPairingNotification(clientId);
+    });
     client.on("ready", () => onReady(clientId));
     client.on("disconnected", (statusCode) =>
       onDisconnected(statusCode, clientId)
@@ -1098,7 +1215,10 @@ const createAddonRuntime = ({
           state: "logged_out",
           disconnectedAt: currentIsoTime(),
           qrDataUrl: null,
+          pairingCode: null,
+          pairingPending: false,
         });
+        void syncPairingNotification(clientId);
         logger.info?.("WhatsApp client logged out; resetting session.", {
           runId,
           clientRef: logRef(clientId),
@@ -1144,12 +1264,16 @@ const createAddonRuntime = ({
 
   const setRecoveryClientStates = () => {
     for (const clientId of validatedClientIds) {
+      const wasPairing = clientStates[clientId]?.state === "pairing";
       setClientState(clientId, {
         state: "recovery_paused",
         disconnectedAt: currentIsoTime(),
         lastErrorCode: null,
         qrDataUrl: null,
+        pairingCode: null,
+        pairingPending: false,
       });
+      if (wasPairing) void syncPairingNotification(clientId);
     }
   };
 
@@ -1393,12 +1517,18 @@ const createAddonRuntime = ({
     logoutTasks,
     recovery,
     registerDiscovery,
+    requestPairingCode,
     reportRecoveryRequired,
     reportHealthFailure,
     resetRecoveryClient,
     retryRecovery,
+    useQrPairing,
     runId,
     stopCallDelivery,
+    /** Finish pairing notification cleanup after the account sockets have stopped. */
+    async flushPairingNotifications() {
+      await Promise.allSettled([...pairingNotifications.values()]);
+    },
     /** Stop retries and flush messages received before the clients disconnect. */
     async stopInbox() {
       inboxStopped = true;
@@ -1562,6 +1692,8 @@ const startAddon = async ({
       recovery: runtime.recovery,
       resetRecoveryClient: runtime.resetRecoveryClient,
       retryRecovery: runtime.retryRecovery,
+      requestPairingCode: runtime.requestPairingCode,
+      useQrPairing: runtime.useQrPairing,
     });
 
     apiServer = await listenFn(apiApp, apiPort, { apiToken });
@@ -1576,6 +1708,7 @@ const startAddon = async ({
         Object.values(runtime.clients).map((client) => client.disconnect?.())
       );
       await runtime.stopInbox();
+      await runtime.flushPairingNotifications();
     }
     if (apiServer) await closeServerFn(apiServer);
     await diagnostics.stop?.();
@@ -1611,6 +1744,7 @@ const startAddon = async ({
       ]);
       await runtime.stopInbox();
       await Promise.all([
+        runtime.flushPairingNotifications(),
         closeServerFn(apiServer),
         closeServerFn(webUiServer),
       ]);

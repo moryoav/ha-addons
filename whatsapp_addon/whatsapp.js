@@ -23,6 +23,7 @@ const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
 const { PollStore } = require("./poll-store");
+const { PairingActionError, PairingSession, clearUnregisteredPairing } = require("./pairing");
 const { chatReadsFrom, messageStatusesFrom } = require("./receipts");
 const {
   RequestValidationError,
@@ -265,6 +266,8 @@ class WhatsappClient extends EventEmitter {
   #contactListeners;
   #contactsRequest;
   #pollStore;
+  #pairingSession;
+  #credentialWrite = Promise.resolve();
 
   #status = {
     attempt: 0,
@@ -337,6 +340,8 @@ class WhatsappClient extends EventEmitter {
 
   /** Connect the account and attach handlers to its current Baileys socket. */
   #connect = async () => {
+    this.#pairingSession?.close();
+    await this.#credentialWrite;
     const baileys = await this.#baileys;
     this.#baileys = baileys;
     const {
@@ -372,6 +377,8 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
 
+    if (clearUnregisteredPairing(authResult.state.creds)) await authResult.saveCreds();
+
     const retryCache = (this.#retryCache ||= new MessageRetryCache({
       codec: proto?.Message,
     }));
@@ -404,6 +411,21 @@ class WhatsappClient extends EventEmitter {
     if (!this.#conn?.ev || typeof this.#conn.ev.on !== "function") {
       throw new WhatsappProtocolError();
     }
+    /** Serialize writes so cleanup cannot be overwritten by an earlier credential event. */
+    const saveCredentials = (state) => {
+      this.#credentialWrite = this.#credentialWrite
+        .then(() => authResult.saveCreds(state))
+        .catch((error) => this.emit("client_error", new WhatsappUpstreamError("credential update", safeUpstreamCode(error))));
+      return this.#credentialWrite;
+    };
+    this.#pairingSession = new PairingSession({
+      socket,
+      creds: authResult.state.creds,
+      saveCreds: saveCredentials,
+      onUpdate: (state) => {
+        if (this.#conn === socket) this.emit("pairing_update", state);
+      },
+    });
     this.#closeSocketWatchers();
     const contactListeners = new Map();
     for (const source of ["messaging-history.set", "contacts.upsert", "contacts.update"]) {
@@ -478,7 +500,8 @@ class WhatsappClient extends EventEmitter {
     // }
 
     this.#conn.ev.on("creds.update", (state) => {
-      if (state?.me?.id) {
+      if (this.#conn !== socket) return;
+      if (state?.me?.id && (!state.pairingCode || authResult.state.creds?.registered === true)) {
         if (this.#conn === socket) {
           this.#archiveStore.setOwner(state.me.id);
           this.#pollStore.setOwner(state.me.id);
@@ -489,20 +512,12 @@ class WhatsappClient extends EventEmitter {
         });
       }
 
-      Promise.resolve()
-        .then(() => authResult.saveCreds(state))
-        .catch((error) => {
-          this.emit(
-            "client_error",
-            new WhatsappUpstreamError(
-              "credential update",
-              safeUpstreamCode(error)
-            )
-          );
-        });
+      void saveCredentials(state);
     });
 
-    this.#conn.ev.on("connection.update", this.#onConnectionUpdate);
+    this.#conn.ev.on("connection.update", (event) => {
+      if (this.#conn === socket) this.#onConnectionUpdate(event);
+    });
   };
 
   #handleConnectFailure = (error) => {
@@ -517,6 +532,7 @@ class WhatsappClient extends EventEmitter {
   };
 
   disconnect = async (reconnect = false) => {
+    this.#pairingSession?.close();
     this.#closeLidSenderReceipts();
     this.#closeSocketWatchers();
     clearInterval(this.#refreshInterval);
@@ -536,6 +552,21 @@ class WhatsappClient extends EventEmitter {
     }
     await this.#archiveStore.flush();
     await this.#pollStore.flush();
+    await this.#credentialWrite;
+  };
+
+  /** Request a phone-number code only for the current unpaired socket. */
+  requestPairingCode = async (phoneNumber) => {
+    if (!this.#pairingSession) throw new PairingActionError(409, "pairing_unavailable", "Wait for a QR code before requesting a pairing code.");
+    return this.#pairingSession.requestCode(phoneNumber);
+  };
+
+  /** Restart an unfinished pairing handshake to display a fresh QR code. */
+  useQrPairing = async () => {
+    if (!this.#pairingSession) throw new PairingActionError(409, "pairing_unavailable", "Wait for the pairing page to be ready, then try again.");
+    this.#pairingSession.requireAvailable();
+    await this.disconnect(true);
+    await this.connect();
   };
 
   restart = async () => {
@@ -751,7 +782,8 @@ class WhatsappClient extends EventEmitter {
   };
 
   #onConnectionUpdate = (event) => {
-    if (event?.qr) this.emit("qr", event.qr);
+    if (event?.qr && this.#pairingSession?.onQr()) this.emit("qr", event.qr);
+    if (event?.isNewLogin || event?.connection === "open") this.#pairingSession?.complete();
     if (event?.connection === "open") this.#onConnected();
     else if (event?.connection === "close") this.#onDisconnected(event);
   };
@@ -880,6 +912,7 @@ class WhatsappClient extends EventEmitter {
   };
 
   #onDisconnected = ({ lastDisconnect } = {}) => {
+    this.#pairingSession?.close();
     this.#status.connected = false;
     this.#closeSocketWatchers();
     clearInterval(this.#refreshInterval);

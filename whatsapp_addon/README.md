@@ -64,7 +64,12 @@ Use the button above after adding the repository. It opens the `WhatsApp` add-on
 2. Review the add-on options.
 3. Start the add-on.
 
-In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
+Home Assistant shows a persistent notification with a QR code and an
+**Open pairing page** link. Scan the QR code with WhatsApp, or follow the link
+and choose **Link with phone number** for the account you want to pair.
+Enter its number including the country code, generate a pairing code, and enter
+that code in WhatsApp under **Linked devices > Link a device > Link with phone
+number instead**. The web UI is also available from **Open Web UI** on the app page.
 
 ### 3. Install the integration
 
@@ -151,6 +156,15 @@ See the [voice call guide](https://moryoav.github.io/ha-addons/examples/voice-ca
 for setup, automation examples, recording, and upgrading from 2.x.
 
 ## Web UI and pairing
+
+Each unpaired account offers QR or phone-number pairing. The initial notification
+keeps the QR code and includes a link to this page, using your current Home
+Assistant address automatically. Choose **Link with phone number** to generate
+an eight-character code on demand. Codes also appear in the same notification.
+Choose **Use QR code** to return to a fresh QR handshake. Request a new code if
+WhatsApp rejects one, waiting 30 seconds between requests. Codes are cleared
+when the connection changes, and the notification is dismissed after linking.
+Treat pairing codes and QR images as private account credentials.
 
 The add-on page includes an Open Web UI action through Home Assistant Ingress.
 The web UI shows each configured session, its connection state, and the current
