@@ -30,6 +30,7 @@ const {
   normalizePairingPhone,
 } = require("./pairing");
 const { chatReadsFrom, messageStatusesFrom } = require("./receipts");
+const { QUERY_TIMEOUT_MS, withTimeout } = require("./timeout");
 const {
   RequestValidationError,
   normalizeCallId,
@@ -66,26 +67,10 @@ const GROUP_JID_PATTERN = /^\d[\d-]{3,62}\d@g\.us$/;
 const GROUP_ADMIN_ROLES = new Set(["admin", "superadmin"]);
 // Seconds; rejects zero, negatives, NaN and values past the year 2100.
 const MAX_UNIX_SECONDS = 4_102_444_800;
-// Baileys waits for WhatsApp's answer without a timeout of its own. Stay below
-// the integration's 10 second request timeout so a stuck query fails cleanly.
-const QUERY_TIMEOUT_MS = 8_000;
 // Bound the fresh socket a phone code waits for, including its reconnect.
 const PAIRING_HANDSHAKE_TIMEOUT_MS = 15_000;
 // WhatsApp answers lookups of hidden or missing profile data with these codes.
 const UNAVAILABLE_CODES = new Set([401, 403, 404]);
-
-const withTimeout = (promise, label, timeoutMs = QUERY_TIMEOUT_MS) => {
-  let timer;
-  const timeout = new Promise((resolve, reject) => {
-    timer = setTimeout(() => {
-      reject(Object.assign(new Error(`${label} timed out.`), {
-        statusCode: 408,
-      }));
-    }, timeoutMs);
-    timer.unref?.();
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-};
 
 const optionalString = (value) =>
   typeof value === "string" && value !== "" ? value : null;

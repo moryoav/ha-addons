@@ -1,5 +1,6 @@
 /** Validate pairing requests and keep temporary codes tied to one Baileys socket. */
-const REQUEST_TIMEOUT_MS = 8_000;
+const { withTimeout } = require("./timeout");
+
 const REQUEST_COOLDOWN_MS = 30_000;
 
 /** Describe a pairing failure without exposing credentials or upstream messages. */
@@ -83,15 +84,8 @@ class PairingSession {
     this.#pending = true;
     this.#method = "phone";
     this.#onUpdate({ method: "phone", pending: true, code: null });
-    let timer;
     try {
-      const code = await Promise.race([
-        this.#socket.requestPairingCode(phone),
-        new Promise((resolve, reject) => {
-          timer = setTimeout(() => reject(new Error("Pairing request timed out.")), REQUEST_TIMEOUT_MS);
-          timer.unref?.();
-        }),
-      ]);
+      const code = await withTimeout(this.#socket.requestPairingCode(phone), "Pairing request");
       if (this.#closed || this.#paired || this.#creds?.registered === true) {
         throw new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
       }
@@ -108,7 +102,6 @@ class PairingSession {
       if (error instanceof PairingActionError) throw error;
       throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Try again.");
     } finally {
-      clearTimeout(timer);
       this.#pending = false;
     }
   }

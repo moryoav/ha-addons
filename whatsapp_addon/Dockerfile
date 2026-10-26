@@ -43,7 +43,7 @@ COPY package.json ./
 COPY --from=node_dependencies /opt/voice /opt/voice
 COPY api-token.js api.js app-state-sync.js call-log.js chat-archive-store.js decryption-diagnostics.js diagnostics.js event-buffer-flush.js index.js \
     contact-snapshot.js libsignal-log-filter.js media-store.js message-dedupe.js message-inbox.js message-retry-cache.js recovery.js runtime.js \
-    lid-sender-receipts.js offline-sync.js pairing.js poll-store.js receipts.js validation.js webui.js whatsapp.js ./
+    lid-sender-receipts.js offline-sync.js pairing.js poll-store.js receipts.js timeout.js validation.js webui.js whatsapp.js ./
 COPY logo.png ./
 COPY voice /app/voice
 COPY --from=builder /build/whatsapp-call-worker /usr/local/bin/whatsapp-call-worker
