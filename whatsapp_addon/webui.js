@@ -590,24 +590,30 @@ const renderWebUi = ({ ingressPath } = {}) => {
       const panel = item.querySelector("[data-pairing]");
       const input = item.querySelector("[data-phone-number]");
       const available = client.state === "pairing";
-      const phone = available && (item.dataset.pairingChoice === "phone" || client.pairingMethod === "phone");
+      // Reconnects between pairing sockets and failed polls are brief, so keep typing and
+      // messages until the account connects or pauses.
+      const settled = client.state === "connected" || client.state === "recovery_paused";
+      if (settled) {
+        input.value = "";
+        delete item.dataset.pairingChoice;
+        item.querySelector("[data-pairing-message]").textContent = "";
+      }
+      const phone = !settled && (item.dataset.pairingChoice === "phone" || client.pairingMethod === "phone");
       const busy = item.dataset.pairingBusy === "true" || client.pairingPending;
+      const code = available ? client.pairingCode || "" : "";
       const qr = item.querySelector("[data-qr]");
       qr.hidden = !!phone;
       item.querySelector("[data-qr-help]").hidden = !available || !!phone;
       item.querySelector("[data-phone-choice]").hidden = !available || !!phone;
       item.querySelector("[data-phone-form]").hidden = !phone;
       item.querySelector("[data-use-qr]").hidden = !phone;
-      item.querySelector("[data-code-help]").hidden = !phone || !client.pairingCode;
-      item.querySelector("[data-pairing-code]").textContent = available ? client.pairingCode || "" : "";
+      item.querySelector("[data-code-help]").hidden = !phone || !code;
+      item.querySelector("[data-pairing-code]").textContent = code;
       panel.setAttribute("aria-busy", String(!!busy));
-      panel.querySelectorAll("button, input").forEach((control) => { control.disabled = !!busy; });
-      item.querySelector("[data-generate-code]").textContent = busy ? "Generating code..." : "Generate pairing code";
-      if (!available) {
-        input.value = "";
-        delete item.dataset.pairingChoice;
-        item.querySelector("[data-pairing-message]").textContent = "";
-      }
+      panel.querySelectorAll("button").forEach((control) => { control.disabled = !!busy || !available; });
+      input.disabled = !!busy;
+      item.querySelector("[data-generate-code]").textContent = busy
+        ? "Generating code..." : available ? "Generate pairing code" : "Waiting for WhatsApp...";
       qr.replaceChildren();
       if (client.qrDataUrl && available && !phone) {
         const image = document.createElement("img");
