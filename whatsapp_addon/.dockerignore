@@ -19,6 +19,7 @@
 !message-inbox.js
 !message-retry-cache.js
 !offline-sync.js
+!pairing.js
 !poll-store.js
 !receipts.js
 !package.json
