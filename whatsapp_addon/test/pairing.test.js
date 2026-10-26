@@ -381,6 +381,25 @@ test("notifications without a discovered link still read as sentences", async ()
   assert.match(code, /from its Home Assistant page to request a new code or return to QR pairing\.$/);
 });
 
+/** Keep pairing notifications prompt while Supervisor cannot describe the installed app. */
+test("a failed link lookup is retried only after a pause", async () => {
+  let now = Date.parse("2026-10-26T08:00:00Z");
+  const lookups = [];
+  const fixture = runtimeFixture({ nowDate: () => new Date(now), httpClient: {
+    get: async (url) => { lookups.push(url); throw new Error("Fictional Supervisor outage."); },
+    post: async () => {},
+  } });
+  for (const qr of ["first", "second", "third"]) {
+    fixture.accounts[0].emit("qr", `fictional-${qr}-qr`);
+    await fixture.runtime.flushPairingNotifications();
+  }
+  assert.equal(lookups.length, 2);
+  now += 5 * 60_000;
+  fixture.accounts[0].emit("qr", "fictional-later-qr");
+  await fixture.runtime.flushPairingNotifications();
+  assert.equal(lookups.length, 4);
+});
+
 /** Count only generated codes toward the cooldown, so a failed request can be retried at once. */
 test("a failed code request does not start the 30 second cooldown", async () => {
   const fixture = runtimeFixture();

@@ -57,6 +57,8 @@ const MAX_PENDING_CALL_UPDATES = 100;
 const HEALTH_FAILURE_EVENT = "whatsapp_addon_health_failure";
 const HEALTH_FAILURE_NOTIFICATION_ID = "whatsapp_addon_health_failure";
 const RECOVERY_NOTIFICATION_ID = "whatsapp_addon_recovery_required";
+// Retry a failed Web UI link lookup only after this pause, not on every pairing update.
+const WEB_UI_LOOKUP_RETRY_MS = 5 * 60_000;
 
 const CALL_STATUSES = new Set([
   "offer",
@@ -339,6 +341,7 @@ const createAddonRuntime = ({
   const pairingNotifications = new Map();
   const pairingNotificationVersions = new Map();
   let webUiPath;
+  let webUiLookupFailedAt;
   let addonInfoTask;
   const logRef = (value) => fingerprint(value, fingerprintKey);
   const debugEnabled = normalizeLogLevel(logLevel) === "debug";
@@ -400,6 +403,7 @@ const createAddonRuntime = ({
   /** Discover the installed repository-prefixed slug without a configured HA URL. */
   const resolveWebUiPath = async () => {
     if (webUiPath) return webUiPath;
+    if (webUiLookupFailedAt !== undefined && nowDate().getTime() - webUiLookupFailedAt < WEB_UI_LOOKUP_RETRY_MS) return null;
     if (!addonInfoTask) {
       addonInfoTask = Promise.resolve().then(async () => {
         const options = { headers: supervisorHeaders, timeout: 5_000 };
@@ -411,7 +415,11 @@ const createAddonRuntime = ({
         if (typeof coreVersion !== "string") return null;
         webUiPath = pairingWebUiPath(addon.value?.data?.data?.slug, coreVersion);
         return webUiPath;
-      }).catch(() => null).finally(() => { addonInfoTask = undefined; });
+      }).catch(() => null).then((path) => {
+        // Use the plain-text fallback until the retry pause ends, without waiting on Supervisor.
+        webUiLookupFailedAt = path ? undefined : nowDate().getTime();
+        return path;
+      }).finally(() => { addonInfoTask = undefined; });
     }
     return addonInfoTask;
   };
