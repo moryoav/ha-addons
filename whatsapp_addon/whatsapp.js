@@ -337,7 +337,9 @@ class WhatsappClient extends EventEmitter {
     const stops = this.#stops;
     this.#pairingSession?.close();
     await this.#credentialWrite;
+    if (stops !== this.#stops) return;
     const baileys = await this.#baileys;
+    if (stops !== this.#stops) return;
     this.#baileys = baileys;
     const {
       default: makeWASocket,
@@ -354,6 +356,7 @@ class WhatsappClient extends EventEmitter {
     }
 
     const versionResult = await fetchLatestBaileysVersion();
+    if (stops !== this.#stops) return;
     if (
       !versionResult ||
       !Array.isArray(versionResult.version) ||
@@ -364,6 +367,7 @@ class WhatsappClient extends EventEmitter {
     }
 
     const authResult = await useMultiFileAuthState(this.#path);
+    if (stops !== this.#stops) return;
     if (
       !authResult ||
       !authResult.state ||
@@ -372,7 +376,15 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
 
-    if (clearUnregisteredPairing(authResult.state.creds)) await authResult.saveCreds();
+    if (clearUnregisteredPairing(authResult.state.creds)) {
+      // A reset must wait for cleanup already writing, and cancel cleanup not yet started.
+      const cleanup = this.#credentialWrite.then(() => {
+        if (stops === this.#stops) return authResult.saveCreds();
+      });
+      this.#credentialWrite = cleanup.catch(() => {});
+      await cleanup;
+      if (stops !== this.#stops) return;
+    }
 
     const retryCache = (this.#retryCache ||= new MessageRetryCache({
       codec: proto?.Message,

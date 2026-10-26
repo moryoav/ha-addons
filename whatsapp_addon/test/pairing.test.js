@@ -128,7 +128,7 @@ test("a stalled pairing request times out and retires its socket", async (t) => 
 });
 
 /** Create a real bridge client around offline Baileys sockets and persisted credentials. */
-const clientFixture = async (t, initialCreds = { registered: false }, { timeout = 100_000, authGate } = {}) => {
+const clientFixture = async (t, initialCreds = { registered: false }, { timeout = 100_000, authGate, saveGate, connect = true } = {}) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "whatsapp-pairing-"));
   const sockets = [];
   const saves = [];
@@ -142,7 +142,11 @@ const clientFixture = async (t, initialCreds = { registered: false }, { timeout 
       // Each connect attempt loads credentials once, so tests can pause or fail a chosen attempt.
       authCalls += 1;
       await authGate?.(authCalls);
-      return { state: { creds, keys: {} }, saveCreds: async () => { saves.push(structuredClone(creds)); } };
+      return { state: { creds, keys: {} }, saveCreds: async () => {
+        const snapshot = structuredClone(creds);
+        if (saveGate) await saveGate(snapshot);
+        saves.push(snapshot);
+      } };
     },
     default: (options) => {
       const ev = new EventEmitter();
@@ -164,8 +168,8 @@ const clientFixture = async (t, initialCreds = { registered: false }, { timeout 
   };
   const client = new WhatsappClient({ path: directory, baileys, autoConnect: false, offline: false, timeout });
   t.after(async () => { await client.disconnect(); await fs.rm(directory, { recursive: true, force: true }); });
-  await client.connect();
-  return { client, sockets, creds, saves, authCalls: () => authCalls };
+  if (connect) await client.connect();
+  return { client, baileys, sockets, creds, saves, authCalls: () => authCalls };
 };
 
 /** Wait for asynchronous bridge work without fixed delays, even while timers are mocked. */
@@ -256,6 +260,59 @@ test("a stop during a pairing restart leaves the client without a socket", async
   gate.resolve();
   await assert.rejects(switching, { code: "pairing_changed", status: 409 });
   assert.equal(fixture.sockets.length, 1);
+});
+
+/** Do not reopen session storage when a stopped connection finishes its version lookup. */
+test("a stopped connect skips a late credential load", async (t) => {
+  const gate = deferred();
+  const fixture = await clientFixture(t, undefined, { connect: false });
+  let lookupStarted = false;
+  fixture.baileys.fetchLatestBaileysVersion = () => { lookupStarted = true; return gate.promise; };
+  const connecting = fixture.client.connect();
+  await waitFor(() => lookupStarted);
+  await fixture.client.disconnect();
+  gate.resolve({ version: [2, 3000, 1] });
+  await connecting;
+  assert.equal(fixture.authCalls(), 0);
+  assert.equal(fixture.sockets.length, 0);
+});
+
+/** Leave replacement credentials untouched when an earlier auth load finishes after stop. */
+test("a stopped connect cannot save provisional credentials from a late auth load", async (t) => {
+  const gate = deferred();
+  const provisional = { registered: false, pairingCode: CODE, me: { id: `${PHONE}@s.whatsapp.net` } };
+  const fixture = await clientFixture(t, provisional, { connect: false, authGate: () => gate.promise });
+  const connecting = fixture.client.connect();
+  await waitFor(() => fixture.authCalls() === 1);
+  await fixture.client.disconnect();
+  const replacement = { registered: true, account: { details: "fictional-replacement-account" } };
+  fixture.saves.push(replacement);
+  gate.resolve();
+  await connecting;
+  assert.deepEqual(fixture.saves, [replacement]);
+  assert.equal(fixture.sockets.length, 0);
+});
+
+/** Wait for an already-started startup cleanup write before handing storage to a reset. */
+test("disconnect waits for startup credential cleanup before completing", async (t) => {
+  const gate = deferred();
+  let saveStarted = false;
+  const provisional = { registered: false, pairingCode: CODE, me: { id: `${PHONE}@s.whatsapp.net` } };
+  const fixture = await clientFixture(t, provisional, { connect: false, saveGate: () => {
+    saveStarted = true;
+    return gate.promise;
+  } });
+  const connecting = fixture.client.connect();
+  await waitFor(() => saveStarted);
+  let stopped = false;
+  const stopping = fixture.client.disconnect().then(() => { stopped = true; });
+  await flush();
+  const stoppedBeforeSave = stopped;
+  gate.resolve();
+  await Promise.all([connecting, stopping]);
+  assert.equal(stoppedBeforeSave, false);
+  assert.equal(stopped, true);
+  assert.equal(fixture.sockets.length, 0);
 });
 
 /** Recover an interrupted phone attempt at startup without deleting the account directory. */
