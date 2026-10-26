@@ -425,12 +425,14 @@ const createAddonRuntime = ({
         { notification_id: `whatsapp_addon_qrcode_${clientId}` }, "notification dismissal", 5_000);
       return;
     }
-    const link = path
+    // Without a discovered path, name the Web UI in a phrase that also works mid-sentence.
+    const page = path
       ? `[Open pairing page](${path})`
-      : "Open the WhatsApp app's Web UI from its Home Assistant page.";
+      : "Open the WhatsApp app's Web UI from its Home Assistant page";
+    const link = path ? page : `${page}.`;
     const message = state.pairingMethod === "phone"
       ? state.pairingCode
-        ? `Enter **${state.pairingCode}** in WhatsApp under **Linked devices > Link a device > Link with phone number instead**.\n\n${link} to request a new code or return to QR pairing.`
+        ? `Enter **${state.pairingCode}** in WhatsApp under **Linked devices > Link a device > Link with phone number instead**.\n\n${page} to request a new code or return to QR pairing.`
         : `Generating a phone-number pairing code for **${clientId}**.\n\n${link}`
       : `Scan this QR code using WhatsApp > Linked devices for **${clientId}**.\n\n![QR code](${state.qrDataUrl})\n\n**Prefer to link with your phone number?**\n\n${link}`;
     await postSupervisor("/core/api/services/persistent_notification/create", {

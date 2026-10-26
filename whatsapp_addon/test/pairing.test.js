@@ -362,6 +362,25 @@ test("phone pairing is explicit, rate limited, and scoped to its account", async
   assert.ok(notifications.at(-1).url.endsWith("/dismiss"));
 });
 
+/** Keep each notification readable when the Home Assistant entry link cannot be discovered. */
+test("notifications without a discovered link still read as sentences", async () => {
+  const requests = [];
+  const fixture = runtimeFixture({ httpClient: {
+    get: async () => { throw new Error("Fictional Supervisor outage."); },
+    post: async (url, body) => { requests.push({ url, body }); },
+  } });
+  fixture.accounts[0].emit("qr", "fictional-qr-code");
+  await fixture.runtime.flushPairingNotifications();
+  fixture.accounts[0].emit("pairing_update", { method: "phone", pending: true, code: null });
+  await fixture.runtime.flushPairingNotifications();
+  fixture.accounts[0].emit("pairing_update", { method: "phone", pending: false, code: "ABCD-1234" });
+  await fixture.runtime.flushPairingNotifications();
+  const [qr, generating, code] = requests.filter((request) => request.url.endsWith("/create")).map((request) => request.body.message);
+  assert.match(qr, /Open the WhatsApp app's Web UI from its Home Assistant page\.$/);
+  assert.match(generating, /Open the WhatsApp app's Web UI from its Home Assistant page\.$/);
+  assert.match(code, /from its Home Assistant page to request a new code or return to QR pairing\.$/);
+});
+
 /** Count only generated codes toward the cooldown, so a failed request can be retried at once. */
 test("a failed code request does not start the 30 second cooldown", async () => {
   const fixture = runtimeFixture();
