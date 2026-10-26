@@ -620,7 +620,7 @@ const renderWebUi = ({ ingressPath } = {}) => {
           headers: { "content-type": "application/json", "x-whatsapp-pairing": "1" },
           body: JSON.stringify(body),
         });
-        const payload = await response.json();
+        const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload?.error?.message || "The pairing request failed. Try again.");
         item.querySelector("[data-phone-number]").value = "";
         if (endpoint.endsWith("/qr")) delete item.dataset.pairingChoice;
