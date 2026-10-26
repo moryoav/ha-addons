@@ -340,6 +340,8 @@ const createAddonRuntime = ({
   const lastPairingRequests = new Map();
   const pairingNotifications = new Map();
   const pairingNotificationVersions = new Map();
+  // Unlisted accounts may still show a notification from an earlier run, so they get one dismissal.
+  const pairingNotificationsDismissed = new Set();
   let webUiPath;
   let webUiLookupFailedAt;
   let addonInfoTask;
@@ -429,10 +431,15 @@ const createAddonRuntime = ({
     const path = clientStates[clientId]?.state === "pairing" ? await resolveWebUiPath() : webUiPath;
     const state = clientStates[clientId];
     if (state?.state !== "pairing" || (!state.qrDataUrl && state.pairingMethod !== "phone")) {
-      await postSupervisor("/core/api/services/persistent_notification/dismiss",
-        { notification_id: `whatsapp_addon_qrcode_${clientId}` }, "notification dismissal", 5_000);
+      // Paired accounts reconnect often; dismiss only a notification that may still be shown.
+      if (pairingNotificationsDismissed.has(clientId)) return;
+      if (await postSupervisor("/core/api/services/persistent_notification/dismiss",
+        { notification_id: `whatsapp_addon_qrcode_${clientId}` }, "notification dismissal", 5_000)) {
+        pairingNotificationsDismissed.add(clientId);
+      }
       return;
     }
+    pairingNotificationsDismissed.delete(clientId);
     // Without a discovered path, name the Web UI in a phrase that also works mid-sentence.
     const page = path
       ? `[Open pairing page](${path})`

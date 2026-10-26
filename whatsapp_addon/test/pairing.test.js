@@ -381,6 +381,31 @@ test("notifications without a discovered link still read as sentences", async ()
   assert.match(code, /from its Home Assistant page to request a new code or return to QR pairing\.$/);
 });
 
+/** Dismiss a pairing notification once, rather than on every reconnect of a paired account. */
+test("paired accounts do not repeat notification dismissals on reconnect", async () => {
+  const fixture = runtimeFixture();
+  const client = fixture.accounts[0];
+  const notifications = () => fixture.requests
+    .filter((request) => request.body.notification_id === "whatsapp_addon_qrcode_default")
+    .map((request) => request.url.split("/").at(-1));
+  client.emit("ready");
+  await fixture.runtime.flushPairingNotifications();
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    client.emit("disconnected", 428);
+    await fixture.runtime.flushPairingNotifications();
+    client.emit("pairing_update", { method: "qr", pending: false, code: null });
+    client.emit("ready");
+    await fixture.runtime.flushPairingNotifications();
+  }
+  // The first dismissal still clears a notification left by an earlier run.
+  assert.deepEqual(notifications(), ["dismiss"]);
+  client.emit("qr", "fictional-qr-code");
+  await fixture.runtime.flushPairingNotifications();
+  client.emit("ready");
+  await fixture.runtime.flushPairingNotifications();
+  assert.deepEqual(notifications(), ["dismiss", "create", "dismiss"]);
+});
+
 /** Keep pairing notifications prompt while Supervisor cannot describe the installed app. */
 test("a failed link lookup is retried only after a pause", async () => {
   let now = Date.parse("2026-10-26T08:00:00Z");
