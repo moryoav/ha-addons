@@ -254,6 +254,35 @@ test("voice ingress sends pairing visits to the pairing page unless calls were c
   assert.ok(html.includes('<a href="../">Open pairing page</a>'));
 });
 
+/** Keep implicit pairing navigation active after a reconnect gap or failed first poll. */
+test("voice ingress retries pairing navigation when the first status is not ready",async()=>{
+  const vm=require("node:vm");
+  const html=renderVoiceUi("/api/hassio_ingress/synthetic");
+  const script=html.slice(html.indexOf("<script>")+8,html.indexOf("</script>"));
+  for(const search of ["","?view=calls"]){
+    for(const firstPollFails of [false,true]){
+      const elements=new Map(),replaced=[],intervals=[];
+      let clients=[{id:"default",state:"connecting"}],fail=firstPollFails;
+      /** Provide only the visible DOM properties used by the rendered calls page. */
+      const element=()=>({hidden:false,textContent:"",disabled:false,prepend(){},append(){},remove(){}});
+      vm.runInNewContext(script,{URLSearchParams,setInterval:callback=>intervals.push(callback),
+        location:{search,replace:url=>replaced.push(url)},
+        document:{getElementById:id=>elements.get(id)||elements.set(id,element()).get(id),createElement:element},
+        fetch:async url=>{
+          if(url==="../api/status"&&fail){fail=false;throw Error("Synthetic first-poll failure");}
+          const responses={"../api/status":{clients},recordings:{enabled:false,retention_days:30,recordings:[]},status:{state:"idle"}};
+          return {ok:true,json:async()=>responses[url]};
+        }});
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.deepEqual(replaced,[]);
+      clients=[{id:"default",state:"pairing"}];
+      await Promise.all(intervals.map(callback=>callback()));
+      assert.deepEqual(replaced,search?[]:["../"],`Initial status failure: ${firstPollFails}, search: ${search}`);
+      if(search) assert.equal(elements.get("pairing").hidden,false);
+    }
+  }
+});
+
 test("wire nodes retain binary bytes and fail before accepting malformed data",()=>{
   const node={tag:"call",attrs:{from:"222222222@lid"},content:[{tag:"enc",attrs:{v:"2"},content:Buffer.from([0,1,255])}]};
   assert.deepEqual(decodeNode(encodeNode(node)),node);

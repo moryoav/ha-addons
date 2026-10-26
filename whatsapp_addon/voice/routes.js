@@ -105,9 +105,10 @@ const statusLine=document.getElementById('status'), mode=document.getElementById
 const showCalls=new URLSearchParams(location.search).get('view')==='calls';
 let busy=false;
 // Home Assistant opens Ingress here, so send pairing links on to the pairing page.
-async function refreshPairing(redirect){try{const r=await fetch('../api/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
+/** Continue implicit pairing visits once WhatsApp is ready, unless calls were selected explicitly. */
+async function refreshPairing(){try{const r=await fetch('../api/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
 const waiting=(s.clients||[]).filter(client=>client.state==='pairing').map(client=>client.id);
-if(redirect&&waiting.length&&!showCalls){location.replace('../');return;}
+if(waiting.length&&!showCalls){location.replace('../');return;}
 document.getElementById('pairing').hidden=!waiting.length;document.getElementById('pairing-accounts').textContent=waiting.length?'Waiting to be paired: '+waiting.join(', ')+'.':'';}catch{}}
 const recordingItems=new Map();
 async function refreshRecordings(){try{const r=await fetch('recordings',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
@@ -127,7 +128,7 @@ document.getElementById('call').disabled=busy||!s.live_mode||!s.configured||!s.c
 async function action(name,body){busy=true;error.textContent='';await refresh();try{const r=await fetch(name,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error();}catch{error.textContent='The request could not complete. Check app settings and connection.';}finally{busy=false;await refresh();}}
 document.getElementById('call').onclick=()=>action('call',{to:document.getElementById('target').value.trim()});
 document.getElementById('hangup').onclick=()=>action('hangup',{});document.getElementById('refresh-recordings').onclick=refreshRecordings;
-refreshPairing(true);refresh();refreshRecordings();setInterval(refresh,3000);setInterval(refreshRecordings,5000);setInterval(()=>refreshPairing(false),5000);
+refreshPairing();refresh();refreshRecordings();setInterval(refresh,3000);setInterval(refreshRecordings,5000);setInterval(refreshPairing,5000);
 </script></body></html>`;
 }
 
