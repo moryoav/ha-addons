@@ -20,6 +20,7 @@ const {
 const { createWebUiApp, INGRESS_PORT } = require("./webui");
 const { WhatsappClient } = require("./whatsapp");
 const { MediaStore, parseMediaOptions } = require("./media-store");
+const { MessageInbox } = require("./message-inbox");
 const {
   DEFAULT_RECOVERY_PATH,
   RECOVERY_REASON,
@@ -142,6 +143,7 @@ const normalizeLogLevel = (value) => {
 //   return value;
 // };
 
+/** Validate configured accounts, media options and optional persistent delivery. */
 const parseOptions = (content) => {
   let options;
   try {
@@ -151,12 +153,18 @@ const parseOptions = (content) => {
   }
 
   requirePlainObject(options, "options");
+  const inboxClients = options.inbox_clients ?? [];
+  if (!Array.isArray(inboxClients) || new Set(inboxClients).size !== inboxClients.length ||
+      inboxClients.some((id) => !normalizeConfiguredClientIds(options.clients).includes(id))) {
+    throw new RequestValidationError("inbox_clients must contain configured accounts without duplicates.");
+  }
   return {
     clientIds: normalizeConfiguredClientIds(options.clients),
     apiToken: normalizeApiToken(options.api_token),
     logLevel: normalizeLogLevel(options.log_level),
     // decryptionDiagnostics: normalizeDecryptionDiagnostics(options.decryption_diagnostics),
     mediaOptions: parseMediaOptions(options),
+    ...(inboxClients.length ? { inboxClients } : {}),
   };
 };
 
@@ -310,6 +318,8 @@ const createAddonRuntime = ({
   runId = createRunId(),
   diagnostics,
   mediaStore,
+  messageInbox,
+  inboxClients = [],
   initialRecoveryRecord,
   recoveryPath = DEFAULT_RECOVERY_PATH,
   persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
@@ -544,11 +554,25 @@ const createAddonRuntime = ({
     });
 
   const onMsg = (message, clientId, eventType) => {
-    if (!mediaStore || eventType !== "new_whatsapp_message") {
-      void deliverMessage(message, clientId, eventType);
+    if (messageInbox && inboxClients.includes(clientId) && eventType === "new_whatsapp_message") {
+      const task = Promise.resolve().then(() => messageInbox.enqueue(clientId, message)).then(() => scheduleInbox(0)).catch(() => {
+        logger.error?.("WhatsApp inbox could not accept a message. Attempting live delivery; storage recovery will retry automatically.");
+        scheduleInbox(10000);
+        return deliverLive(message, clientId, eventType);
+      });
+      inboxWrites.add(task);
+      void task.then(() => inboxWrites.delete(task), () => inboxWrites.delete(task));
       return;
     }
-    void mediaStore.enrich(message, clients[clientId]).then((media) => {
+    void deliverLive(message, clientId, eventType);
+  };
+
+  /** Preserve the existing event path for accounts outside the persistent inbox. */
+  const deliverLive = async (message, clientId, eventType) => {
+    if (!mediaStore || eventType !== "new_whatsapp_message") {
+      return deliverMessage(message, clientId, eventType);
+    }
+    return mediaStore.enrich(message, clients[clientId]).then((media) => {
       if (media?.status === "error") {
         logger.warn?.("WhatsApp incoming media could not be saved.", {
           error: media.error,
@@ -558,6 +582,89 @@ const createAddonRuntime = ({
       return deliverMessage(media ? { ...message, media } : message, clientId, eventType);
     });
   };
+
+  const inboxWrites = new Set();
+  let inboxStopped = false;
+  let inboxTimer;
+  let inboxDelivery;
+  let inboxBusy = false;
+  let inboxStorageWarning = false;
+  const inboxMedia = new Map();
+  /** Wait for WhatsApp only when this message needs an attachment downloaded. */
+  const inboxEligible = (id, payload) => {
+    if (!inboxClients.includes(id)) return false;
+    if (!mediaStore || mediaStore.enabled === false || typeof payload.message.conversation === "string" ||
+        typeof payload.message.extendedTextMessage?.text === "string") return true;
+    const client = clients[id];
+    if (!client) return false;
+    try { return !client.getMediaContent(payload) || client.status?.connected === true; }
+    catch { return client.status?.connected === true; }
+  };
+  /** Reuse verified downloads until acknowledgement, expiry or external removal. */
+  const inboxAttachment = async (entry) => {
+    const cached = inboxMedia.get(entry.id);
+    if (cached && Date.parse(cached.expires_at) > Date.now() + 60000) {
+      try {
+        const stat = await fsPromises.stat(cached.local_path);
+        if (stat.isFile() && stat.size === cached.size) return cached;
+      } catch { /* Download a replacement for an expired or removed file. */ }
+    }
+    inboxMedia.delete(entry.id);
+    const media = await mediaStore?.enrich(entry.payload, clients[entry.clientId]);
+    if (media?.status === "ready") inboxMedia.set(entry.id, media);
+    return media;
+  };
+  /** Deliver immediately; only unavailable receivers or storage incur backoff. */
+  const deliverInbox = async () => {
+    try {
+      if (messageInbox.failed) await messageInbox.start();
+      inboxStorageWarning = false;
+      const pending = new Set(messageInbox.state.pending.map((entry) => entry.id));
+      for (const id of inboxMedia.keys()) if (!pending.has(id)) inboxMedia.delete(id);
+      const entry = messageInbox.peek(inboxEligible);
+      if (!entry) return pending.size ? 10000 : null;
+      const ready = await httpClient.get("http://supervisor/core/api/whatsapp/inbox", {
+        headers: supervisorHeaders, timeout: 10000,
+      });
+      if (ready.data?.ready !== true || inboxStopped) return 10000;
+      const media = await inboxAttachment(entry);
+      if (inboxStopped || media?.error === "stopped") return null;
+      const result = await requestSupervisor("/core/api/whatsapp/inbox", {
+        id: entry.id, message: { ...entry.payload, ...(media ? { media } : {}), clientId: entry.clientId },
+      }, 10000);
+      diagnostics?.recordMessageDelivered?.(result.delivered);
+      if (!result.delivered) return 10000;
+      await messageInbox.delivered(entry.id);
+      inboxMedia.delete(entry.id);
+      return 0;
+    } catch {
+      if (messageInbox.failed && !inboxStorageWarning) {
+        inboxStorageWarning = true;
+        logger.error?.("WhatsApp inbox storage is unavailable; delivery will retry automatically.");
+      }
+      return 10000;
+    }
+  };
+  /** Keep one delivery in flight and wake promptly when an idle inbox receives data. */
+  const scheduleInbox = (delay) => {
+    if (inboxStopped || inboxBusy || delay === null) return;
+    if (inboxTimer !== undefined) {
+      if (delay !== 0) return;
+      clearTimeoutFn(inboxTimer);
+    }
+    inboxTimer = setTimeoutFn(() => {
+      inboxTimer = undefined;
+      if (inboxStopped) return;
+      inboxBusy = true;
+      inboxDelivery = deliverInbox().then((nextDelay) => {
+        inboxBusy = false;
+        scheduleInbox(nextDelay);
+      });
+      return inboxDelivery;
+    }, delay);
+    inboxTimer.unref?.();
+  };
+  if (messageInbox) scheduleInbox(0);
 
   const onMsgUpsert = (upsert, clientId) => {
     diagnostics?.recordMessageBatch?.(upsert.count);
@@ -1292,9 +1399,18 @@ const createAddonRuntime = ({
     retryRecovery,
     runId,
     stopCallDelivery,
+    /** Stop retries and flush messages received before the clients disconnect. */
+    async stopInbox() {
+      inboxStopped = true;
+      if (inboxTimer !== undefined) clearTimeoutFn(inboxTimer);
+      await Promise.allSettled([...inboxWrites, inboxDelivery]);
+      await messageInbox?.close();
+      inboxMedia.clear();
+    },
   };
 };
 
+/** Load private app state, start the bridge, and flush pending work on shutdown. */
 const startAddon = async ({
   optionsPath = OPTIONS_PATH,
   dataRoot = DATA_ROOT,
@@ -1310,6 +1426,7 @@ const startAddon = async ({
   closeServerFn = closeServer,
   diagnosticsFactory = createRuntimeDiagnostics,
   mediaStoreFactory = (options) => new MediaStore(options),
+  messageInboxFactory = (options) => new MessageInbox(options),
   replayHealthDiagnosticsFn = replayHealthcheckDiagnostics,
   readRecoveryRecordFn = readRecoveryRecord,
   persistRecoveryRecordSyncFn = persistRecoveryRecordSync,
@@ -1365,6 +1482,7 @@ const startAddon = async ({
 
   let runtime;
   let mediaStore;
+  let messageInbox;
   let pendingDecryptStorm;
   let apiApp;
   let webUiApp;
@@ -1393,6 +1511,11 @@ const startAddon = async ({
   };
   libsignalFilter?.setDecryptStormHandler?.(handleDecryptStorm);
   try {
+    if (options.inboxClients?.length) {
+      messageInbox = messageInboxFactory({ directory: `${dataRoot}/inbox`, fsPromises, logger });
+      try { await messageInbox.start(); }
+      catch { logger.error?.("WhatsApp inbox storage is unavailable. Existing files are preserved; recovery will retry automatically."); }
+    }
     if (options.mediaOptions) {
       mediaStore = mediaStoreFactory({ ...options.mediaOptions, logger });
       await mediaStore.start();
@@ -1410,6 +1533,8 @@ const startAddon = async ({
       runId: safeRunId,
       diagnostics,
       mediaStore,
+      messageInbox,
+      inboxClients: options.inboxClients,
       initialRecoveryRecord,
       recoveryPath,
       persistRecoveryRecordSyncFn,
@@ -1443,11 +1568,14 @@ const startAddon = async ({
     webUiServer = await listenFn(webUiApp, ingressPort);
     diagnostics.markApiReady?.();
   } catch (error) {
+    const inboxStop = runtime?.stopInbox();
     await mediaStore?.close();
+    await inboxStop;
     if (runtime) {
       await Promise.allSettled(
         Object.values(runtime.clients).map((client) => client.disconnect?.())
       );
+      await runtime.stopInbox();
     }
     if (apiServer) await closeServerFn(apiServer);
     await diagnostics.stop?.();
@@ -1472,13 +1600,16 @@ const startAddon = async ({
         runId: safeRunId,
       });
       const callDeliveryTask = runtime.stopCallDelivery?.();
+      const inboxStop = runtime.stopInbox();
       await mediaStore?.close();
+      await inboxStop;
       await Promise.allSettled([
         ...Object.values(runtime.clients).map((client) =>
           client.disconnect?.()
         ),
         callDeliveryTask,
       ]);
+      await runtime.stopInbox();
       await Promise.all([
         closeServerFn(apiServer),
         closeServerFn(webUiServer),

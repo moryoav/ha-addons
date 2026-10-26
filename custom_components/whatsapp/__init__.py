@@ -64,6 +64,7 @@ from .const import (
 )
 from .coordinator import WhatsappStatusCoordinator
 from .entity import app_device_identifier
+from .inbox import WhatsAppInboxView
 from .media import WhatsAppMediaView
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
@@ -184,8 +185,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if not await async_setup_component(hass, "http", {}):
         return False
     hass.http.register_view(WhatsAppMediaView(hass))
+    hass.http.register_view(WhatsAppInboxView(hass))
 
     async def async_send_message(call: ServiceCall) -> dict[str, Any] | None:
+        """Send a message and expose its result to event listeners and callers."""
         result = await _async_call_api(
             hass,
             SERVICE_SEND_MESSAGE,
@@ -213,6 +216,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         return None
 
     async def async_check_number(call: ServiceCall) -> dict[str, Any]:
+        """Validate a phone target and check whether it is registered."""
         try:
             jid = normalize_phone_target(call.data[ATTR_TO])
         except ValueError as err:
@@ -229,6 +233,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_get_group_info(call: ServiceCall) -> dict[str, Any]:
+        """Validate a group target and return its current metadata."""
         try:
             jid = normalize_group_target(call.data[ATTR_TO])
         except ValueError as err:
@@ -245,6 +250,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_set_status(call: ServiceCall) -> None:
+        """Set the selected account's WhatsApp profile status."""
         await _async_call_api(
             hass,
             SERVICE_SET_STATUS,
@@ -253,6 +259,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_presence_subscribe(call: ServiceCall) -> None:
+        """Subscribe the selected account to a user's presence updates."""
         await _async_call_api(
             hass,
             SERVICE_PRESENCE_SUBSCRIBE,
@@ -261,6 +268,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_send_presence_update(call: ServiceCall) -> None:
+        """Publish a presence update for the selected account and chat."""
         await _async_call_api(
             hass,
             SERVICE_SEND_PRESENCE_UPDATE,
@@ -269,6 +277,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_send_infinity_presence_update(call: ServiceCall) -> None:
+        """Start repeating the requested presence update through the app."""
         await _async_call_api(
             hass,
             SERVICE_SEND_INFINITY_PRESENCE_UPDATE,
@@ -277,6 +286,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_read_messages(call: ServiceCall) -> None:
+        """Mark the supplied message keys as read through their account."""
         await _async_call_api(
             hass,
             SERVICE_READ_MESSAGES,
@@ -285,6 +295,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_get_profile(call: ServiceCall) -> dict[str, Any]:
+        """Normalize a profile target and return the available profile data."""
         try:
             jid = normalize_profile_target(call.data[ATTR_TO])
         except ValueError as err:
@@ -301,6 +312,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_list_groups(call: ServiceCall) -> dict[str, Any]:
+        """List the groups visible to the explicitly selected account."""
         return await _async_call_api(
             hass,
             SERVICE_LIST_GROUPS,
@@ -318,6 +330,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def async_reject_call(call: ServiceCall) -> None:
+        """Validate an incoming call reference and reject that call."""
         try:
             validate_call_reference(call.data[ATTR_CALL_ID], call.data[ATTR_FROM])
         except ValueError as err:
