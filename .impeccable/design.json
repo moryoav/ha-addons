@@ -1,0 +1,358 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-26T12:03:07.642Z",
+  "title": "Design System: WhatsApp for Home Assistant",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Cool ground",
+        "tonalRamp": [
+          "oklch(15% 0.0025 228.78)",
+          "oklch(25% 0.0025 228.78)",
+          "oklch(35% 0.0025 228.78)",
+          "oklch(45% 0.0025 228.78)",
+          "oklch(55% 0.0025 228.78)",
+          "oklch(65% 0.0025 228.78)",
+          "oklch(80% 0.0025 228.78)",
+          "oklch(95% 0.0025 228.78)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Workspace surface",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(25% 0.0000 89.88)",
+          "oklch(35% 0.0000 89.88)",
+          "oklch(45% 0.0000 89.88)",
+          "oklch(55% 0.0000 89.88)",
+          "oklch(65% 0.0000 89.88)",
+          "oklch(80% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "Account rail",
+        "tonalRamp": [
+          "oklch(15% 0.0021 197.12)",
+          "oklch(25% 0.0021 197.12)",
+          "oklch(35% 0.0021 197.12)",
+          "oklch(45% 0.0021 197.12)",
+          "oklch(55% 0.0021 197.12)",
+          "oklch(65% 0.0021 197.12)",
+          "oklch(80% 0.0021 197.12)",
+          "oklch(95% 0.0021 197.12)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Deep green ink",
+        "tonalRamp": [
+          "oklch(15% 0.0225 177.49)",
+          "oklch(25% 0.0225 177.49)",
+          "oklch(35% 0.0225 177.49)",
+          "oklch(45% 0.0225 177.49)",
+          "oklch(55% 0.0225 177.49)",
+          "oklch(65% 0.0225 177.49)",
+          "oklch(80% 0.0225 177.49)",
+          "oklch(95% 0.0225 177.49)"
+        ]
+      },
+      "secondary": {
+        "role": "neutral",
+        "displayName": "Supporting text",
+        "tonalRamp": [
+          "oklch(15% 0.0190 177.72)",
+          "oklch(25% 0.0190 177.72)",
+          "oklch(35% 0.0190 177.72)",
+          "oklch(45% 0.0190 177.72)",
+          "oklch(55% 0.0190 177.72)",
+          "oklch(65% 0.0190 177.72)",
+          "oklch(80% 0.0190 177.72)",
+          "oklch(95% 0.0190 177.72)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Soft divider",
+        "tonalRamp": [
+          "oklch(15% 0.0092 161.34)",
+          "oklch(25% 0.0092 161.34)",
+          "oklch(35% 0.0092 161.34)",
+          "oklch(45% 0.0092 161.34)",
+          "oklch(55% 0.0092 161.34)",
+          "oklch(65% 0.0092 161.34)",
+          "oklch(80% 0.0092 161.34)",
+          "oklch(95% 0.0092 161.34)"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Forest green",
+        "tonalRamp": [
+          "oklch(15% 0.0892 166.32)",
+          "oklch(25% 0.0892 166.32)",
+          "oklch(35% 0.0892 166.32)",
+          "oklch(45% 0.0892 166.32)",
+          "oklch(55% 0.0892 166.32)",
+          "oklch(65% 0.0892 166.32)",
+          "oklch(80% 0.0892 166.32)",
+          "oklch(95% 0.0892 166.32)"
+        ]
+      },
+      "on-accent": {
+        "role": "neutral",
+        "displayName": "Action foreground",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(25% 0.0000 89.88)",
+          "oklch(35% 0.0000 89.88)",
+          "oklch(45% 0.0000 89.88)",
+          "oklch(55% 0.0000 89.88)",
+          "oklch(65% 0.0000 89.88)",
+          "oklch(80% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "selection": {
+        "role": "neutral",
+        "displayName": "Selected green surface",
+        "tonalRamp": [
+          "oklch(15% 0.0134 167.17)",
+          "oklch(25% 0.0134 167.17)",
+          "oklch(35% 0.0134 167.17)",
+          "oklch(45% 0.0134 167.17)",
+          "oklch(55% 0.0134 167.17)",
+          "oklch(65% 0.0134 167.17)",
+          "oklch(80% 0.0134 167.17)",
+          "oklch(95% 0.0134 167.17)"
+        ]
+      },
+      "warning": {
+        "displayName": "Waiting amber",
+        "tonalRamp": [
+          "oklch(15% 0.0992 72.19)",
+          "oklch(25% 0.0992 72.19)",
+          "oklch(35% 0.0992 72.19)",
+          "oklch(45% 0.0992 72.19)",
+          "oklch(55% 0.0992 72.19)",
+          "oklch(65% 0.0992 72.19)",
+          "oklch(80% 0.0992 72.19)",
+          "oklch(95% 0.0992 72.19)"
+        ]
+      },
+      "warning-ground": {
+        "displayName": "Waiting surface",
+        "tonalRamp": [
+          "oklch(15% 0.0268 85.66)",
+          "oklch(25% 0.0268 85.66)",
+          "oklch(35% 0.0268 85.66)",
+          "oklch(45% 0.0268 85.66)",
+          "oklch(55% 0.0268 85.66)",
+          "oklch(65% 0.0268 85.66)",
+          "oklch(80% 0.0268 85.66)",
+          "oklch(95% 0.0268 85.66)"
+        ]
+      },
+      "danger": {
+        "displayName": "Danger red",
+        "tonalRamp": [
+          "oklch(15% 0.1537 23.75)",
+          "oklch(25% 0.1537 23.75)",
+          "oklch(35% 0.1537 23.75)",
+          "oklch(45% 0.1537 23.75)",
+          "oklch(55% 0.1537 23.75)",
+          "oklch(65% 0.1537 23.75)",
+          "oklch(80% 0.1537 23.75)",
+          "oklch(95% 0.1537 23.75)"
+        ]
+      },
+      "danger-ground": {
+        "displayName": "Danger surface",
+        "tonalRamp": [
+          "oklch(15% 0.0165 8.17)",
+          "oklch(25% 0.0165 8.17)",
+          "oklch(35% 0.0165 8.17)",
+          "oklch(45% 0.0165 8.17)",
+          "oklch(55% 0.0165 8.17)",
+          "oklch(65% 0.0165 8.17)",
+          "oklch(80% 0.0165 8.17)",
+          "oklch(95% 0.0165 8.17)"
+        ]
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "Hover surface",
+        "tonalRamp": [
+          "oklch(15% 0.0050 165.01)",
+          "oklch(25% 0.0050 165.01)",
+          "oklch(35% 0.0050 165.01)",
+          "oklch(45% 0.0050 165.01)",
+          "oklch(55% 0.0050 165.01)",
+          "oklch(65% 0.0050 165.01)",
+          "oklch(80% 0.0050 165.01)",
+          "oklch(95% 0.0050 165.01)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Account headline",
+        "purpose": "Selected-account heading."
+      },
+      "title": {
+        "displayName": "Section title",
+        "purpose": "Task and panel headings."
+      },
+      "content-title": {
+        "displayName": "Content title",
+        "purpose": "Small section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Operational text and fields."
+      },
+      "label": {
+        "displayName": "Control label",
+        "purpose": "Buttons and form labels."
+      },
+      "small": {
+        "displayName": "Supporting text",
+        "purpose": "Status, dates, help, and secondary metadata."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "button-color-transition",
+        "value": "background-color 160ms ease-out, color 160ms ease-out",
+        "purpose": "Button feedback when prefers-reduced-motion is no-preference."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "workspace-compact-container",
+        "value": "780px"
+      },
+      {
+        "name": "workspace-phone-container",
+        "value": "620px"
+      },
+      {
+        "name": "full-bleed-phone-viewport",
+        "value": "620px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "A compact workspace action.",
+      "html": "<button class=\"ds-button-primary\" type=\"button\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"18\" height=\"18\" aria-hidden=\"true\"><path d=\"M6 3h4l2 5-3 2a15 15 0 0 0 5 5l2-3 5 2v4a3 3 0 0 1-3 3C10 20 4 14 3 6a3 3 0 0 1 3-3Z\"/></svg>Call</button>",
+      "css": ".ds-button-primary{color-scheme:light dark;min-height:38px;padding:8px 13px;border:1px solid light-dark(#176b50, #89d6b5);border-radius:8px;background:light-dark(#176b50, #89d6b5);color:light-dark(#ffffff, #102d22);display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;cursor:pointer;}.ds-button-primary:hover{filter:brightness(.94);}.ds-button-primary:disabled{opacity:.48;cursor:not-allowed;}.ds-button-primary:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}@media(prefers-reduced-motion:no-preference){.ds-button-primary{transition:background-color 160ms ease-out,color 160ms ease-out;}}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A compact workspace action.",
+      "html": "<button class=\"ds-button-secondary\" type=\"button\">Refresh status</button>",
+      "css": ".ds-button-secondary{color-scheme:light dark;min-height:38px;padding:8px 13px;border:1px solid light-dark(#e0e7e3, #35433d);border-radius:8px;background:light-dark(#ffffff, #1c2428);color:light-dark(#21312d, #e7eeeb);display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;cursor:pointer;}.ds-button-secondary:hover{background:light-dark(#eef2f0, #2a3630);}.ds-button-secondary:disabled{opacity:.48;cursor:not-allowed;}.ds-button-secondary:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}@media(prefers-reduced-motion:no-preference){.ds-button-secondary{transition:background-color 160ms ease-out,color 160ms ease-out;}}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Hang up or request a confirmed recovery reset.",
+      "html": "<button class=\"ds-button-danger\" type=\"button\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"18\" height=\"18\" aria-hidden=\"true\"><path d=\"M3 15c5-6 13-6 18 0v4h-5v-3H8v3H3z\"/></svg>Hang up</button>",
+      "css": ".ds-button-danger{color-scheme:light dark;min-height:38px;padding:8px 13px;border:1px solid transparent;border-radius:8px;background:light-dark(#fbecee, #492b2d);color:light-dark(#b03a3b, #ffb0ad);display:inline-flex;align-items:center;justify-content:center;gap:7px;font:500 13px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;cursor:pointer;}.ds-button-danger:hover{background:light-dark(#eef2f0, #2a3630);}.ds-button-danger:disabled{opacity:.48;cursor:not-allowed;}.ds-button-danger:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}@media(prefers-reduced-motion:no-preference){.ds-button-danger{transition:background-color 160ms ease-out,color 160ms ease-out;}}"
+    },
+    {
+      "name": "Recipient Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A labeled recipient field with visible keyboard focus.",
+      "html": "<label class=\"ds-field\">Recipient<input class=\"ds-input\" autocomplete=\"off\" placeholder=\"Phone number or WhatsApp ID\"></label>",
+      "css": ".ds-field{color-scheme:light dark;display:grid;gap:7px;color:light-dark(#21312d, #e7eeeb);font:500 13px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;}.ds-input{width:100%;min-width:0;min-height:42px;border:1px solid light-dark(#e0e7e3, #35433d);background:light-dark(#ffffff, #1c2428);color:light-dark(#21312d, #e7eeeb);border-radius:8px;padding:10px 12px;font:14px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;caret-color:light-dark(#176b50, #89d6b5);}.ds-input::placeholder{color:light-dark(#62716d, #acbcb6);opacity:1;}.ds-input:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}"
+    },
+    {
+      "name": "Task Navigation",
+      "kind": "nav",
+      "description": "Current task uses an accent underline and text.",
+      "html": "<nav class=\"ds-tabs\" aria-label=\"Account views\"><button class=\"ds-tab\" aria-current=\"page\">Connection</button><button class=\"ds-tab\">Calls</button><button class=\"ds-tab\">Recordings</button></nav>",
+      "css": ".ds-tabs{color-scheme:light dark;display:flex;gap:24px;border-bottom:1px solid light-dark(#e0e7e3, #35433d);}.ds-tab{position:relative;border:0;background:transparent;padding:0 0 12px;color:light-dark(#62716d, #acbcb6);font:13px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;cursor:pointer;}.ds-tab[aria-current=\"page\"]{color:light-dark(#176b50, #89d6b5);font-weight:600;}.ds-tab[aria-current=\"page\"]::after{position:absolute;height:2px;background:light-dark(#176b50, #89d6b5);bottom:-1px;left:0;right:0;content:\"\";}.ds-tab:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}@media(pointer:coarse){.ds-tab{min-height:44px;}}"
+    },
+    {
+      "name": "Connection Status",
+      "kind": "chip",
+      "refersTo": "status",
+      "description": "Text and a dot communicate account state together.",
+      "html": "<span class=\"ds-status\"><span class=\"ds-dot\" aria-hidden=\"true\"></span>Connected</span>",
+      "css": ".ds-status{color-scheme:light dark;display:inline-flex;align-items:center;gap:7px;color:light-dark(#176b50, #89d6b5);background:light-dark(#e8f3ee, #273f34);border-radius:20px;padding:5px 10px;font:12px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;white-space:nowrap;}.ds-dot{width:6px;height:6px;background:light-dark(#176b50, #89d6b5);border-radius:50%;}"
+    },
+    {
+      "name": "Connection Summary",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "A flat tonal inset groups connection information.",
+      "html": "<section class=\"ds-summary\"><h3>Connection</h3><p>Check the selected account state and pairing status.</p></section>",
+      "css": ".ds-summary{color-scheme:light dark;padding:18px;background:light-dark(#f7f9f9, #182024);color:light-dark(#21312d, #e7eeeb);border-radius:12px;font:14px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;}.ds-summary h3{margin:0;font-size:15px;font-weight:600;}.ds-summary p{margin:5px 0 0;color:light-dark(#62716d, #acbcb6);font-size:13px;max-width:48ch;}"
+    },
+    {
+      "name": "Account Source",
+      "kind": "nav",
+      "description": "A selected account retains identity and connection state.",
+      "html": "<button class=\"ds-account\" type=\"button\" aria-pressed=\"true\"><span class=\"ds-avatar\" aria-hidden=\"true\">A</span><span><span class=\"ds-account-name\">Account</span><span class=\"ds-account-state\">Connected</span></span></button>",
+      "css": ".ds-account{color-scheme:light dark;display:flex;align-items:center;gap:10px;text-align:left;width:100%;border:1px solid transparent;border-radius:10px;padding:12px 10px;background:transparent;color:light-dark(#21312d, #e7eeeb);font:14px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;cursor:pointer;}.ds-account:hover{background:light-dark(#eef2f0, #2a3630);}.ds-account[aria-pressed=\"true\"]{background:light-dark(#e8f3ee, #273f34);border-color:light-dark(#e0e7e3, #35433d);}.ds-avatar{display:grid;place-items:center;width:34px;height:34px;border:1px solid light-dark(#e0e7e3, #35433d);border-radius:50%;background:light-dark(#ffffff, #1c2428);font-weight:600;color:light-dark(#176b50, #89d6b5);}.ds-account-name{display:block;font-weight:600;}.ds-account-state{display:block;font-size:12px;color:light-dark(#62716d, #acbcb6);}.ds-account:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}"
+    },
+    {
+      "name": "Active Call Strip",
+      "kind": "custom",
+      "description": "The owning account and Hang up remain available across navigation.",
+      "html": "<section class=\"ds-live\" aria-label=\"Active call\"><div class=\"ds-live-info\"><strong>In call</strong><p>Calling account</p></div><button class=\"ds-live-hangup\" type=\"button\">Hang up</button></section>",
+      "css": ".ds-live{color-scheme:light dark;position:sticky;top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:light-dark(#e8f3ee, #273f34);color:light-dark(#21312d, #e7eeeb);padding:12px 14px;border-radius:10px;font:14px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;}.ds-live-info{flex:1;min-width:130px;}.ds-live strong{font-weight:600;font-size:13px;}.ds-live p{margin:0;color:light-dark(#62716d, #acbcb6);font-size:12px;}.ds-live-hangup{min-height:34px;padding:8px 13px;border:1px solid transparent;border-radius:8px;background:light-dark(#fbecee, #492b2d);color:light-dark(#b03a3b, #ffb0ad);font:500 13px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;cursor:pointer;}.ds-live-hangup:hover{background:light-dark(#eef2f0, #2a3630);}.ds-live-hangup:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}"
+    },
+    {
+      "name": "Recording Row",
+      "kind": "custom",
+      "description": "Saved audio uses a divided metadata row and browser-native controls.",
+      "html": "<article class=\"ds-recording\"><div class=\"ds-recording-row\"><button class=\"ds-play\" type=\"button\" aria-label=\"Play saved WAV\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"18\" height=\"18\" aria-hidden=\"true\"><path d=\"m9 6 9 6-9 6z\"/></svg></button><div class=\"ds-recording-name\"><div>Saved WAV</div><small>Completed call</small></div><span class=\"ds-recording-length\">0:00</span></div><audio class=\"ds-audio\" controls preload=\"none\" aria-label=\"Saved WAV recording\"></audio></article>",
+      "css": ".ds-recording{color-scheme:light dark;border-bottom:1px solid light-dark(#e0e7e3, #35433d);color:light-dark(#21312d, #e7eeeb);font:14px/1.5 \"Segoe UI\", Roboto, Arial, sans-serif;}.ds-recording-row{display:flex;gap:10px;align-items:center;padding:13px 0;}.ds-play{width:34px;height:34px;border:1px solid light-dark(#e0e7e3, #35433d);background:light-dark(#ffffff, #1c2428);border-radius:50%;display:grid;place-items:center;padding:8px;color:light-dark(#176b50, #89d6b5);cursor:pointer;}.ds-play:hover{background:light-dark(#e8f3ee, #273f34);}.ds-play svg{width:15px;height:15px;}.ds-recording-name{flex:1;font-size:13px;font-weight:500;}.ds-recording-name small{font-size:12px;font-weight:400;color:light-dark(#62716d, #acbcb6);}.ds-recording-length{font-size:12px;color:light-dark(#62716d, #acbcb6);font-variant-numeric:tabular-nums;}.ds-audio{display:block;width:100%;margin:0 0 10px;}.ds-play:focus-visible{outline:2px solid light-dark(#176b50, #89d6b5);outline-offset:3px;}@media(pointer:coarse){.ds-play{width:44px;height:44px;}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Account Audio Workspace",
+    "overview": "A restrained communications interface makes account identity, connection health, and audio tasks easy to scan. Cool neutral surfaces, a forest-green accent, slim dividers, and the platform UI sans give connection controls and saved media one consistent language.",
+    "keyCharacteristics": [
+      "Account identity stays separate from the selected task.",
+      "Compact forms and timed media rows carry useful content.",
+      "Light and dark appearances retain the same hierarchy and density."
+    ],
+    "rules": [
+      {
+        "name": "The Functional Color Rule",
+        "body": "Keep action, selection, warning, and danger roles consistent in both appearances.",
+        "section": "colors"
+      },
+      {
+        "name": "The Task Hierarchy Rule",
+        "body": "Account and section headings lead; status, capability, and time metadata remain supporting information.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "Do preserve the same type hierarchy and semantic colors in light and dark appearances.",
+      "Do reflow forms and media rows at narrow widths.",
+      "Do retain visible focus and text labels alongside state color."
+    ],
+    "donts": [
+      "Don't add shadows to flat workspace panels.",
+      "Don't use the accent role for errors or destructive actions.",
+      "Don't replace native audio controls with an imitation player."
+    ]
+  }
+}

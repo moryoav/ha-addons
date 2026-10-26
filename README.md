@@ -18,7 +18,7 @@ This project has two parts, installed separately:
   diagnostics, and setup in Home Assistant.
 
 The integration connects to the add-on's local API. Each WhatsApp account is
-paired by scanning its QR code or using phone-number pairing in the add-on web UI.
+paired by scanning its QR code in the add-on web UI.
 
 ## What it can do
 
@@ -59,13 +59,7 @@ https://github.com/moryoav/ha-addons
 
 [![Open the WhatsApp add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start the `WhatsApp` add-on. Home Assistant shows a persistent
-notification with a QR code and an **Open pairing page** link. Scan the QR code
-with WhatsApp, or follow the link and choose **Link with phone number**.
-Enter the account's number including its country code, select **Generate pairing
-code**, and enter the displayed code in WhatsApp under **Linked devices >
-Link a device > Link with phone number instead**. The web UI is also available
-through **Open Web UI** on the add-on page.
+Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code and an **Open pairing page** link. Scan the QR code with WhatsApp, or follow the link, choose the account, and select **Link with code** in **Connection** to pair using your phone number. You can also reach the workspace with **Open Web UI** on the add-on page.
 
 ### 2. Install the integration
 
@@ -119,27 +113,30 @@ saves it privately, and keeps it across restarts. Supervisor discovery shares
 it with the integration, which applies credential changes automatically.
 There is no token to enter or manage in the app configuration.
 
-Each client gets its own pairing flow and persisted add-on session data.
-Phone numbers are entered on demand in the web UI, rather than add-on options.
+Each client gets its own choice of QR or phone-number pairing and persisted add-on session data.
 
 Supplemental delivery receipts for decrypted own-device LID messages are always
 enabled for every account. They do not mark chats as read. Detailed decryption
 tracing is disabled; neither behavior has a configuration switch.
 
-The add-on page includes an Open Web UI action through Home Assistant Ingress.
-It opens on the pairing page while an account is waiting for pairing, and on
-WhatsApp calls otherwise; each page links to the other.
-The web UI shows each configured session, its connection state, and the current
-QR code when a session is waiting for pairing. Each unpaired account also offers
-phone-number pairing, with a clearly displayed eight-character code and a
-**Use QR code** option. Codes are cleared when the connection changes; request
-a fresh code if WhatsApp rejects one, allowing 30 seconds between requests.
-The notification follows the chosen method and is dismissed after connection.
-If the add-on detects a sustained
-burst of libsignal decryption failures, it pauses all WhatsApp clients while
-keeping the add-on healthy. The web UI then offers Retry connection, which
-keeps the saved sessions, and Reset and re-pair for a selected client, which
-requires confirmation before deleting that client's local session.
+The add-on page includes an **Open Web UI** action through Home Assistant Ingress.
+One account workspace provides **Connection**, **Calls**, and **Recordings**,
+with each account's connection state visible as you move between them. The
+Connection view shows the current QR code while an account is pairing. Select
+**Link with code**, enter the account's phone number with its country code, and
+request a one-time code to enter in WhatsApp. **Scan QR code** returns to QR pairing.
+
+Choose the configured calling account to start a call with a phone number or
+WhatsApp user ID, add an optional opening message, and browse completed
+recordings. The active account and **Hang up** control stay visible while you
+navigate. Messages continue through Home Assistant actions and automations.
+See the [Web UI guide](whatsapp_addon/DOCS.md#web-ui) for details.
+
+If the add-on detects a sustained burst of libsignal decryption failures, it
+pauses all WhatsApp clients while keeping the add-on healthy. The web UI then
+offers **Retry connection**, which keeps the saved sessions, and **Reset and
+re-pair** for a selected client. Reset requires typing that client's exact ID
+before deleting its local session.
 
 ### Integration
 
@@ -430,13 +427,13 @@ keep using `new_whatsapp_message` without changes.
   generated credential protects API requests and is shared automatically
   through Supervisor discovery.
 - The web UI uses Home Assistant Ingress and accepts connections from the
-  Supervisor ingress proxy. Pairing QR images and phone-number codes appear there and in Home Assistant
+  Supervisor ingress proxy. Pairing QR codes appear there and in Home Assistant
   persistent notifications.
 - AppArmor restricts the Node bridge's writes to temporary files, persistent
   session data, private inbox snapshots, and attachments under `/media/whatsapp`. Container health checks
   use the local `/health` endpoint.
 
-API tokens, pairing QR images, phone-number pairing codes, session data, and WhatsApp identifiers are
+API tokens, pairing QR codes, session data, and WhatsApp identifiers are
 sensitive. Redact them from issue reports, screenshots, logs, and shared
 automation traces. Home Assistant may retain action inputs, response data,
 and message bodies in traces. Review and redact those traces before sharing them.
@@ -454,7 +451,7 @@ When diagnosing an intermittent add-on problem, set its `log_level` option to
 event-loop responsiveness, process and container resource use, API activity,
 health state, reconnects, and aggregate message and call handling. It does not
 enable raw Baileys logs or include message content, raw account identifiers, QR
-images, pairing codes, session data, or API tokens. Identifier-related entries use run-scoped
+codes, session data, or API tokens. Identifier-related entries use run-scoped
 one-way references for correlation. Return the option to `info` after collecting
 the relevant logs.
 
@@ -488,7 +485,7 @@ for encryption recovery and LID sender receipt handling.
 ## Troubleshooting
 
 - If setup cannot connect, confirm the add-on is installed and running, then restart the add-on so it can publish Supervisor discovery.
-- If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed pairing.
+- If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
 - If an action reports `unauthorized`, make sure the add-on and integration are
   both current, then restart the add-on and reload the integration so Supervisor
   discovery refreshes the managed internal credential. Because `/health` is public for
@@ -502,8 +499,8 @@ for encryption recovery and LID sender receipt handling.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If the add-on reports that its clients are paused, open its Web UI. Try Retry
   connection first. If the same failure returns, use Reset and re-pair for the
-  affected client, remove the old entry from WhatsApp Linked Devices, and pair
-  again using the new QR code or phone-number pairing. Actions for paused clients return
+  affected client, remove the old entry from WhatsApp Linked Devices, and scan
+  the new QR code. Actions for paused clients return
   `client_recovery_paused` until recovery is started.
 - If call updates are not received, confirm the automation listens for
   `whatsapp_call_update` and filters on a supported `status` value. The add-on

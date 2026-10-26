@@ -14,9 +14,10 @@ Follow the [installation guide](../README.md#installation) to install the
 add-on and integration.
 
 1. Start the add-on and select **Open Web UI** on its Home Assistant page.
-2. Scan the pairing QR code with WhatsApp on your phone, or use **Link with phone
-   number** in the web UI. The initial Home Assistant notification keeps the QR
-   code and includes an **Open pairing page** link.
+2. Choose the account and open **Connection**. Scan the pairing QR code with
+   WhatsApp on your phone, or select **Link with code** to pair using your phone
+   number. A persistent notification also includes the QR code and a link to
+   this workspace.
 3. Add **WhatsApp** under **Settings > Devices & services**. Supervisor discovery
    supplies the local API address and automatically managed credential.
 4. Use the configured session name, `default` unless changed, as `clientId`
@@ -98,34 +99,71 @@ behavior has a configuration switch; old saved switch values are ignored.
 
 ## Web UI
 
-Follow **Open pairing page** in the pairing notification, or select **Open Web
-UI** on the add-on page. Home Assistant handles access through Ingress using
-your current Home Assistant address. While an account is waiting for pairing,
-the app opens on its pairing page. Otherwise it opens on **WhatsApp calls**,
-which links back through **Messaging and pairing**; the pairing page links to
-**WhatsApp calls**. The pairing page shows each configured account, its
-connection state, and the current pairing QR code.
+Open the add-on page and select **Open Web UI**. The shared account workspace
+uses Home Assistant Ingress and adapts to desktop and phone. Every account's
+connection state remains visible while you move between **Connection**,
+**Calls**, and **Recordings**. Existing links to the old `/voice/` page open
+the Calls view in this workspace.
 
-To pair using your phone number:
+### Connection and pairing
 
-1. Select **Link with phone number** for the unpaired account.
-2. Enter the WhatsApp account's phone number including the country code.
-   A leading `+`, spaces, parentheses, and hyphens are accepted.
-3. Select **Generate pairing code**. The eight-character code appears on the
-   page and replaces the QR image in the existing notification.
-4. On your phone, open WhatsApp and select **Linked devices > Link a device >
-   Link with phone number instead**. Enter the displayed code.
+Select an account to see its connection status and available features. When
+it needs pairing, **Connection** shows the current QR code and instructions
+for **WhatsApp > Linked devices > Link a device** on your phone. Keep the page
+open while linking. The QR code changes as the WhatsApp runtime provides a new
+one and disappears once the account connects.
 
-Use **Use QR code** to cancel phone pairing and obtain a fresh QR code. When
-the connection changes, the old code is cleared. If WhatsApp rejects a code,
-enter your number again and request a new one, waiting 30 seconds between code
-requests. A request that fails can be retried right away. Pairing requests are
-independent for each configured account. Saved accounts reconnect normally
-without another pairing request.
+To pair without scanning, select **Link with code** and enter the WhatsApp
+account's phone number with its country code, such as `+1 202 555 0123`. This
+number is separate from the configured account ID, such as `default`.
+Request a code, then enter the displayed eight-character code in WhatsApp under
+**Linked devices > Link a device > Link with phone number instead**.
+Keep the page open while linking. If the code expires, request a new one.
+Successful code requests are limited to one per account every 30 seconds;
+failed requests can be retried without waiting for that cooldown.
 
-Pairing codes and QR images are private credentials. They are available in the
-protected web UI and Home Assistant notification, and are excluded from logs,
-diagnostics, and the integration's status API.
+Select **Scan QR code** to abandon the code and start fresh QR pairing.
+Pairing codes are shown only in the authenticated workspace and pairing
+notification. They are cleared after linking or disconnection and kept out of
+the integration status API, logs, and diagnostics. Treat both codes and QR
+images as private. Existing linked accounts keep their saved sessions.
+
+Recovery controls appear when the runtime pauses accounts after repeated
+encryption failures. **Retry connection** reconnects with the saved sessions.
+**Reset and re-pair** deletes only the selected client's local session and
+requires typing its exact client ID. These are recovery controls, rather than
+a routine reconnect action for an otherwise connected account. See
+[Encryption recovery](#encryption-recovery) before resetting a session.
+
+### Calls
+
+Select the account configured under **Voice calls > Calling account**, then
+open **Calls**. Enter a phone number with its country code or a WhatsApp user
+ID. You can add an opening message for this call before selecting **Call**.
+The configured Home Assistant agent handles the conversation.
+
+Only the selected calling account gains voice controls, and only one direct
+audio call can run at a time. Other accounts keep their messaging behavior.
+The active-call bar identifies the calling account and keeps **Hang up**
+available when you change views, select another account, or scroll through
+recordings. Settings remain in the add-on's **Configuration** page.
+
+### Recordings
+
+Open **Recordings** under the calling account to browse completed recordings,
+search by date, play or seek audio, download WAV files, and check their expiry.
+Recording must be enabled in **Configuration** to save new calls. Existing
+recordings remain available until they expire, even when recording is off.
+
+The library contains the add-on's saved recordings, including files from a
+previous calling account if that selection has changed. Existing recording
+metadata contains the date, duration, size, and expiry, but no account or
+contact identity. The UI does not assign those older files to a caller or
+account. See the [voice call guide](https://moryoav.github.io/ha-addons/examples/voice-calls/#record-calls)
+for recording format, retention, storage, and privacy details.
+
+The workspace manages connections and calls. Sending messages and reacting to
+incoming messages continue through Home Assistant actions and automations.
 
 ## Decrypted incoming media
 
@@ -358,7 +396,7 @@ session data, or message content.
 
 WhatsApp events and Home Assistant automation traces can contain phone JIDs,
 LIDs, call and message keys, quoted-message data, contact names, and message
-bodies. Saved media files can also contain private information. Redact these fields, QR images, pairing codes, session data, and
+bodies. Saved media files can also contain private information. Redact these fields, QR codes, session data, and
 internal API credentials before sharing diagnostics, logs, screenshots, or traces.
 
 ## Troubleshooting and diagnostics
@@ -369,7 +407,7 @@ Set `log_level` to `debug` and restart the add-on when investigating an
 intermittent failure. Debug mode periodically summarizes event-loop
 responsiveness, process and container resource use, API activity, health state,
 reconnects, and aggregate message and call handling. It does not enable raw
-Baileys logs or include message content, raw account identifiers, QR images, pairing codes,
+Baileys logs or include message content, raw account identifiers, QR codes,
 session data, or API tokens. Identifier-related entries use run-scoped one-way
 references for correlation. Return the option to `info` after collecting the
 relevant logs.
@@ -434,7 +472,7 @@ The recovery panel offers two choices:
   sessions unchanged. If the decryption storm returns, the clients pause again.
 - Reset and re-pair deletes only the selected client's local pairing session.
   You must type its client ID to confirm. Remove the old add-on entry from
-  WhatsApp Linked Devices, then pair again using the app's QR or phone-number option.
+  WhatsApp Linked Devices, then scan the new QR code shown by the add-on.
 
 Because the upstream error does not identify the responsible configured
 client, detection pauses all clients. Normal action requests for a paused

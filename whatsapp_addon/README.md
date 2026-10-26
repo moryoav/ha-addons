@@ -64,12 +64,7 @@ Use the button above after adding the repository. It opens the `WhatsApp` add-on
 2. Review the add-on options.
 3. Start the add-on.
 
-Home Assistant shows a persistent notification with a QR code and an
-**Open pairing page** link. Scan the QR code with WhatsApp, or follow the link
-and choose **Link with phone number** for the account you want to pair.
-Enter its number including the country code, generate a pairing code, and enter
-that code in WhatsApp under **Linked devices > Link a device > Link with phone
-number instead**. The web UI is also available from **Open Web UI** on the app page.
+In a few seconds, Home Assistant should show a persistent notification with a QR code and an **Open pairing page** link. Scan the QR code with WhatsApp, or follow the link, choose the account, and select **Link with code** in **Connection** to pair using your phone number. You can also reach the workspace with **Open Web UI** on the add-on page.
 
 ### 3. Install the integration
 
@@ -157,26 +152,32 @@ for setup, automation examples, recording, and upgrading from 2.x.
 
 ## Web UI and pairing
 
-Each unpaired account offers QR or phone-number pairing. The initial notification
-keeps the QR code and includes a link to this page, using your current Home
-Assistant address automatically. Choose **Link with phone number** to generate
-an eight-character code on demand. Codes also appear in the same notification.
-Choose **Use QR code** to return to a fresh QR handshake. Request a new code if
-WhatsApp rejects one, waiting 30 seconds between requests. Codes are cleared
-when the connection changes, and the notification is dismissed after linking.
-Treat pairing codes and QR images as private account credentials.
+Select **Open Web UI** on the add-on page to open the shared account workspace
+through Home Assistant Ingress. Account connection states stay visible beside
+the **Connection**, **Calls**, and **Recordings** views on desktop and phone.
 
-The add-on page includes an Open Web UI action through Home Assistant Ingress.
-It opens on the pairing page while an account is waiting for pairing, and on
-WhatsApp calls otherwise; each page links to the other.
-The web UI shows each configured session, its connection state, and the current
-QR code when a session is waiting for pairing. If a sustained burst of
-libsignal decryption failures is detected, all WhatsApp clients are paused to
-protect the host while the add-on and Web UI remain available. Use Retry
-connection to keep the saved sessions, or use the confirmation-gated Reset and
-re-pair control for one client to delete its local session and display a new QR
-code. Remove the old add-on entry from WhatsApp Linked Devices before pairing
-again using QR or phone-number pairing.
+Choose an account and open **Connection** to see its current QR code while
+pairing. Codes update as WhatsApp provides them. To pair without scanning,
+select **Link with code**, enter that WhatsApp account's phone number with its
+country code, and request a code. Enter the displayed code in WhatsApp under
+**Linked devices > Link a device > Link with phone number instead**.
+Select **Scan QR code** to return to QR pairing. Existing linked accounts keep
+their saved sessions.
+
+The selected calling account has controls for calling a phone number or
+WhatsApp user ID, an optional opening message, and **Hang up**. Active-call
+controls stay visible as you change views, select another account, or scroll.
+The recording library supports date search, playback, downloads, and expiry
+details. It also contains older saved recordings if the calling account has
+changed; those files do not identify which account or contact was involved.
+Messages continue through Home Assistant actions and automations.
+
+If a sustained burst of libsignal decryption failures is detected, all WhatsApp
+clients are paused to protect the host while the add-on and Web UI remain
+available. Use **Retry connection** to keep the saved sessions, or **Reset and
+re-pair** for one client to delete its local session and display a new QR code.
+Reset requires typing that client's exact ID. Remove the old add-on entry from
+WhatsApp Linked Devices before scanning the new code.
 
 ## App and account status sensors
 
@@ -225,7 +226,7 @@ The web UI uses Home Assistant Ingress. AppArmor restricts the Node bridge's
 writes to temporary files, persistent session data, and attachments under
 `/media/whatsapp`. Container health checks use the local `/health` endpoint.
 
-Redact API tokens, pairing QR images, phone-number pairing codes, session data, phone JIDs, LIDs, and message
+Redact API tokens, pairing QR codes, session data, phone JIDs, LIDs, and message
 content before sharing logs, diagnostics, screenshots, or automation traces.
 
 ## Diagnostics
@@ -233,7 +234,7 @@ content before sharing logs, diagnostics, screenshots, or automation traces.
 Debug logging periodically summarizes event-loop responsiveness, process and
 container resource use, API activity, health state, reconnects, and aggregate
 message and call handling. It does not enable raw Baileys logs or include
-message content, raw account identifiers, QR images, pairing codes, session data, or API
+message content, raw account identifiers, QR codes, session data, or API
 tokens. Identifier-related entries use run-scoped one-way references for
 correlation. Return the option to `info` after collecting the relevant logs.
 

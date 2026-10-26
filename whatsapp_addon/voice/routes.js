@@ -3,10 +3,10 @@
 const { baseRequire } = require("./base");
 const express = baseRequire("express");
 const { createApiAuth } = baseRequire("./api");
-const { createIngressGuard, normalizeBaseHref } = baseRequire("./webui");
+const { createIngressGuard, normalizeBaseHref, renderWebUi } = baseRequire("./webui");
 const { userJid } = require("./options");
-const escapeHtmlAttribute = value => String(value).replace(/[&<>"']/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[char]));
 
+/** Validate a single byte range for seekable WAV responses, returning null for invalid input. */
 function recordingRange(header, size) {
   if (!header) return { start:0, end:size - 1, partial:false };
   const match = /^bytes=(\d*)-(\d*)$/.exec(header);
@@ -18,6 +18,7 @@ function recordingRange(header, size) {
   return { start, end, partial:true };
 }
 
+/** Build voice routes for wrappers that enforce API authentication or the ingress guard. */
 function voiceRoutes(controller) {
   const router = express.Router();
   router.use(express.json({ limit:"4kb", strict:true }));
@@ -73,6 +74,7 @@ function voiceRoutes(controller) {
   return router;
 }
 
+/** Protect controller actions and recordings with the internal API credential. */
 function createVoiceApi(controller, sharedSecret) {
   const router = express.Router();
   router.use(createApiAuth(sharedSecret));
@@ -80,63 +82,33 @@ function createVoiceApi(controller, sharedSecret) {
   return router;
 }
 
+/**
+ * Render the shared account workspace with its Calls view selected.
+ *
+ * Kept for callers of the legacy renderer; HTTP entry points redirect to the
+ * root workspace so its assets and account controls use one ingress base.
+ * @param {string} ingressPath Home Assistant's ingress prefix, if present.
+ * @returns {string} The unified workspace HTML.
+ */
 function renderVoiceUi(ingressPath) {
-  const base = escapeHtmlAttribute(normalizeBaseHref(ingressPath) + "voice/");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><base href="${base}">
-<title>WhatsApp calls</title><style>
-body{font:16px system-ui;max-width:760px;margin:40px auto;padding:0 20px;background:#101820;color:#edf4f7}
-section{padding:24px;border:1px solid #456;border-radius:12px;margin:20px 0}button,input{font:inherit;padding:12px;border-radius:6px}
-input{width:90%;margin:12px 0}button{cursor:pointer;margin:8px 8px 8px 0}a{color:#8edbc4}#error{color:#ffb5ab}
-audio{display:block;width:100%;margin:12px 0}article{padding:12px 0;border-top:1px solid #456}article p{margin:8px 0}.muted{color:#b8cbd4}
-#pairing{border-color:#8edbc4}
-</style></head><body><h1>WhatsApp calls</h1>
-<p><a href="../">Messaging and pairing</a></p>
-<section id="pairing" hidden><h2>Pairing required</h2><p id="pairing-accounts"></p><p><a href="../">Open pairing page</a></p></section>
-<section><p id="status">Loading connection state...</p><p id="mode"></p>
-<label for="target">WhatsApp user JID</label><input id="target" placeholder="Recipient JID" autocomplete="off">
-<button id="call" disabled>Call</button><button id="hangup" disabled>Hang up</button><p id="error" role="status"></p></section>
-<p>Voice settings are in this app's Configuration. The existing Home Assistant agent handles home requests.</p>
-<section><h2>Call recordings</h2><p id="recording-mode">Loading recording settings...</p>
-<p class="muted">Completed recordings include both sides of the call. Change Record calls and Recording retention (days) in Configuration.</p>
-<button id="refresh-recordings">Refresh recordings</button><p id="recordings-empty">No completed recordings.</p><div id="recordings"></div></section>
-<script>
-const statusLine=document.getElementById('status'), mode=document.getElementById('mode'), error=document.getElementById('error');
-const showCalls=new URLSearchParams(location.search).get('view')==='calls';
-let busy=false;
-// Home Assistant opens Ingress here, so send pairing links on to the pairing page.
-/** Continue implicit pairing visits once WhatsApp is ready, unless calls were selected explicitly. */
-async function refreshPairing(){try{const r=await fetch('../api/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
-const waiting=(s.clients||[]).filter(client=>client.state==='pairing').map(client=>client.id);
-if(waiting.length&&!showCalls){location.replace('../');return;}
-document.getElementById('pairing').hidden=!waiting.length;document.getElementById('pairing-accounts').textContent=waiting.length?'Waiting to be paired: '+waiting.join(', ')+'.':'';}catch{}}
-const recordingItems=new Map();
-async function refreshRecordings(){try{const r=await fetch('recordings',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
-document.getElementById('recording-mode').textContent=s.last_error||((s.enabled?'Recording is enabled for new calls.':'Recording is off.')+' Completed recordings are kept for '+s.retention_days+' days.');
-const container=document.getElementById('recordings'),keep=new Set();
-for(const recording of [...s.recordings].reverse()){keep.add(recording.filename);if(recordingItems.has(recording.filename))continue;
-const article=document.createElement('article'),title=document.createElement('p'),details=document.createElement('p'),audio=document.createElement('audio'),link=document.createElement('a');
-title.textContent=new Date(recording.created_at).toLocaleString();details.className='muted';details.textContent=Math.round(recording.duration_seconds)+' seconds | '+(recording.size_bytes/1048576).toFixed(1)+' MiB | Expires '+new Date(recording.expires_at).toLocaleDateString();
-const url='recordings/'+encodeURIComponent(recording.filename);audio.controls=true;audio.preload='none';audio.src=url;link.href=url+'?download=1';link.download=recording.filename;link.textContent='Download recording';
-article.append(title,details,audio,link);recordingItems.set(recording.filename,article);container.prepend(article);}
-for(const [name,article] of recordingItems){if(!keep.has(name)){article.remove();recordingItems.delete(name);}}
-document.getElementById('recordings-empty').hidden=s.recordings.length>0;
-}catch{document.getElementById('recording-mode').textContent='Recordings are temporarily unavailable. Voice calls are unaffected.';}}
-async function refresh(){try{const r=await fetch('status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
-statusLine.textContent='Connection: '+s.state;mode.textContent=!s.live_mode?'Offline simulation':s.configured?'Voice calls are configured.':'Select a Home Assistant conversation agent in Configuration to enable calls.';
-document.getElementById('call').disabled=busy||!s.live_mode||!s.configured||!s.connected||s.active;document.getElementById('hangup').disabled=busy||!s.active;}catch{statusLine.textContent='Connection unavailable';}}
-async function action(name,body){busy=true;error.textContent='';await refresh();try{const r=await fetch(name,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error();}catch{error.textContent='The request could not complete. Check app settings and connection.';}finally{busy=false;await refresh();}}
-document.getElementById('call').onclick=()=>action('call',{to:document.getElementById('target').value.trim()});
-document.getElementById('hangup').onclick=()=>action('hangup',{});document.getElementById('refresh-recordings').onclick=refreshRecordings;
-refreshPairing();refresh();refreshRecordings();setInterval(refresh,3000);setInterval(refreshRecordings,5000);setInterval(refreshPairing,5000);
-</script></body></html>`;
+  return renderWebUi({ ingressPath, initialView:"calls" });
 }
 
+/** Return a local workspace URL without trusting an arbitrary redirect header. */
+function voiceWorkspaceLocation(req) {
+  const base = normalizeBaseHref(req.get("x-ingress-path"));
+  // Backslashes can be interpreted as authority separators by browsers. Query,
+  // fragment, and control characters cannot belong to an ingress prefix.
+  const local = base.startsWith("/") && !base.startsWith("//") && !/[\\?#\u0000-\u0020]/.test(base);
+  return `${local ? base : "/"}?view=calls`;
+}
+
+/** Guard voice endpoints and redirect legacy page navigation to the shared Calls view. */
 function createVoiceIngress(controller, { allowedIngressAddress } = {}) {
   const router = express.Router();
   router.use(createIngressGuard(allowedIngressAddress));
   router.use((_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
-  router.get("/", (req, res) => res.type("html").send(renderVoiceUi(req.get("x-ingress-path"))));
+  router.get("/", (req, res) => res.redirect(302, voiceWorkspaceLocation(req)));
   router.use(voiceRoutes(controller));
   return router;
 }

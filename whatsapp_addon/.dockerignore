@@ -30,6 +30,10 @@
 !timeout.js
 !validation.js
 !webui.js
+!webui/
+!webui/*.html
+!webui/*.css
+!webui/*.js
 !whatsapp.js
 !voice/
 !voice/*.js

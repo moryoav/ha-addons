@@ -153,7 +153,10 @@ test("the offline app starts its existing API and never loads Baileys or contact
   const token=(await fs.readFile(path.join(dir,".api-token"),"utf8")).trim();
   const headers={Authorization:`Bearer ${token}`,"Content-Type":"application/json"};
   let response=await request(api,"/voice/status");assert.equal(response.status,401);
-  response=await request(api,"/voice/status",{headers});assert.equal(response.status,200);assert.equal((await response.json()).live_mode,false);
+  response=await request(api,"/voice/status",{headers});assert.equal(response.status,200);
+  const voiceStatus=await response.json();
+  assert.equal(voiceStatus.live_mode,false);assert.equal(voiceStatus.client_id,null);
+  assert.equal(voiceStatus.configured,false);assert.equal(voiceStatus.state,"unconfigured");
   response=await request(api,"/voice/call",{method:"POST",headers,body:JSON.stringify({to:"222222222@lid"})});
   assert.equal(response.status,409);
   response=await request(api,"/health");assert.equal(response.status,200);assert.equal((await response.json()).status,"ok");
@@ -222,64 +225,43 @@ test("voice API applies existing bearer auth and does not expose private errors"
   assert.equal(response.status,503);assert.ok(!(await response.text()).includes("synthetic-private-value"));assert.equal(count,1);
 });
 
-test("voice ingress rejects direct network access and HTML escapes its base path",async()=>{
+test("voice ingress rejects direct network access and uses the shared renderer's safe base path",async()=>{
   const express=baseRequire("express");const app=express();
   app.use("/voice",createVoiceIngress({status:()=>({active:false})}));
   const response=await request(app,"/voice/status");assert.equal(response.status,403);
+  const legacy=await request(app,"/voice/",{redirect:"manual"});
+  assert.equal(legacy.status,403);assert.equal(legacy.headers.get("location"),null);
   const html=renderVoiceUi('/api/hassio_ingress/synthetic/\" onload=\"x');
-  assert.ok(html.includes("&quot;"));assert.ok(!html.includes(' onload="x'));
+  assert.ok(html.includes('<base href="./">'));assert.ok(!html.includes(' onload="x'));
+  assert.ok(html.includes("<title>WhatsApp Add-on</title>"));
+  assert.ok(!html.includes("<title>WhatsApp calls</title>"));
 });
 
-test("voice ingress sends pairing visits to the pairing page unless calls were chosen",async()=>{
-  const vm=require("node:vm");
-  const html=renderVoiceUi("/api/hassio_ingress/synthetic");
-  const script=html.slice(html.indexOf("<script>")+8,html.indexOf("</script>"));
-  const run=async(search,clients)=>{
-    const elements=new Map(),replaced=[];
-    const element=()=>({hidden:false,textContent:"",disabled:false,prepend(){},append(){},remove(){}});
-    const responses={"../api/status":{clients},recordings:{enabled:false,retention_days:30,recordings:[]},status:{state:"idle"}};
-    vm.runInNewContext(script,{URLSearchParams,setInterval:()=>0,location:{search,replace:url=>replaced.push(url)},
-      document:{getElementById:id=>elements.get(id)||elements.set(id,element()).get(id),createElement:element},
-      fetch:async url=>({ok:true,json:async()=>responses[url]})});
-    await new Promise(resolve=>setImmediate(resolve));
-    return {replaced,banner:elements.get("pairing"),accounts:elements.get("pairing-accounts")};
-  };
-  const pairing=[{id:"default",state:"pairing"},{id:"secondary",state:"connected"}];
-  assert.deepEqual((await run("",pairing)).replaced,["../"]);
-  const calls=await run("?view=calls",pairing);
-  assert.deepEqual(calls.replaced,[]);assert.equal(calls.banner.hidden,false);
-  assert.equal(calls.accounts.textContent,"Waiting to be paired: default.");
-  const paired=await run("",[{id:"default",state:"connected"}]);
-  assert.deepEqual(paired.replaced,[]);assert.equal(paired.banner.hidden,true);
-  assert.ok(html.includes('<a href="../">Open pairing page</a>'));
+test("legacy voice navigation redirects to the shared workspace and keeps its ingress prefix",async()=>{
+  const express=baseRequire("express"),app=express();
+  app.use("/voice",createVoiceIngress({status:()=>({active:false})},{allowedIngressAddress:"127.0.0.1"}));
+  app.get("/",(_req,res)=>res.send("canonical-workspace"));
+  for(const route of ["/voice","/voice/"]){
+    const plain=await request(app,route,{redirect:"manual"});
+    assert.equal(plain.status,302);assert.equal(plain.headers.get("location"),"/?view=calls");
+    assert.equal(plain.headers.get("cache-control"),"no-store");
+    const prefixed=await request(app,route,{redirect:"manual",headers:{"X-Ingress-Path":"/api/hassio_ingress/synthetic"}});
+    assert.equal(prefixed.status,302);
+    assert.equal(prefixed.headers.get("location"),"/api/hassio_ingress/synthetic/?view=calls");
+  }
+  const canonical=await request(app,"/voice/");
+  assert.equal(canonical.status,200);assert.equal(await canonical.text(),"canonical-workspace");
+  const status=await request(app,"/voice/status");
+  assert.equal(status.status,200);assert.deepEqual(await status.json(),{active:false});
 });
 
-/** Keep implicit pairing navigation active after a reconnect gap or failed first poll. */
-test("voice ingress retries pairing navigation when the first status is not ready",async()=>{
-  const vm=require("node:vm");
-  const html=renderVoiceUi("/api/hassio_ingress/synthetic");
-  const script=html.slice(html.indexOf("<script>")+8,html.indexOf("</script>"));
-  for(const search of ["","?view=calls"]){
-    for(const firstPollFails of [false,true]){
-      const elements=new Map(),replaced=[],intervals=[];
-      let clients=[{id:"default",state:"connecting"}],fail=firstPollFails;
-      /** Provide only the visible DOM properties used by the rendered calls page. */
-      const element=()=>({hidden:false,textContent:"",disabled:false,prepend(){},append(){},remove(){}});
-      vm.runInNewContext(script,{URLSearchParams,setInterval:callback=>intervals.push(callback),
-        location:{search,replace:url=>replaced.push(url)},
-        document:{getElementById:id=>elements.get(id)||elements.set(id,element()).get(id),createElement:element},
-        fetch:async url=>{
-          if(url==="../api/status"&&fail){fail=false;throw Error("Synthetic first-poll failure");}
-          const responses={"../api/status":{clients},recordings:{enabled:false,retention_days:30,recordings:[]},status:{state:"idle"}};
-          return {ok:true,json:async()=>responses[url]};
-        }});
-      await new Promise(resolve=>setImmediate(resolve));
-      assert.deepEqual(replaced,[]);
-      clients=[{id:"default",state:"pairing"}];
-      await Promise.all(intervals.map(callback=>callback()));
-      assert.deepEqual(replaced,search?[]:["../"],`Initial status failure: ${firstPollFails}, search: ${search}`);
-      if(search) assert.equal(elements.get("pairing").hidden,false);
-    }
+test("legacy voice redirects cannot use an external or ambiguous ingress destination",async()=>{
+  const express=baseRequire("express"),app=express();
+  app.use("/voice",createVoiceIngress({status:()=>({active:false})},{allowedIngressAddress:"127.0.0.1"}));
+  for(const prefix of ["https://example.invalid/","//example.invalid/","/\\example.invalid/","relative/path","/ingress?elsewhere","/ingress#fragment"]){
+    const response=await request(app,"/voice/",{redirect:"manual",headers:{"X-Ingress-Path":prefix}});
+    assert.equal(response.status,302);
+    assert.equal(response.headers.get("location"),"/?view=calls");
   }
 });
 

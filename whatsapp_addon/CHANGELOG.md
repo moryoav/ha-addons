@@ -1,18 +1,32 @@
-## 3.2.0
+## 3.3.0
 
 - Added an Open pairing page link below the initial QR notification.
-- Opened the app web UI on its pairing page while an account is waiting for
-  pairing, with links between the pairing and WhatsApp calls pages.
-- Kept pairing links working after an initial reconnect gap or temporary status failure.
-- Prevented stopped connection attempts from overwriting credentials after a session reset.
-- Bounded version lookups so a network stall cannot leave phone pairing stuck reconnecting.
-- Dismissed stale pairing notifications when startup is paused for recovery.
-- Drained cache initialization before stopped sessions can be reset.
-- Ignored late credential updates from sockets stopped before a session reset.
-- Added per-account phone-number pairing with clear codes and mobile instructions
-  in the app web UI, plus an option to return to QR pairing.
-- Cleared temporary codes when pairing ends and limited repeat code requests
-  while preserving existing saved sessions and account privacy.
+- Enabled per-account phone-number pairing in the unified Connection view,
+  with one-time codes, mobile instructions, and an option to return to QR pairing.
+- Preserved saved sessions and account drafts across pairing transitions,
+  and cleared temporary codes after linking, disconnection, or recovery.
+- Prevented stopped connection attempts from writing credentials or changing
+  cache files after a session reset, and bounded version lookups during pairing.
+
+## 3.2.0
+
+- Fixed slow call actions reporting premature timeouts, made failed account resets
+  retryable without editing the confirmation, and associated recipient help and
+  validation errors with the input for screen readers.
+
+### Unified account workspace
+
+- Replaced separate pairing and voice pages with one responsive account
+  workspace for connections, calls, and recordings, including light and dark
+  themes and visible connection states for every account.
+- Added calling-account controls with an optional opening message and a
+  persistent Hang up control across views, account selection, and scrolling.
+- Added recording date search, playback, downloads, and expiry details while
+  preserving the shared library of older recordings.
+- Displayed pairing QR codes in Connection and reserved a disabled Link with
+  code option for a future connection method.
+- Preserved existing voice links and guarded recovery controls, including
+  exact account-ID confirmation before resetting a saved session.
 
 ## 3.1.1
 

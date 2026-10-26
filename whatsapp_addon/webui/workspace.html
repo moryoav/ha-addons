@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <base href="{{BASE_HREF}}">
+  <title>WhatsApp Add-on</title>
+  <link rel="stylesheet" href="assets/workspace.css">
+  <script src="assets/workspace.js" defer></script>
+</head>
+<body>
+  <div id="workspace" data-initial-view="{{INITIAL_VIEW}}">
+    <div class="wa-stage">
+      <div class="wa-app">
+        <header class="wa-topbar">
+          <div class="wa-brand">
+            <span class="wa-brand-symbol" data-icon="message" aria-hidden="true"></span>
+            <div><div class="wa-brand-name">WhatsApp</div><div class="wa-muted wa-small">for Home Assistant</div></div>
+          </div>
+          <div class="wa-top-end"><span id="updated-at">Loading account status...</span><button class="wa-icon-button" id="refresh" type="button" aria-label="Refresh status"><span data-icon="refresh" aria-hidden="true"></span></button></div>
+        </header>
+        <div class="wa-layout">
+          <aside class="wa-sidebar" aria-label="Accounts">
+            <div class="wa-sidebar-heading"><h2>Accounts</h2><span class="wa-muted wa-small" id="account-count">Loading</span></div>
+            <div id="accounts" class="wa-account-list"></div>
+            <p id="accounts-empty" class="wa-muted wa-small" hidden>No accounts configured. Add an account in the add-on Configuration.</p>
+            <div class="wa-sidebar-footer"><button class="wa-text-button" data-action="settings" type="button"><span data-icon="settings" aria-hidden="true"></span>Manage accounts</button><p>Connections, calls, and recordings in one place.</p></div>
+          </aside>
+          <main class="wa-main">
+            <p id="status-error" class="wa-error" role="alert" hidden></p>
+            <section id="recovery" class="wa-recovery" aria-labelledby="recovery-title" hidden>
+              <h2 id="recovery-title">WhatsApp connections paused</h2>
+              <p>Repeated encryption failures paused the accounts to protect the host. Retry with the saved sessions, or reset one account and pair it again.</p>
+              <p id="recovery-details" class="wa-small"></p>
+              <button id="recovery-retry" class="wa-button" type="button">Retry connection</button>
+            </section>
+            <div class="wa-account-header"><div><h1 id="account-title">WhatsApp accounts</h1><p class="wa-account-subtitle" id="account-subtitle">Select an account to get started.</p></div><span class="wa-status" id="account-state" hidden></span></div>
+            <section id="active-call" class="wa-live-call" aria-label="Active call" aria-live="polite" hidden>
+              <span data-icon="phone" aria-hidden="true"></span><div class="wa-live-info"><strong id="active-call-title"></strong><p id="active-call-detail"></p></div><button id="global-hangup" class="wa-button wa-button-danger" type="button"><span data-icon="hangup" aria-hidden="true"></span>Hang up</button>
+            </section>
+            <nav class="wa-tabs" aria-label="Account views">
+              <button class="wa-tab" data-view="connection" type="button"><span data-icon="link" aria-hidden="true"></span>Connection</button>
+              <button class="wa-tab" data-view="calls" type="button"><span data-icon="phone" aria-hidden="true"></span>Calls</button>
+              <button class="wa-tab" data-view="recordings" type="button"><span data-icon="recordings" aria-hidden="true"></span>Recordings</button>
+            </nav>
+            <section id="settings" class="wa-settings" aria-labelledby="settings-title" hidden>
+              <div class="wa-section-heading"><h2 id="settings-title">Account and voice settings</h2><button class="wa-icon-button" data-action="settings" type="button" aria-label="Close settings"><span data-icon="close" aria-hidden="true"></span></button></div>
+              <p>Open this add-on's Configuration in Home Assistant to manage accounts, select the calling account and conversation agent, or change recording settings.</p>
+              <dl class="wa-details"><div><dt>Calling account</dt><dd id="settings-caller">Not selected</dd></div><div><dt>Conversation agent</dt><dd id="settings-agent">Not configured</dd></div><div><dt>Call recording</dt><dd id="settings-recording">Unavailable</dd></div><div><dt>Retention</dt><dd id="settings-retention">Unavailable</dd></div></dl>
+            </section>
+            <section id="connection-panel" aria-label="Connection">
+              <div class="wa-section-heading"><h2 id="connection-title">Connection</h2></div>
+              <div id="connection-summary" class="wa-connection-summary"><span data-icon="check" aria-hidden="true"></span><div><h3 id="connection-summary-title">Loading connection...</h3><p id="connection-summary-text"></p></div></div>
+              <section id="pairing" aria-label="Account pairing" hidden>
+                <p class="wa-muted">Link this account to WhatsApp.</p>
+                <div class="wa-pairing-methods" role="group" aria-label="How to link this account">
+                  <button class="wa-pairing-method" id="choose-qr" type="button" aria-pressed="true"><span data-icon="qr" aria-hidden="true"></span><span>Scan QR code<small>Use your phone camera</small></span></button>
+                  <button class="wa-pairing-method" id="choose-phone" type="button" disabled aria-pressed="false"><span data-icon="keyboard" aria-hidden="true"></span><span>Link with code<small>Use your phone number</small></span></button>
+                </div>
+                <p id="pairing-error" class="wa-inline-error" role="alert" hidden></p>
+                <div class="wa-pairing" id="pairing-qr-panel"><div><h3>Scan to connect</h3><ol><li>Open WhatsApp on your phone.</li><li>Go to Linked devices.</li><li>Tap Link a device and scan the QR code.</li></ol><p class="wa-muted wa-small">Keep this page open. New QR codes appear automatically while pairing.</p></div><div class="wa-qr-area"><span id="pairing-status" class="wa-pairing-wait" role="status">Waiting for a QR code...</span><div class="wa-qr"><img id="pairing-qr" width="222" height="222" alt="WhatsApp pairing QR code" hidden><p class="wa-qr-placeholder" id="pairing-placeholder">Preparing your QR code...</p></div><button class="wa-text-button" id="refresh-pairing" type="button"><span data-icon="refresh" aria-hidden="true"></span>Refresh status</button></div></div>
+                <div id="pairing-phone-panel" hidden>
+                  <form class="wa-code-request" id="pairing-phone-form">
+                    <div class="wa-field"><label for="pairing-phone">WhatsApp phone number</label><input class="wa-input" id="pairing-phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="64" placeholder="+1 202 555 0123" required aria-describedby="pairing-phone-help pairing-error"></div>
+                    <p class="wa-field-help" id="pairing-phone-help">Include the country code of the WhatsApp account you want to link.</p>
+                    <button class="wa-button wa-button-primary" id="generate-pairing-code" type="submit">Generate code</button>
+                  </form>
+                  <p id="pairing-progress" class="wa-muted wa-small wa-pairing-help" role="status"></p>
+                  <div class="wa-code-panel" id="pairing-code-panel" hidden>
+                    <h3>Enter this code in WhatsApp</h3>
+                    <output class="wa-pairing-code" id="pairing-code" aria-label="Pairing code" aria-live="polite"></output>
+                    <p class="wa-pairing-caption">Use this code while this pairing session is open.</p>
+                    <ol class="wa-code-steps"><li>Open WhatsApp on your phone.</li><li>Go to Linked devices and tap Link a device.</li><li>Choose Link with phone number instead and enter the code above.</li></ol>
+                    <button class="wa-button" id="new-pairing-code" type="button">Request another code</button>
+                  </div>
+                </div>
+              </section>
+              <dl class="wa-details" id="connection-details"><div><dt>Messaging</dt><dd id="messaging-state">Unavailable</dd></div><div><dt>Voice calls</dt><dd id="connection-voice">Unavailable</dd></div><div><dt>Connected since</dt><dd id="connected-at">-</dd></div><div><dt>Last checked</dt><dd id="checked-at">-</dd></div><div><dt>Last QR code</dt><dd id="last-qr-at">-</dd></div><div><dt>Last error</dt><dd id="last-error">-</dd></div></dl>
+              <div class="wa-panel-actions" id="connection-shortcuts" hidden><button class="wa-button wa-button-primary" data-view="calls" type="button"><span data-icon="phone" aria-hidden="true"></span>Make a call</button><button class="wa-button" data-view="recordings" type="button"><span data-icon="recordings" aria-hidden="true"></span>Browse recordings</button></div>
+              <hr class="wa-separator"><h3>Messaging with Home Assistant</h3><p class="wa-muted wa-message-help">Send messages with your existing Home Assistant actions and automations. Incoming messages remain available to the integration.</p>
+              <div id="reset-actions" class="wa-advanced" hidden><p class="wa-muted wa-small">Reset only if this account needs to be paired again. Other account pairings are preserved, but connections restart during recovery.</p><button id="reset-account" class="wa-button wa-button-danger" type="button">Reset and re-pair</button></div>
+            </section>
+            <section id="calls-panel" aria-label="Calls" hidden>
+              <div class="wa-section-heading"><div><h2>Make a call</h2><p>Your Home Assistant agent handles the conversation.</p></div></div>
+              <div id="calls-unavailable" class="wa-empty" hidden><h3 id="calls-unavailable-title"></h3><p id="calls-unavailable-text"></p><button id="go-calling-account" class="wa-button" type="button" hidden>Go to calling account</button></div>
+              <div class="wa-call-layout" id="calling-controls">
+                <form id="call-form" class="wa-call-form"><div class="wa-field"><label for="recipient">Recipient</label><input class="wa-input" id="recipient" autocomplete="off" placeholder="Phone number or WhatsApp ID" required aria-describedby="recipient-help call-error"></div><p class="wa-field-help" id="recipient-help">Use an international phone number with its country code, or a WhatsApp user ID.</p><details class="wa-opening"><summary>Add an opening message</summary><label for="opening-message">Opening message for this call</label><textarea id="opening-message" class="wa-input" maxlength="300" placeholder="Optional greeting"></textarea></details><div class="wa-call-action"><button class="wa-button wa-button-primary" id="call" type="submit"><span data-icon="phone" aria-hidden="true"></span>Call</button><button class="wa-button wa-button-danger" id="call-hangup" type="button" hidden><span data-icon="hangup" aria-hidden="true"></span>Hang up</button><span class="wa-small wa-muted" id="call-source"></span></div><p id="call-error" class="wa-inline-error" role="alert" hidden></p></form>
+                <aside class="wa-call-facts" aria-label="Voice readiness"><p id="voice-ready" class="wa-ready"></p><dl class="wa-fact"><dt>Conversation agent</dt><dd id="agent-state">Not configured</dd></dl><dl class="wa-fact"><dt>Call recording</dt><dd id="recording-mode">Unavailable</dd></dl><button class="wa-text-button" data-action="settings" type="button">Voice settings<span data-icon="arrow" aria-hidden="true"></span></button></aside>
+              </div>
+              <section id="recent-recordings" hidden><hr class="wa-separator"><div class="wa-section-heading"><h3>Recent recordings</h3><button class="wa-text-button" data-view="recordings" type="button">View all<span data-icon="arrow" aria-hidden="true"></span></button></div><p class="wa-muted wa-small">Open Recordings to play or download completed calls.</p><div id="recent-recording-list"></div></section>
+            </section>
+            <section id="recordings-panel" aria-label="Recordings" hidden>
+              <div class="wa-section-heading"><div><h2>Recordings</h2><p id="recordings-subtitle">Completed calls</p></div><button class="wa-icon-button" id="refresh-recordings" type="button" aria-label="Refresh recordings"><span data-icon="refresh" aria-hidden="true"></span></button></div>
+              <p class="wa-library-notice">Saved recordings are shared by this add-on. Older files can include calls from a previously selected account; they do not identify the account or contact.</p>
+              <p id="recordings-error" class="wa-inline-error" role="alert" hidden></p>
+              <p id="recordings-notice" class="wa-library-notice" role="status" hidden></p>
+              <div class="wa-filter"><input class="wa-input" id="recording-search" type="search" aria-label="Search recordings by date" placeholder="Search by date"></div>
+              <div id="recording-list" class="wa-recording-list"></div><p id="recordings-empty" class="wa-muted">Loading recordings...</p><p class="wa-recording-footer">Recordings include both sides of the call. New files appear after the call ends.</p>
+            </section>
+            <p id="feedback" class="wa-feedback" role="status" hidden></p>
+          </main>
+        </div>
+      </div>
+    </div>
+    <dialog id="reset-dialog" class="wa-dialog" aria-labelledby="reset-title"><form id="reset-form"><h2 id="reset-title">Reset and re-pair <span id="reset-name"></span>?</h2><p>This removes the account's saved pairing and restarts the WhatsApp connections. Remove the old add-on entry from WhatsApp Linked devices before pairing again.</p><div class="wa-field"><label for="reset-confirmation">Type the account ID to confirm: <strong id="reset-id"></strong></label><input class="wa-input" id="reset-confirmation" autocomplete="off" required></div><p id="reset-error" class="wa-inline-error" role="alert" hidden></p><div class="wa-dialog-actions"><button class="wa-button" id="cancel-reset" type="button">Cancel</button><button class="wa-button wa-button-danger" id="confirm-reset" type="submit" disabled>Reset and re-pair</button></div></form></dialog>
+    <noscript>Enable JavaScript to manage WhatsApp connections, calls, and recordings.</noscript>
+  </div>
+</body>
+</html>

@@ -10,7 +10,7 @@ handling authentication and messages; a native worker handles call audio.
 
 ## Set up calling
 
-1. Install or update both the WhatsApp app and HACS integration to **3.0.0**.
+1. Install or update both the WhatsApp app and HACS integration.
 2. Set up Home Assistant's **OpenAI Conversation** integration with a working API
    key and conversation agent. Give that agent access to the entities and
    scripts you want to use through Assist.
@@ -26,7 +26,8 @@ handling authentication and messages; a native worker handles call audio.
    by `whatsapp.check_number`. An empty list answers nobody. Configured phone
    JIDs are resolved to LIDs through the selected account. A failed or missing
    lookup leaves the caller unanswered.
-7. Save and restart the WhatsApp app. Open its web UI to check calling status.
+7. Save and restart the WhatsApp app. Open its web UI, select the calling
+   account, and open **Calls** to check its readiness.
 
 The app uses the API key belonging to the selected OpenAI conversation agent.
 It resolves that key from Home Assistant's configuration through a read-only
@@ -41,6 +42,27 @@ scripts; the agent's existing Assist permissions determine what it can do.
 Only one direct audio call can run at a time. Video and group calls are not
 supported. The caller allowlist applies to incoming calls; an automation
 explicitly chooses the recipient of an outgoing call.
+
+## Use the account workspace
+
+Select **Open Web UI** on the WhatsApp app page. The account list shows each
+connection state. **Connection**, **Calls**, and **Recordings** share the same
+navigation on desktop and phone.
+
+An account that needs pairing shows its current QR code in **Connection**.
+The code updates as WhatsApp provides a new one. **Link with code** is marked
+**Coming later** and is disabled; pairing-code connections are not active yet.
+
+Under the configured calling account, open **Calls**, enter a phone number
+with its country code or a WhatsApp user ID, and select **Call**. You can add
+an optional opening message for that call. The Home Assistant agent handles
+the conversation. The active-call bar names the calling account and keeps
+**Hang up** available while you change views or accounts and scroll through
+recordings. Other accounts continue to support messaging through Home
+Assistant actions and automations.
+
+Existing `/voice/` links open the Calls view in this shared workspace. Voice
+and recording settings remain in the app's **Configuration** page.
 
 ## Make a call from Home Assistant
 
@@ -122,8 +144,12 @@ calls as one mono, 16 kHz, 16-bit WAV file. Recording uses a bounded queue and a
 background writer. Slow or failed storage stops recording without waiting in
 the live audio path. Calls that are never answered are not recorded.
 
-Open the app web UI and use **Call recordings** to play or download completed
-files. They are also in Home Assistant's Media folder under
+Open the app web UI, select the calling account, and use **Recordings** to
+search by date, play, seek, or download completed files and see their expiry.
+The library includes older files if the selected calling account has changed.
+Existing recording metadata does not identify the account or contact, so the
+UI does not attribute those files to the current account. They are also in
+Home Assistant's Media folder under
 `whatsapp/call-recordings`. A minute is about 1.9 MB. Filenames contain a
 timestamp and random ID, without caller names or phone numbers.
 
