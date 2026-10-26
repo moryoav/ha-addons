@@ -362,6 +362,19 @@ test("phone pairing is explicit, rate limited, and scoped to its account", async
   assert.ok(notifications.at(-1).url.endsWith("/dismiss"));
 });
 
+/** Count only generated codes toward the cooldown, so a failed request can be retried at once. */
+test("a failed code request does not start the 30 second cooldown", async () => {
+  const fixture = runtimeFixture();
+  const client = fixture.accounts[0];
+  client.emit("qr", "fictional-qr-code");
+  const deliver = client.requestPairingCode;
+  client.requestPairingCode = async () => { throw new Error("Fictional upstream failure."); };
+  await assert.rejects(fixture.runtime.requestPairingCode("default", PHONE), { code: "pairing_failed", status: 502 });
+  client.requestPairingCode = deliver;
+  await fixture.runtime.requestPairingCode("default", PHONE);
+  await assert.rejects(fixture.runtime.requestPairingCode("default", PHONE), { status: 429 });
+});
+
 /** Show a code from the fresh socket even though the QR socket disconnected to make room for it. */
 test("a phone code returns the account to pairing after its fresh socket connects", async () => {
   const fixture = runtimeFixture();

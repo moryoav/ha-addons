@@ -106,7 +106,7 @@ class PairingSession {
         await Promise.resolve(this.#socket.end?.()).catch(() => {});
       }
       if (error instanceof PairingActionError) throw error;
-      throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Wait for a new QR code, then try again.");
+      throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Try again.");
     } finally {
       clearTimeout(timer);
       this.#pending = false;

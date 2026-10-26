@@ -479,12 +479,16 @@ const createAddonRuntime = ({
       lastPairingRequests.set(id, now);
     }
     pairingTasks.set(id, true);
+    let completed = false;
     try {
       await client[method](phoneNumber);
+      completed = true;
       if (clients[id] !== client || recovery.active || callDeliveryStopped) {
         throw new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
       }
     } catch (error) {
+      // Only generated codes count toward the cooldown, so a failed request can be retried at once.
+      if (!completed && method === "requestPairingCode") lastPairingRequests.delete(id);
       if (error instanceof PairingActionError) throw error;
       throw new PairingActionError(502, "pairing_failed", "The pairing request failed. Refresh the page and try again.");
     } finally {

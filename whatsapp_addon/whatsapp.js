@@ -602,7 +602,7 @@ class WhatsappClient extends EventEmitter {
       })(), "Pairing handshake", PAIRING_HANDSHAKE_TIMEOUT_MS);
     } catch (error) {
       if (error instanceof PairingActionError) throw error;
-      throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Wait for a new QR code, then try again.");
+      throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Try again.");
     } finally {
       if (this.#pairingHandshake === handshake) this.#pairingHandshake = undefined;
     }

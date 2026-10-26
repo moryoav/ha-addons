@@ -119,8 +119,9 @@ To pair using your phone number:
 Use **Use QR code** to cancel phone pairing and obtain a fresh QR code. When
 the connection changes, the old code is cleared. If WhatsApp rejects a code,
 enter your number again and request a new one, waiting 30 seconds between code
-requests. Pairing requests are independent for each configured account. Saved
-accounts reconnect normally without another pairing request.
+requests. A request that fails can be retried right away. Pairing requests are
+independent for each configured account. Saved accounts reconnect normally
+without another pairing request.
 
 Pairing codes and QR images are private credentials. They are available in the
 protected web UI and Home Assistant notification, and are excluded from logs,
