@@ -91,13 +91,17 @@ test("successful linking preserves account credentials and rejects further pairi
   const fixture = sessionFixture();
   fixture.session.onQr();
   await fixture.session.requestCode(PHONE);
-  Object.assign(fixture.creds, { registered: true, me: { id: `${PHONE}@s.whatsapp.net` }, pairingCode: CODE });
+  const account = { details: "fictional-signed-account" };
+  Object.assign(fixture.creds, { registered: true, account, me: { id: `${PHONE}:7@s.whatsapp.net` }, pairingCode: CODE });
   fixture.session.complete();
   assert.equal(fixture.updates.at(-1).code, null);
   assert.equal(fixture.saved(), 0);
-  assert.equal(fixture.creds.me.id, `${PHONE}@s.whatsapp.net`);
+  assert.equal(fixture.creds.me.id, `${PHONE}:7@s.whatsapp.net`);
   await assert.rejects(fixture.session.requestCode(PHONE), { code: "pairing_unavailable" });
-  assert.equal(clearUnregisteredPairing(fixture.creds), false);
+  assert.equal(clearUnregisteredPairing(fixture.creds), true);
+  assert.equal(fixture.creds.pairingCode, undefined);
+  assert.deepEqual(fixture.creds.account, account);
+  assert.equal(fixture.creds.registered, true);
 });
 
 /** Convert upstream failures into safe errors and retire the affected socket. */
@@ -487,13 +491,14 @@ test("successful phone pairing survives the subsequent reconnect", async (t) => 
   fixture.sockets[0].ev.emit("connection.update", { qr: "fictional-qr-code" });
   await requestFreshCode(fixture);
   const socket = fixture.sockets[1];
-  fixture.creds.registered = true;
+  Object.assign(fixture.creds, { registered: true, account: { details: "fictional-signed-account" },
+    me: { id: `${PHONE}:7@s.whatsapp.net` } });
   socket.ev.emit("creds.update", fixture.creds);
   socket.ev.emit("connection.update", { isNewLogin: true });
   socket.ev.emit("connection.update", { connection: "close", lastDisconnect: { error: { statusCode: 515 } } });
   await fixture.client.connect();
   assert.equal(fixture.creds.registered, true);
-  assert.equal(fixture.creds.me.id, `${PHONE}@s.whatsapp.net`);
+  assert.equal(fixture.creds.me.id, `${PHONE}:7@s.whatsapp.net`);
   fixture.sockets[2].ev.emit("connection.update", { connection: "open" });
   await assert.rejects(fixture.client.requestPairingCode(PHONE), { code: "pairing_unavailable" });
 });

@@ -25,9 +25,13 @@ const normalizePairingPhone = (value) => {
 
 /** Remove a leftover phone code, and its provisional identity when linking never finished. */
 const clearUnregisteredPairing = (creds) => {
-  if (creds?.registered !== false || !creds.pairingCode) return false;
+  if (!creds?.pairingCode) return false;
   // Baileys stores the signed account at pair-success, including QR scans after a code request.
-  if (!creds.account) delete creds.me;
+  // Phone confirmation can set registered before that signed identity arrives.
+  if (!creds.account) {
+    delete creds.me;
+    creds.registered = false;
+  }
   delete creds.pairingCode;
   return true;
 };
