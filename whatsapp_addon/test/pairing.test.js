@@ -18,9 +18,9 @@ const CODE = "ABCD1234";
 
 /** Return a controllable promise for race and notification-order regressions. */
 const deferred = () => {
-  let resolve;
-  const promise = new Promise((done) => { resolve = done; });
-  return { promise, resolve };
+  let resolve, reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 };
 
 /** Flush queued socket events and notification requests without polling timers. */
@@ -344,6 +344,56 @@ test("disconnect waits for startup credential cleanup before completing", async 
   gate.resolve();
   await Promise.all([connecting, stopping]);
   assert.equal(stoppedBeforeSave, false);
+  assert.equal(stopped, true);
+  assert.equal(fixture.sockets.length, 0);
+});
+
+/** Drain archive loading before reset and never start the next cache after a stop. */
+test("disconnect drains archive initialization without starting poll cleanup", async (t) => {
+  const fixture = await clientFixture(t, { registered: true, me: { id: `${PHONE}:7@s.whatsapp.net` } }, { connect: false });
+  const gate = deferred();
+  const realStat = fs.stat.bind(fs), realRm = fs.rm.bind(fs);
+  let archiveStarted = false, pollRemovals = 0;
+  t.mock.method(fs, "stat", (file, ...args) => {
+    if (path.basename(file) === "chat-archive-cache.json") { archiveStarted = true; return gate.promise; }
+    return realStat(file, ...args);
+  });
+  t.mock.method(fs, "rm", (file, ...args) => {
+    if (path.basename(file) === "poll-cache.json.tmp") { pollRemovals += 1; return Promise.resolve(); }
+    return realRm(file, ...args);
+  });
+  const connecting = fixture.client.connect();
+  await waitFor(() => archiveStarted);
+  let stopped = false;
+  const stopping = fixture.client.disconnect().then(() => { stopped = true; });
+  await flush();
+  const stoppedBeforeLoad = stopped;
+  gate.reject(Object.assign(new Error("Synthetic missing archive"), { code: "ENOENT" }));
+  await Promise.all([connecting, stopping]);
+  assert.equal(stoppedBeforeLoad, false);
+  assert.equal(pollRemovals, 0);
+  assert.equal(fixture.sockets.length, 0);
+});
+
+/** Let an already-started poll-cache cleanup finish before a replacement owns its directory. */
+test("disconnect drains pending poll-cache cleanup before completing", async (t) => {
+  const fixture = await clientFixture(t, { registered: true, me: { id: `${PHONE}:7@s.whatsapp.net` } }, { connect: false });
+  const gate = deferred();
+  const realRm = fs.rm.bind(fs);
+  let cleanupStarted = false;
+  t.mock.method(fs, "rm", (file, ...args) => {
+    if (path.basename(file) === "poll-cache.json.tmp") { cleanupStarted = true; return gate.promise; }
+    return realRm(file, ...args);
+  });
+  const connecting = fixture.client.connect();
+  await waitFor(() => cleanupStarted);
+  let stopped = false;
+  const stopping = fixture.client.disconnect().then(() => { stopped = true; });
+  await flush();
+  const stoppedBeforeCleanup = stopped;
+  gate.resolve();
+  await Promise.all([connecting, stopping]);
+  assert.equal(stoppedBeforeCleanup, false);
   assert.equal(stopped, true);
   assert.equal(fixture.sockets.length, 0);
 });

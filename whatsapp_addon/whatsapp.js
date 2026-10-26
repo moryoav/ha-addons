@@ -261,6 +261,7 @@ class WhatsappClient extends EventEmitter {
   #pairingSession;
   #pairingHandshake;
   #credentialWrite = Promise.resolve();
+  #cacheLoad = Promise.resolve();
   #stops = 0;
 
   #status = {
@@ -389,8 +390,9 @@ class WhatsappClient extends EventEmitter {
     const retryCache = (this.#retryCache ||= new MessageRetryCache({
       codec: proto?.Message,
     }));
-    await this.#archiveStore.load(authResult.state.creds?.me?.id);
-    await this.#pollStore.load(authResult.state.creds?.me?.id);
+    const cacheLoad = this.#loadSessionCaches(authResult.state.creds?.me?.id, stops);
+    this.#cacheLoad = cacheLoad.catch(() => {});
+    await cacheLoad;
     // A stop during this attempt, such as a recovery pause, must not leave a live socket behind.
     if (stops !== this.#stops) return;
     const socket = (this.#conn = makeWASocket({
@@ -529,6 +531,13 @@ class WhatsappClient extends EventEmitter {
     });
   };
 
+  /** Finish active cache reads before reset, and skip subsequent loads after a stop. */
+  #loadSessionCaches = async (account, stops) => {
+    await this.#archiveStore.load(account);
+    if (stops !== this.#stops) return;
+    await this.#pollStore.load(account);
+  };
+
   #handleConnectFailure = (error) => {
     const safeError =
       error instanceof WhatsappUpstreamError
@@ -560,6 +569,7 @@ class WhatsappClient extends EventEmitter {
     if (this.#conn && typeof this.#conn.end === "function") {
       await this.#conn.end();
     }
+    await this.#cacheLoad;
     await this.#archiveStore.flush();
     await this.#pollStore.flush();
     await this.#credentialWrite;

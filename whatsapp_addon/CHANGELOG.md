@@ -7,6 +7,7 @@
 - Prevented stopped connection attempts from overwriting credentials after a session reset.
 - Bounded version lookups so a network stall cannot leave phone pairing stuck reconnecting.
 - Dismissed stale pairing notifications when startup is paused for recovery.
+- Drained cache initialization before stopped sessions can be reset.
 - Added per-account phone-number pairing with clear codes and mobile instructions
   in the app web UI, plus an option to return to QR pairing.
 - Cleared temporary codes when pairing ends and limited repeat code requests
