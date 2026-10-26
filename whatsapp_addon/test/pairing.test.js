@@ -348,6 +348,54 @@ test("disconnect waits for startup credential cleanup before completing", async 
   assert.equal(fixture.sockets.length, 0);
 });
 
+/** Ignore credential events from Baileys work that was still awaiting keys when stopped. */
+test("late Baileys key-share processing cannot save credentials after disconnect", async (t) => {
+  const fixture = await clientFixture(t, { registered: true, me: { id: `${PHONE}:7@s.whatsapp.net` } });
+  const { default: processMessage } = await import("@whiskeysockets/baileys/lib/Utils/process-message.js");
+  const socket = fixture.sockets[0];
+  const gate = deferred();
+  let blockKeys = false, keyWriteStarted = false;
+  const context = {
+    creds: fixture.creds,
+    ev: socket.ev,
+    keyStore: {
+      transaction: async (work) => work(),
+      set: async () => {
+        if (blockKeys) { keyWriteStarted = true; await gate.promise; }
+      },
+    },
+    options: {},
+  };
+  const message = {
+    key: { remoteJid: `${PHONE}@s.whatsapp.net`, fromMe: true, id: "fictional-key-share" },
+    messageTimestamp: 1,
+    message: { protocolMessage: {
+      type: fixture.baileys.proto.Message.ProtocolMessage.Type.APP_STATE_SYNC_KEY_SHARE,
+      appStateSyncKeyShare: { keys: [{
+        keyId: { keyId: Buffer.from("fictional-key-id") }, keyData: { keyData: Buffer.alloc(32, 1) },
+      }] },
+    } },
+  };
+  await processMessage(message, context);
+  await flush();
+  assert.equal(fixture.saves.length, 1);
+  blockKeys = true;
+  const processing = processMessage(message, context);
+  await waitFor(() => keyWriteStarted);
+  // Baileys ends its connection listeners while in-flight message work can still finish.
+  t.mock.method(socket, "end", async () => {
+    socket.ended = true;
+    socket.ev.emit("connection.update", { connection: "close" });
+    socket.ev.removeAllListeners("connection.update");
+  });
+  await fixture.client.disconnect();
+  const savesAtStop = fixture.saves.length;
+  gate.resolve();
+  await processing;
+  await flush();
+  assert.equal(fixture.saves.length, savesAtStop);
+});
+
 /** Drain archive loading before reset and never start the next cache after a stop. */
 test("disconnect drains archive initialization without starting poll cleanup", async (t) => {
   const fixture = await clientFixture(t, { registered: true, me: { id: `${PHONE}:7@s.whatsapp.net` } }, { connect: false });

@@ -12,6 +12,7 @@ All notable changes to this repository are documented here.
 - Bounded version lookups so a network stall cannot leave phone pairing stuck reconnecting.
 - Dismissed stale pairing notifications when startup is paused for recovery.
 - Drained cache initialization before stopped sessions can be reset.
+- Ignored late credential updates from sockets stopped before a session reset.
 - Added per-account phone-number pairing with clear codes and mobile instructions
   in the app web UI, plus an option to return to QR pairing.
 - Cleared temporary codes when pairing ends and limited repeat code requests

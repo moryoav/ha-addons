@@ -511,7 +511,7 @@ class WhatsappClient extends EventEmitter {
     // }
 
     this.#conn.ev.on("creds.update", (state) => {
-      if (this.#conn !== socket) return;
+      if (this.#conn !== socket || stops !== this.#stops) return;
       if (state?.me?.id && (!state.pairingCode || authResult.state.creds?.registered === true)) {
         if (this.#conn === socket) {
           this.#archiveStore.setOwner(state.me.id);
@@ -527,7 +527,7 @@ class WhatsappClient extends EventEmitter {
     });
 
     this.#conn.ev.on("connection.update", (event) => {
-      if (this.#conn === socket) this.#onConnectionUpdate(event);
+      if (this.#conn === socket && stops === this.#stops) this.#onConnectionUpdate(event);
     });
   };
 
