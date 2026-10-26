@@ -14,8 +14,9 @@ Follow the [installation guide](../README.md#installation) to install the
 add-on and integration.
 
 1. Start the add-on and select **Open Web UI** on its Home Assistant page.
-2. Scan the pairing QR code with WhatsApp on your phone. A QR code also appears
-   in a Home Assistant persistent notification.
+2. Choose the account and open **Connection**. Scan the pairing QR code with
+   WhatsApp on your phone. A QR code also appears in a Home Assistant persistent
+   notification.
 3. Add **WhatsApp** under **Settings > Devices & services**. Supervisor discovery
    supplies the local API address and automatically managed credential.
 4. Use the configured session name, `default` unless changed, as `clientId`
@@ -97,7 +98,60 @@ behavior has a configuration switch; old saved switch values are ignored.
 
 ## Web UI
 
-Open the add-on page and select Open Web UI. The Ingress UI shows each configured WhatsApp session, its connection state, and the current pairing QR code when a session is waiting for pairing.
+Open the add-on page and select **Open Web UI**. The shared account workspace
+uses Home Assistant Ingress and adapts to desktop and phone. Every account's
+connection state remains visible while you move between **Connection**,
+**Calls**, and **Recordings**. Existing links to the old `/voice/` page open
+the Calls view in this workspace.
+
+### Connection and pairing
+
+Select an account to see its connection status and available features. When
+it needs pairing, **Connection** shows the current QR code and instructions
+for **WhatsApp > Linked devices > Link a device** on your phone. Keep the page
+open while linking. The QR code changes as the WhatsApp runtime provides a new
+one and disappears once the account connects.
+
+**Link with code** is a reserved connection method marked **Coming later**.
+It is disabled because pairing-code connections are not supported yet. It
+does not request a code or replace the current QR pairing flow.
+
+Recovery controls appear when the runtime pauses accounts after repeated
+encryption failures. **Retry connection** reconnects with the saved sessions.
+**Reset and re-pair** deletes only the selected client's local session and
+requires typing its exact client ID. These are recovery controls, rather than
+a routine reconnect action for an otherwise connected account. See
+[Encryption recovery](#encryption-recovery) before resetting a session.
+
+### Calls
+
+Select the account configured under **Voice calls > Calling account**, then
+open **Calls**. Enter a phone number with its country code or a WhatsApp user
+ID. You can add an opening message for this call before selecting **Call**.
+The configured Home Assistant agent handles the conversation.
+
+Only the selected calling account gains voice controls, and only one direct
+audio call can run at a time. Other accounts keep their messaging behavior.
+The active-call bar identifies the calling account and keeps **Hang up**
+available when you change views, select another account, or scroll through
+recordings. Settings remain in the add-on's **Configuration** page.
+
+### Recordings
+
+Open **Recordings** under the calling account to browse completed recordings,
+search by date, play or seek audio, download WAV files, and check their expiry.
+Recording must be enabled in **Configuration** to save new calls. Existing
+recordings remain available until they expire, even when recording is off.
+
+The library contains the add-on's saved recordings, including files from a
+previous calling account if that selection has changed. Existing recording
+metadata contains the date, duration, size, and expiry, but no account or
+contact identity. The UI does not assign those older files to a caller or
+account. See the [voice call guide](https://moryoav.github.io/ha-addons/examples/voice-calls/#record-calls)
+for recording format, retention, storage, and privacy details.
+
+The workspace manages connections and calls. Sending messages and reacting to
+incoming messages continue through Home Assistant actions and automations.
 
 ## Decrypted incoming media
 

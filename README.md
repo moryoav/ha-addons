@@ -59,7 +59,7 @@ https://github.com/moryoav/ha-addons
 
 [![Open the WhatsApp add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
+Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also select **Open Web UI** on the add-on page, choose the account, and open **Connection** to see its current pairing QR code. Scan the code with the WhatsApp mobile app.
 
 ### 2. Install the integration
 
@@ -119,13 +119,23 @@ Supplemental delivery receipts for decrypted own-device LID messages are always
 enabled for every account. They do not mark chats as read. Detailed decryption
 tracing is disabled; neither behavior has a configuration switch.
 
-The add-on page includes an Open Web UI action through Home Assistant Ingress.
-The web UI shows each configured session, its connection state, and the current
-QR code when a session is waiting for pairing. If the add-on detects a sustained
-burst of libsignal decryption failures, it pauses all WhatsApp clients while
-keeping the add-on healthy. The web UI then offers Retry connection, which
-keeps the saved sessions, and Reset and re-pair for a selected client, which
-requires confirmation before deleting that client's local session.
+The add-on page includes an **Open Web UI** action through Home Assistant Ingress.
+One account workspace provides **Connection**, **Calls**, and **Recordings**,
+with each account's connection state visible as you move between them. The
+Connection view shows the current QR code while an account is pairing. **Link
+with code** is marked **Coming later** and is not available yet.
+
+Choose the configured calling account to start a call with a phone number or
+WhatsApp user ID, add an optional opening message, and browse completed
+recordings. The active account and **Hang up** control stay visible while you
+navigate. Messages continue through Home Assistant actions and automations.
+See the [Web UI guide](whatsapp_addon/DOCS.md#web-ui) for details.
+
+If the add-on detects a sustained burst of libsignal decryption failures, it
+pauses all WhatsApp clients while keeping the add-on healthy. The web UI then
+offers **Retry connection**, which keeps the saved sessions, and **Reset and
+re-pair** for a selected client. Reset requires typing that client's exact ID
+before deleting its local session.
 
 ### Integration
 

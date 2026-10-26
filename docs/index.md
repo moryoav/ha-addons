@@ -13,6 +13,12 @@ Install both parts before using the examples in this knowledge base.
 - [Install and configure the add-on and integration](https://github.com/moryoav/ha-addons#installation).
 - [Review add-on options and the web UI](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md).
 
+The app's account workspace keeps connection status visible beside
+**Connection**, **Calls**, and **Recordings**. Pair accounts with their QR code,
+manage the selected account's calls, or browse completed recordings without
+changing to a separate interface. Code pairing is reserved for a future
+feature and is currently disabled.
+
 The examples use fictional phone numbers and synthetic identifiers. Replace
 `clientId`, recipients, and entity IDs with the values from your installation.
 Each example lists any additional integration or custom helper it needs.

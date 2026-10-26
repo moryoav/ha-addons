@@ -153,7 +153,10 @@ test("the offline app starts its existing API and never loads Baileys or contact
   const token=(await fs.readFile(path.join(dir,".api-token"),"utf8")).trim();
   const headers={Authorization:`Bearer ${token}`,"Content-Type":"application/json"};
   let response=await request(api,"/voice/status");assert.equal(response.status,401);
-  response=await request(api,"/voice/status",{headers});assert.equal(response.status,200);assert.equal((await response.json()).live_mode,false);
+  response=await request(api,"/voice/status",{headers});assert.equal(response.status,200);
+  const voiceStatus=await response.json();
+  assert.equal(voiceStatus.live_mode,false);assert.equal(voiceStatus.client_id,null);
+  assert.equal(voiceStatus.configured,false);assert.equal(voiceStatus.state,"unconfigured");
   response=await request(api,"/voice/call",{method:"POST",headers,body:JSON.stringify({to:"222222222@lid"})});
   assert.equal(response.status,409);
   response=await request(api,"/health");assert.equal(response.status,200);assert.equal((await response.json()).status,"ok");
@@ -222,12 +225,44 @@ test("voice API applies existing bearer auth and does not expose private errors"
   assert.equal(response.status,503);assert.ok(!(await response.text()).includes("synthetic-private-value"));assert.equal(count,1);
 });
 
-test("voice ingress rejects direct network access and HTML escapes its base path",async()=>{
+test("voice ingress rejects direct network access and uses the shared renderer's safe base path",async()=>{
   const express=baseRequire("express");const app=express();
   app.use("/voice",createVoiceIngress({status:()=>({active:false})}));
   const response=await request(app,"/voice/status");assert.equal(response.status,403);
+  const legacy=await request(app,"/voice/",{redirect:"manual"});
+  assert.equal(legacy.status,403);assert.equal(legacy.headers.get("location"),null);
   const html=renderVoiceUi('/api/hassio_ingress/synthetic/\" onload=\"x');
-  assert.ok(html.includes("&quot;"));assert.ok(!html.includes(' onload="x'));
+  assert.ok(html.includes('<base href="./">'));assert.ok(!html.includes(' onload="x'));
+  assert.ok(html.includes("<title>WhatsApp Add-on</title>"));
+  assert.ok(!html.includes("<title>WhatsApp calls</title>"));
+});
+
+test("legacy voice navigation redirects to the shared workspace and keeps its ingress prefix",async()=>{
+  const express=baseRequire("express"),app=express();
+  app.use("/voice",createVoiceIngress({status:()=>({active:false})},{allowedIngressAddress:"127.0.0.1"}));
+  app.get("/",(_req,res)=>res.send("canonical-workspace"));
+  for(const route of ["/voice","/voice/"]){
+    const plain=await request(app,route,{redirect:"manual"});
+    assert.equal(plain.status,302);assert.equal(plain.headers.get("location"),"/?view=calls");
+    assert.equal(plain.headers.get("cache-control"),"no-store");
+    const prefixed=await request(app,route,{redirect:"manual",headers:{"X-Ingress-Path":"/api/hassio_ingress/synthetic"}});
+    assert.equal(prefixed.status,302);
+    assert.equal(prefixed.headers.get("location"),"/api/hassio_ingress/synthetic/?view=calls");
+  }
+  const canonical=await request(app,"/voice/");
+  assert.equal(canonical.status,200);assert.equal(await canonical.text(),"canonical-workspace");
+  const status=await request(app,"/voice/status");
+  assert.equal(status.status,200);assert.deepEqual(await status.json(),{active:false});
+});
+
+test("legacy voice redirects cannot use an external or ambiguous ingress destination",async()=>{
+  const express=baseRequire("express"),app=express();
+  app.use("/voice",createVoiceIngress({status:()=>({active:false})},{allowedIngressAddress:"127.0.0.1"}));
+  for(const prefix of ["https://example.invalid/","//example.invalid/","/\\example.invalid/","relative/path","/ingress?elsewhere","/ingress#fragment"]){
+    const response=await request(app,"/voice/",{redirect:"manual",headers:{"X-Ingress-Path":prefix}});
+    assert.equal(response.status,302);
+    assert.equal(response.headers.get("location"),"/?view=calls");
+  }
 });
 
 test("wire nodes retain binary bytes and fail before accepting malformed data",()=>{

@@ -64,7 +64,7 @@ Use the button above after adding the repository. It opens the `WhatsApp` add-on
 2. Review the add-on options.
 3. Start the add-on.
 
-In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also open the add-on web UI from the add-on page to view session status and the current pairing QR code. Scan the QR code with the WhatsApp mobile app.
+In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also select **Open Web UI** on the add-on page, choose the account, and open **Connection** to see its current pairing QR code. Scan the code with the WhatsApp mobile app.
 
 ### 3. Install the integration
 
@@ -152,15 +152,28 @@ for setup, automation examples, recording, and upgrading from 2.x.
 
 ## Web UI and pairing
 
-The add-on page includes an Open Web UI action through Home Assistant Ingress.
-The web UI shows each configured session, its connection state, and the current
-QR code when a session is waiting for pairing. If a sustained burst of
-libsignal decryption failures is detected, all WhatsApp clients are paused to
-protect the host while the add-on and Web UI remain available. Use Retry
-connection to keep the saved sessions, or use the confirmation-gated Reset and
-re-pair control for one client to delete its local session and display a new QR
-code. Remove the old add-on entry from WhatsApp Linked Devices before scanning
-the new code.
+Select **Open Web UI** on the add-on page to open the shared account workspace
+through Home Assistant Ingress. Account connection states stay visible beside
+the **Connection**, **Calls**, and **Recordings** views on desktop and phone.
+
+Choose an account and open **Connection** to see its current QR code while
+pairing. Codes update as WhatsApp provides them. **Link with code** is marked
+**Coming later** and cannot be used yet.
+
+The selected calling account has controls for calling a phone number or
+WhatsApp user ID, an optional opening message, and **Hang up**. Active-call
+controls stay visible as you change views, select another account, or scroll.
+The recording library supports date search, playback, downloads, and expiry
+details. It also contains older saved recordings if the calling account has
+changed; those files do not identify which account or contact was involved.
+Messages continue through Home Assistant actions and automations.
+
+If a sustained burst of libsignal decryption failures is detected, all WhatsApp
+clients are paused to protect the host while the add-on and Web UI remain
+available. Use **Retry connection** to keep the saved sessions, or **Reset and
+re-pair** for one client to delete its local session and display a new QR code.
+Reset requires typing that client's exact ID. Remove the old add-on entry from
+WhatsApp Linked Devices before scanning the new code.
 
 ## App and account status sensors
 
