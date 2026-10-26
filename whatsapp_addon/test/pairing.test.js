@@ -184,6 +184,34 @@ test("startup removes provisional identities left by an interrupted phone attemp
   assert.deepEqual(fixture.saves[0], { registered: false });
 });
 
+/** Keep a QR-linked identity when an earlier phone-code request left its code behind. */
+test("startup keeps a linked identity when a QR scan followed a phone-code request", async (t) => {
+  // QR pair-success stores the account and device identity but never sets registered.
+  const account = { details: "fictional-account" };
+  const me = { id: `${PHONE}:7@s.whatsapp.net` };
+  const fixture = await clientFixture(t, { registered: false, pairingCode: CODE, account, me });
+  assert.deepEqual(fixture.creds, { registered: false, account, me });
+  assert.deepEqual(fixture.saves[0], { registered: false, account, me });
+});
+
+/** Preserve a QR scan that completes on a socket where a phone code was requested. */
+test("a QR scan after a phone-code request survives the restart-required reconnect", async (t) => {
+  const fixture = await clientFixture(t);
+  const socket = fixture.sockets[0];
+  socket.ev.emit("connection.update", { qr: "fictional-qr-code" });
+  await fixture.client.requestPairingCode(PHONE);
+  // Baileys merges pair-success into the same credentials before asking for a restart.
+  const linked = { account: { details: "fictional-account" }, me: { id: `${PHONE}:7@s.whatsapp.net` } };
+  Object.assign(fixture.creds, linked);
+  socket.ev.emit("creds.update", linked);
+  socket.ev.emit("connection.update", { isNewLogin: true });
+  socket.ev.emit("connection.update", { connection: "close", lastDisconnect: { error: { statusCode: 515 } } });
+  await fixture.client.connect();
+  assert.equal(fixture.creds.me.id, `${PHONE}:7@s.whatsapp.net`);
+  assert.equal(fixture.creds.pairingCode, undefined);
+  assert.equal(fixture.saves.at(-1).me.id, `${PHONE}:7@s.whatsapp.net`);
+});
+
 /** Preserve successful phone linking across the restart-required socket replacement. */
 test("successful phone pairing survives the subsequent reconnect", async (t) => {
   const fixture = await clientFixture(t);

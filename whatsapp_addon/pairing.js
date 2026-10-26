@@ -22,10 +22,11 @@ const normalizePairingPhone = (value) => {
   throw new PairingActionError(400, "invalid_phone_number", "Enter your WhatsApp phone number including its country code.");
 };
 
-/** Remove only the provisional identity of an unfinished phone-code attempt. */
+/** Remove a leftover phone code, and its provisional identity when linking never finished. */
 const clearUnregisteredPairing = (creds) => {
   if (creds?.registered !== false || !creds.pairingCode) return false;
-  delete creds.me;
+  // Baileys stores the signed account at pair-success, including QR scans after a code request.
+  if (!creds.account) delete creds.me;
   delete creds.pairingCode;
   return true;
 };
