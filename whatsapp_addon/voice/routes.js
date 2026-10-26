@@ -89,8 +89,10 @@ body{font:16px system-ui;max-width:760px;margin:40px auto;padding:0 20px;backgro
 section{padding:24px;border:1px solid #456;border-radius:12px;margin:20px 0}button,input{font:inherit;padding:12px;border-radius:6px}
 input{width:90%;margin:12px 0}button{cursor:pointer;margin:8px 8px 8px 0}a{color:#8edbc4}#error{color:#ffb5ab}
 audio{display:block;width:100%;margin:12px 0}article{padding:12px 0;border-top:1px solid #456}article p{margin:8px 0}.muted{color:#b8cbd4}
+#pairing{border-color:#8edbc4}
 </style></head><body><h1>WhatsApp calls</h1>
 <p><a href="../">Messaging and pairing</a></p>
+<section id="pairing" hidden><h2>Pairing required</h2><p id="pairing-accounts"></p><p><a href="../">Open pairing page</a></p></section>
 <section><p id="status">Loading connection state...</p><p id="mode"></p>
 <label for="target">WhatsApp user JID</label><input id="target" placeholder="Recipient JID" autocomplete="off">
 <button id="call" disabled>Call</button><button id="hangup" disabled>Hang up</button><p id="error" role="status"></p></section>
@@ -100,7 +102,13 @@ audio{display:block;width:100%;margin:12px 0}article{padding:12px 0;border-top:1
 <button id="refresh-recordings">Refresh recordings</button><p id="recordings-empty">No completed recordings.</p><div id="recordings"></div></section>
 <script>
 const statusLine=document.getElementById('status'), mode=document.getElementById('mode'), error=document.getElementById('error');
+const showCalls=new URLSearchParams(location.search).get('view')==='calls';
 let busy=false;
+// Home Assistant opens Ingress here, so send pairing links on to the pairing page.
+async function refreshPairing(redirect){try{const r=await fetch('../api/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
+const waiting=(s.clients||[]).filter(client=>client.state==='pairing').map(client=>client.id);
+if(redirect&&waiting.length&&!showCalls){location.replace('../');return;}
+document.getElementById('pairing').hidden=!waiting.length;document.getElementById('pairing-accounts').textContent=waiting.length?'Waiting to be paired: '+waiting.join(', ')+'.':'';}catch{}}
 const recordingItems=new Map();
 async function refreshRecordings(){try{const r=await fetch('recordings',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();
 document.getElementById('recording-mode').textContent=s.last_error||((s.enabled?'Recording is enabled for new calls.':'Recording is off.')+' Completed recordings are kept for '+s.retention_days+' days.');
@@ -119,7 +127,7 @@ document.getElementById('call').disabled=busy||!s.live_mode||!s.configured||!s.c
 async function action(name,body){busy=true;error.textContent='';await refresh();try{const r=await fetch(name,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error();}catch{error.textContent='The request could not complete. Check app settings and connection.';}finally{busy=false;await refresh();}}
 document.getElementById('call').onclick=()=>action('call',{to:document.getElementById('target').value.trim()});
 document.getElementById('hangup').onclick=()=>action('hangup',{});document.getElementById('refresh-recordings').onclick=refreshRecordings;
-refresh();refreshRecordings();setInterval(refresh,3000);setInterval(refreshRecordings,5000);
+refreshPairing(true);refresh();refreshRecordings();setInterval(refresh,3000);setInterval(refreshRecordings,5000);setInterval(()=>refreshPairing(false),5000);
 </script></body></html>`;
 }
 

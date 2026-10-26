@@ -127,6 +127,8 @@ enabled for every account. They do not mark chats as read. Detailed decryption
 tracing is disabled; neither behavior has a configuration switch.
 
 The add-on page includes an Open Web UI action through Home Assistant Ingress.
+It opens on the pairing page while an account is waiting for pairing, and on
+WhatsApp calls otherwise; each page links to the other.
 The web UI shows each configured session, its connection state, and the current
 QR code when a session is waiting for pairing. Each unpaired account also offers
 phone-number pairing, with a clearly displayed eight-character code and a

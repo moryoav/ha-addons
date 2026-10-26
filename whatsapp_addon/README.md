@@ -167,6 +167,8 @@ when the connection changes, and the notification is dismissed after linking.
 Treat pairing codes and QR images as private account credentials.
 
 The add-on page includes an Open Web UI action through Home Assistant Ingress.
+It opens on the pairing page while an account is waiting for pairing, and on
+WhatsApp calls otherwise; each page links to the other.
 The web UI shows each configured session, its connection state, and the current
 QR code when a session is waiting for pairing. If a sustained burst of
 libsignal decryption failures is detected, all WhatsApp clients are paused to

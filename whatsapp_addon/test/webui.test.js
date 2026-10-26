@@ -134,6 +134,8 @@ const testRenderWebUi = () => {
   assert.ok(html.includes('<base href="/api/hassio_ingress/token/">'));
   assert.ok(html.includes('src="assets/logo.png"'));
   assert.ok(html.includes('fetch("api/status"'));
+  // Opting into calls stops the Ingress landing page from returning to pairing.
+  assert.ok(html.includes('href="voice/?view=calls"'));
   assert.ok(html.includes("Retry connection"));
   assert.ok(html.includes("and re-pair"));
 };

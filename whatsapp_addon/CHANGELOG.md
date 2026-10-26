@@ -1,6 +1,8 @@
 ## 3.2.0
 
 - Added an Open pairing page link below the initial QR notification.
+- Opened the app web UI on its pairing page while an account is waiting for
+  pairing, with links between the pairing and WhatsApp calls pages.
 - Added per-account phone-number pairing with clear codes and mobile instructions
   in the app web UI, plus an option to return to QR pairing.
 - Cleared temporary codes when pairing ends and limited repeat code requests

@@ -220,10 +220,23 @@ const renderWebUi = ({ ingressPath } = {}) => {
 
     .topbar {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
       margin-bottom: 24px;
+    }
+
+    .topbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 16px;
+    }
+
+    .nav-link {
+      color: var(--blue);
+      font-weight: 600;
     }
 
     .brand {
@@ -474,7 +487,10 @@ const renderWebUi = ({ ingressPath } = {}) => {
           <p class="subtle">Session status and pairing</p>
         </div>
       </div>
-      <button type="button" id="refresh">Refresh</button>
+      <div class="topbar-actions">
+        <a class="nav-link" href="voice/?view=calls">WhatsApp calls</a>
+        <button type="button" id="refresh">Refresh</button>
+      </div>
     </header>
 
     <section class="summary" aria-label="Bridge summary">

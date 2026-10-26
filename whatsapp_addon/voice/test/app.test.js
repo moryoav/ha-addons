@@ -230,6 +230,30 @@ test("voice ingress rejects direct network access and HTML escapes its base path
   assert.ok(html.includes("&quot;"));assert.ok(!html.includes(' onload="x'));
 });
 
+test("voice ingress sends pairing visits to the pairing page unless calls were chosen",async()=>{
+  const vm=require("node:vm");
+  const html=renderVoiceUi("/api/hassio_ingress/synthetic");
+  const script=html.slice(html.indexOf("<script>")+8,html.indexOf("</script>"));
+  const run=async(search,clients)=>{
+    const elements=new Map(),replaced=[];
+    const element=()=>({hidden:false,textContent:"",disabled:false,prepend(){},append(){},remove(){}});
+    const responses={"../api/status":{clients},recordings:{enabled:false,retention_days:30,recordings:[]},status:{state:"idle"}};
+    vm.runInNewContext(script,{URLSearchParams,setInterval:()=>0,location:{search,replace:url=>replaced.push(url)},
+      document:{getElementById:id=>elements.get(id)||elements.set(id,element()).get(id),createElement:element},
+      fetch:async url=>({ok:true,json:async()=>responses[url]})});
+    await new Promise(resolve=>setImmediate(resolve));
+    return {replaced,banner:elements.get("pairing"),accounts:elements.get("pairing-accounts")};
+  };
+  const pairing=[{id:"default",state:"pairing"},{id:"secondary",state:"connected"}];
+  assert.deepEqual((await run("",pairing)).replaced,["../"]);
+  const calls=await run("?view=calls",pairing);
+  assert.deepEqual(calls.replaced,[]);assert.equal(calls.banner.hidden,false);
+  assert.equal(calls.accounts.textContent,"Waiting to be paired: default.");
+  const paired=await run("",[{id:"default",state:"connected"}]);
+  assert.deepEqual(paired.replaced,[]);assert.equal(paired.banner.hidden,true);
+  assert.ok(html.includes('<a href="../">Open pairing page</a>'));
+});
+
 test("wire nodes retain binary bytes and fail before accepting malformed data",()=>{
   const node={tag:"call",attrs:{from:"222222222@lid"},content:[{tag:"enc",attrs:{v:"2"},content:Buffer.from([0,1,255])}]};
   assert.deepEqual(decodeNode(encodeNode(node)),node);

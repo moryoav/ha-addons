@@ -100,8 +100,11 @@ behavior has a configuration switch; old saved switch values are ignored.
 
 Follow **Open pairing page** in the pairing notification, or select **Open Web
 UI** on the add-on page. Home Assistant handles access through Ingress using
-your current Home Assistant address. The UI shows each configured account,
-its connection state, and the current pairing QR code.
+your current Home Assistant address. While an account is waiting for pairing,
+the app opens on its pairing page. Otherwise it opens on **WhatsApp calls**,
+which links back through **Messaging and pairing**; the pairing page links to
+**WhatsApp calls**. The pairing page shows each configured account, its
+connection state, and the current pairing QR code.
 
 To pair using your phone number:
 
