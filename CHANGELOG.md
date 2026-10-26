@@ -4,14 +4,6 @@ All notable changes to this repository are documented here.
 
 ## 3.1.1
 
-### Fixed
-
-- Fixed incoming message delivery for persistent inbox accounts while Home Assistant
-  is running and after restarts.
-- Restored replay of pending messages saved by 3.1.0 without automation changes.
-
-## 3.1.0
-
 ### Persistent incoming message inbox
 
 - Added an opt-in app inbox that retries incoming messages after Home Assistant
@@ -20,6 +12,12 @@ All notable changes to this repository are documented here.
   privately across app restarts. Delivery waits until the integration is ready.
 - Kept normal delivery immediate, restricted the receiver to administrators, reused
   downloaded media on retries, and recovered storage automatically with private archives.
+
+### Fixed
+
+- Fixed incoming message delivery for persistent inbox accounts while Home Assistant
+  is running and after restarts.
+- Restored replay of pending messages saved by 3.1.0 without automation changes.
 
 ## 3.0.0
 
