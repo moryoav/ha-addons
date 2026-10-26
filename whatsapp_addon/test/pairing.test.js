@@ -11,6 +11,7 @@ const { WhatsappClient } = require("../whatsapp");
 const { createAddonRuntime } = require("../runtime");
 const { createWebUiApp, createStatusSnapshot } = require("../webui");
 const { createApiApp } = require("../api");
+const { QUERY_TIMEOUT_MS } = require("../timeout");
 
 const PHONE = "12025550123";
 const CODE = "ABCD1234";
@@ -217,6 +218,38 @@ test("a phone request fails cleanly when its fresh socket never becomes ready", 
   fixture.sockets[1].ev.emit("connection.update", { qr: "late-fictional-qr" });
   assert.deepEqual(qrEvents, ["late-fictional-qr"]);
   assert.deepEqual(fixture.sockets[1].requests, []);
+});
+
+/** Fall back to Baileys' bundled version before a fresh phone handshake times out. */
+test("a stalled version lookup cannot strand a fresh phone pairing connection", async (t) => {
+  const fixture = await clientFixture(t);
+  const axios = (await import("axios")).default;
+  const { fetchLatestBaileysVersion } = await import("@whiskeysockets/baileys");
+  const requests = [];
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  t.mock.method(axios, "get", (url, options) => {
+    requests.push({ url, options });
+    return new Promise((resolve, reject) => {
+      if (options.timeout > 0) setTimeout(() => reject(new Error("Synthetic metadata timeout")), options.timeout);
+    });
+  });
+  fixture.baileys.fetchLatestBaileysVersion = fetchLatestBaileysVersion;
+  fixture.sockets[0].ev.emit("connection.update", { qr: "first-fictional-qr" });
+  const request = fixture.client.requestPairingCode(PHONE);
+  const settled = request.then((code) => ({ code }), (error) => ({ error }));
+  try {
+    await waitFor(() => requests.length === 1);
+    assert.equal(requests[0].options.timeout, QUERY_TIMEOUT_MS);
+    assert.ok(QUERY_TIMEOUT_MS < 15_000);
+    t.mock.timers.tick(QUERY_TIMEOUT_MS);
+    await waitFor(() => fixture.sockets.length === 2);
+    fixture.sockets[1].ev.emit("connection.update", { qr: "fallback-version-fictional-qr" });
+    assert.equal((await settled).code, "ABCD-1234");
+    assert.equal(fixture.sockets[1].ended, false);
+  } finally {
+    t.mock.timers.tick(15_000);
+    await settled;
+  }
 });
 
 /** Verify switching back to QR uses fresh unregistered credentials and ignores old sockets. */

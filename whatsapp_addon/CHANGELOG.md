@@ -5,6 +5,7 @@
   pairing, with links between the pairing and WhatsApp calls pages.
 - Kept pairing links working after an initial reconnect gap or temporary status failure.
 - Prevented stopped connection attempts from overwriting credentials after a session reset.
+- Bounded version lookups so a network stall cannot leave phone pairing stuck reconnecting.
 - Added per-account phone-number pairing with clear codes and mobile instructions
   in the app web UI, plus an option to return to QR pairing.
 - Cleared temporary codes when pairing ends and limited repeat code requests

@@ -355,7 +355,7 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
 
-    const versionResult = await fetchLatestBaileysVersion();
+    const versionResult = await fetchLatestBaileysVersion({ timeout: QUERY_TIMEOUT_MS });
     if (stops !== this.#stops) return;
     if (
       !versionResult ||
