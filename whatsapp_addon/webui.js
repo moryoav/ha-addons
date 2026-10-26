@@ -9,6 +9,7 @@ const { RecoveryActionError } = require("./recovery");
 const INGRESS_PORT = 8099;
 const INGRESS_PROXY_IP = "172.30.32.2";
 
+/** Escape the ingress base before inserting it into the HTML attribute. */
 const escapeHtmlAttribute = (value) =>
   String(value).replace(/[&<>"']/g, (char) => {
     const replacements = {
@@ -21,8 +22,10 @@ const escapeHtmlAttribute = (value) =>
     return replacements[char];
   });
 
+/** Collapse accidental leading slashes before matching ingress routes. */
 const normalizeRequestUrl = (url) => (url || "/").replace(/^\/{2,}/, "/");
 
+/** Accept only rooted local ingress prefixes; reject URL schemes and ambiguous separators. */
 const normalizeBaseHref = (ingressPath) => {
   if (!ingressPath) return "./";
 
@@ -32,20 +35,24 @@ const normalizeBaseHref = (ingressPath) => {
   return `${path.replace(/\/+$/, "")}/`;
 };
 
+/** Normalize IPv4-mapped and bracketed peer addresses for the ingress comparison. */
 const normalizeRemoteAddress = (address) =>
   (address || "").replace(/^::ffff:/, "").replace(/^\[|\]$/g, "");
 
+/** Compare the socket peer to the configured Supervisor ingress proxy address. */
 const isIngressProxyAddress = (
   address,
   allowedAddress = INGRESS_PROXY_IP
 ) => normalizeRemoteAddress(address) === allowedAddress;
 
+/** Check the actual peer address without trusting forwarded request headers. */
 const isIngressProxyRequest = (req, allowedAddress = INGRESS_PROXY_IP) =>
   isIngressProxyAddress(
     req?.socket?.remoteAddress || req?.connection?.remoteAddress || req?.ip,
     allowedAddress
   );
 
+/** Reject direct network requests before serving workspace data, media controls, or assets. */
 const createIngressGuard =
   (allowedAddress = INGRESS_PROXY_IP) =>
   (req, res, next) => {
@@ -100,6 +107,7 @@ const createStatusSnapshot = ({ clients, clientStates, recovery }) => {
   };
 };
 
+/** Read the Supervisor-provided ingress prefix for subsequent validation and rendering. */
 const getIngressPath = (req) =>
   req?.get?.("X-Ingress-Path") || req?.get?.("x-ingress-path") || "";
 
@@ -111,6 +119,7 @@ const renderWebUi = ({ ingressPath, initialView = "connection" } = {}) => {
     .replace("{{INITIAL_VIEW}}", view);
 };
 
+/** Serve the shared workspace, status, and guarded recovery actions through ingress. */
 const createWebUiApp = ({
   clients,
   clientStates,

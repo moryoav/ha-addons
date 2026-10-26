@@ -6,6 +6,7 @@ const { createApiAuth } = baseRequire("./api");
 const { createIngressGuard, normalizeBaseHref, renderWebUi } = baseRequire("./webui");
 const { userJid } = require("./options");
 
+/** Validate a single byte range for seekable WAV responses, returning null for invalid input. */
 function recordingRange(header, size) {
   if (!header) return { start:0, end:size - 1, partial:false };
   const match = /^bytes=(\d*)-(\d*)$/.exec(header);
@@ -17,6 +18,7 @@ function recordingRange(header, size) {
   return { start, end, partial:true };
 }
 
+/** Build voice routes for wrappers that enforce API authentication or the ingress guard. */
 function voiceRoutes(controller) {
   const router = express.Router();
   router.use(express.json({ limit:"4kb", strict:true }));
@@ -72,6 +74,7 @@ function voiceRoutes(controller) {
   return router;
 }
 
+/** Protect controller actions and recordings with the internal API credential. */
 function createVoiceApi(controller, sharedSecret) {
   const router = express.Router();
   router.use(createApiAuth(sharedSecret));
@@ -100,6 +103,7 @@ function voiceWorkspaceLocation(req) {
   return `${local ? base : "/"}?view=calls`;
 }
 
+/** Guard voice endpoints and redirect legacy page navigation to the shared Calls view. */
 function createVoiceIngress(controller, { allowedIngressAddress } = {}) {
   const router = express.Router();
   router.use(createIngressGuard(allowedIngressAddress));

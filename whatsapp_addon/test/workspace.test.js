@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const { normalizeRecipient, recordingMatches, recordingUrl, selectAccount, voiceAvailability } =
+const { normalizeRecipient, recordingMatches, recordingUrl, selectAccount, voiceAvailability, request } =
   require("../webui/workspace");
 
 // Generated test targets are synthetic, not saved account details.
@@ -107,6 +107,97 @@ test("voice availability combines account, socket, recovery, and stale status", 
       item.clientId || "calling", item.stale || false), item.expected, item.name);
   }
 });
+
+/** Observe request deadlines without waiting or leaving real timers running. */
+function mockRequest(t, fetchImpl) {
+  const scheduled = [], cleared = [];
+  t.mock.method(globalThis, "setTimeout", (callback, milliseconds) => {
+    const timer = { callback, milliseconds };
+    scheduled.push(timer);
+    return timer;
+  });
+  t.mock.method(globalThis, "clearTimeout", (timer) => { cleared.push(timer); });
+  const fetchMock = t.mock.method(globalThis, "fetch", fetchImpl);
+  return { scheduled, cleared, fetchMock };
+}
+
+for (const action of [false, true]) {
+  test(`request ${action ? "actions keep their longer POST budget" : "polls use the short GET budget"}`, async (t) => {
+    const payload = { status: "synthetic-result" };
+    const body = action ? { clientId: "calling" } : undefined;
+    const endpoint = action ? "voice/hangup" : "voice/status";
+    const mocks = mockRequest(t, async () => ({ ok: true, json: async () => payload }));
+    assert.equal(await request(endpoint, body), payload);
+    assert.equal(mocks.fetchMock.mock.callCount(), 1);
+    const [url, options] = mocks.fetchMock.mock.calls[0].arguments;
+    assert.equal(url, endpoint);
+    assert.equal(options.cache, "no-store");
+    assert.equal(options.credentials, "same-origin");
+    assert.ok(options.signal instanceof AbortSignal);
+    assert.equal(options.signal.aborted, false);
+    assert.equal(options.method || "GET", action ? "POST" : "GET");
+    assert.deepEqual(options.headers, action ? { "Content-Type": "application/json" } : undefined);
+    assert.equal(options.body, action ? JSON.stringify(body) : undefined);
+    assert.equal(mocks.scheduled.length, 1);
+    assert.equal(mocks.scheduled[0].milliseconds, action ? 90000 : 8000);
+    assert.deepEqual(mocks.cleared, mocks.scheduled);
+  });
+
+  test(`request ${action ? "action timeouts warn before retry" : "poll timeouts explain connection recovery"}`, async (t) => {
+    let signal;
+    const mocks = mockRequest(t, (_endpoint, options) => {
+      signal = options.signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          const error = new Error("Synthetic abort");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true });
+      });
+    });
+    const pending = request(action ? "voice/hangup" : "voice/status",
+      action ? { clientId: "calling" } : undefined);
+    assert.equal(signal.aborted, false);
+    assert.equal(mocks.scheduled[0].milliseconds, action ? 90000 : 8000);
+    mocks.scheduled[0].callback();
+    assert.equal(signal.aborted, true);
+    await assert.rejects(pending, action
+      ? /Check the current call or connection status before trying again; the action may still be running/
+      : /status request timed out.*Refresh to check the current connection/);
+    assert.equal(mocks.fetchMock.mock.callCount(), 1, "Timeouts must never retry an uncertain request");
+    assert.deepEqual(mocks.cleared, mocks.scheduled);
+  });
+}
+
+test("request preserves network failures and clears its deadline without retry", async (t) => {
+  const failure = new TypeError("Synthetic network failure");
+  const mocks = mockRequest(t, async () => { throw failure; });
+  await assert.rejects(request("voice/hangup", { clientId: "calling" }), (error) => error === failure);
+  assert.equal(mocks.fetchMock.mock.callCount(), 1);
+  assert.equal(mocks.scheduled.length, 1);
+  assert.deepEqual(mocks.cleared, mocks.scheduled);
+});
+
+test("request preserves JSON parsing failures and clears its deadline", async (t) => {
+  const failure = new SyntaxError("Synthetic invalid JSON");
+  const mocks = mockRequest(t, async () => ({ ok: true, json: async () => { throw failure; } }));
+  await assert.rejects(request("voice/status"), (error) => error === failure);
+  assert.equal(mocks.fetchMock.mock.callCount(), 1);
+  assert.equal(mocks.scheduled.length, 1);
+  assert.deepEqual(mocks.cleared, mocks.scheduled);
+});
+
+for (const message of ["Synthetic action failure", null]) {
+  test(`request ${message ? "keeps server error messages" : "provides a safe fallback for HTTP failures"}`, async (t) => {
+    const mocks = mockRequest(t, async () => ({ ok: false,
+      json: async () => message ? { error: { message } } : {} }));
+    await assert.rejects(request("voice/hangup", { clientId: "calling" }),
+      (error) => error.message === (message || "The request could not complete."));
+    assert.equal(mocks.fetchMock.mock.callCount(), 1);
+    assert.equal(mocks.scheduled.length, 1);
+    assert.deepEqual(mocks.cleared, mocks.scheduled);
+  });
+}
 
 test("Docker includes the workspace templates and assets", () => {
   const addonRoot = path.resolve(__dirname, "..");

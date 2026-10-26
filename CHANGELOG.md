@@ -4,6 +4,10 @@ All notable changes to this repository are documented here.
 
 ## 3.2.0
 
+- Fixed slow call actions reporting premature timeouts, made failed account resets
+  retryable without editing the confirmation, and associated recipient help and
+  validation errors with the input for screen readers.
+
 ### Unified account workspace
 
 - Replaced separate pairing and voice pages with one responsive account

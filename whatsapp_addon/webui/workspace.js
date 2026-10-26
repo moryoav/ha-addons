@@ -1,5 +1,6 @@
 "use strict";
 
+/** Initialize the browser workspace while keeping its pure helpers usable in Node tests. */
 (function workspace() {
   const USER_JID = /^[1-9]\d{4,30}(?::\d{1,5})?@(lid|s\.whatsapp\.net)$/;
   const RECORDING_FILE = /^\d{8}T\d{6}Z-[a-f0-9]{32}\.wav$/;
@@ -48,11 +49,30 @@
     return { ready: true, label: voice.active ? "Call in progress" : "Ready for calls" };
   }
 
-  if (typeof module !== "undefined" && module.exports) module.exports = { normalizeRecipient, recordingMatches, recordingUrl, selectAccount, voiceAvailability };
+  /** Bound polls to eight seconds and allow actions time for staged worker startup or shutdown. */
+  async function request(endpoint, body) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), body === undefined ? 8000 : 90000);
+    try {
+      const response = await fetch(endpoint, { cache: "no-store", credentials: "same-origin", signal: controller.signal,
+        ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(typeof payload?.error?.message === "string" ? payload.error.message : "The request could not complete.");
+      return payload;
+    } catch (error) {
+      if (error?.name === "AbortError") throw new Error(body === undefined
+        ? "The status request timed out. Refresh to check the current connection."
+        : "The request timed out. Check the current call or connection status before trying again; the action may still be running.");
+      throw error;
+    } finally { clearTimeout(timeout); }
+  }
+
+  if (typeof module !== "undefined" && module.exports) module.exports = { normalizeRecipient, recordingMatches, recordingUrl, selectAccount, voiceAvailability, request };
   if (typeof document === "undefined") return;
 
   const root = document.getElementById("workspace");
   if (!root) return;
+  /** Resolve the fixed workspace controls without interpreting account values as selectors. */
   const $ = id => document.getElementById(id);
   const labels = { connected: "Connected", connecting: "Connecting", pairing: "Needs pairing", disconnected: "Disconnected", logged_out: "Logged out", reconnecting: "Reconnecting", restarting: "Restarting", recovery_paused: "Paused for recovery" };
   const viewNames = ["connection", "calls", "recordings"];
@@ -82,6 +102,7 @@
     qr: '<path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h3v3h-3zM21 15v6h-6M12 3v3m0 6v3m-9-3h3m6 9v-3m6-6h3"/>',
     keyboard: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h1m3 0h1m3 0h1m3 0h1M6 13h1m3 0h1m3 0h1m3 0h1M7 16h10"/>',
   };
+  /** Create a decorative icon from the local trusted path set, never from server markup. */
   function icon(name) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     for (const [key, value] of Object.entries({ viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", class: "wa-icon" })) svg.setAttribute(key, value);
@@ -89,31 +110,28 @@
     return svg;
   }
   root.querySelectorAll("[data-icon]").forEach(node => node.replaceChildren(icon(node.dataset.icon)));
+  /** Write status copy as text so account and server values cannot inject markup. */
   function text(id, value) { $(id).textContent = value ?? ""; }
+  /** Toggle a region without replacing its controls or native media elements. */
   function show(id, visible) { $(id).hidden = !visible; }
+  /** Create workspace markup with optional plain-text content rather than interpolated HTML. */
   function element(tag, className, value) { const node = document.createElement(tag); if (className) node.className = className; if (value !== undefined) node.textContent = value; return node; }
+  /** Localize valid timestamps and use a neutral fallback for missing or invalid dates. */
   function dateLabel(value) { const date = new Date(value); return value && Number.isFinite(date.getTime()) ? date.toLocaleString() : "-"; }
+  /** Format recording seconds as non-negative minutes and two-digit seconds. */
   function duration(value) { const seconds = Math.max(0, Math.round(Number(value) || 0)); return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0"); }
+  /** Format recording bytes in MiB with a zero fallback for absent numeric metadata. */
   function sizeLabel(value) { return (Math.max(0, Number(value) || 0) / 1048576).toFixed(1) + " MiB"; }
+  /** Find the selected account in the latest retained status snapshot. */
   function selectedClient() { return state.status?.clients?.find(client => client.id === state.selected); }
+  /** Match the selection to the voice owner independently of current connection readiness. */
   function isCallingAccount() { return !!state.voice?.client_id && state.voice.client_id === state.selected; }
+  /** Publish action feedback through the shared workspace status region. */
   function notify(message) { text("feedback", message); show("feedback", true); }
+  /** Describe recording mode and retention using library status before the voice fallback. */
   function recordingMode() {
     const recording = state.recordingSettings || state.voice?.recording;
     return recording ? (recording.enabled ? "On" : "Off") + " \u00b7 Kept for " + recording.retention_days + " days" : "Unavailable";
-  }
-
-  /** Bound each poll so a disconnected ingress cannot leave controls waiting indefinitely. */
-  async function request(endpoint, body) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    try {
-      const response = await fetch(endpoint, { cache: "no-store", credentials: "same-origin", signal: controller.signal,
-        ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(typeof payload?.error?.message === "string" ? payload.error.message : "The request could not complete.");
-      return payload;
-    } finally { clearTimeout(timeout); }
   }
 
   /** Update account buttons in place so periodic status changes do not steal keyboard focus. */
@@ -143,6 +161,7 @@
     show("accounts-empty", !!state.status && clients.length === 0);
   }
 
+  /** Reconcile connection, pairing, and recovery details while removing stale QR data. */
   function renderConnection() {
     const client = selectedClient(), recovery = state.status?.recovery;
     const connected = client?.state === "connected";
@@ -169,6 +188,7 @@
     $("reset-account").disabled = state.busy || !!recovery?.operationPending;
   }
 
+  /** Keep the call owner actionable globally and gate selected-account controls by readiness. */
   function renderCalling() {
     const voice = state.voice, owner = voice?.client_id;
     const own = isCallingAccount();
@@ -196,6 +216,7 @@
     show("recent-recordings", own);
   }
 
+  /** Reconcile snapshots and task visibility without recreating inputs or native players. */
   function render() {
     const clients = state.status?.clients || [];
     state.selected = selectAccount(clients, state.selected, state.voice?.client_id);
@@ -216,9 +237,12 @@
     viewNames.forEach(view => show(view + "-panel", view === state.view));
     root.querySelectorAll(".wa-tabs [data-view]").forEach(button => { if (button.dataset.view === state.view) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current"); });
     renderRecordings();
+    if ($("reset-dialog").open) updateResetConfirmation();
   }
 
+  /** Change account context and pause recording audio from the previous selection. */
   function changeAccount(id) { if (state.selected !== id) pauseAudio(); state.selected = id; render(); }
+  /** Select a known task, update its local URL, and refresh the library when entering it. */
   function changeView(view) {
     if (!viewNames.includes(view)) return;
     if (view !== "recordings") pauseAudio();
@@ -247,12 +271,15 @@
     audio.addEventListener("error", () => { if (state.playing === recording.filename) state.playing = null; notify("This recording is unavailable or has expired. Refresh the recording list."); renderRecordings(); });
     return { article, play, title, detail, length, size, download, player, audio, expiry };
   }
+  /** Pause cached players without discarding their native playback and seeking state. */
   function pauseAudio() { for (const item of recordingNodes.values()) item.audio.pause(); }
+  /** Expand a cached player and release the active-filter exemption if playback fails. */
   function playRecording(filename) {
     const item = recordingNodes.get(filename); if (!item) return;
     item.player.hidden = false; state.playing = filename;
     void item.audio.play().catch(() => { if (state.playing === filename) state.playing = null; notify("The recording could not play. Try its download link or refresh the list."); renderRecordings(); });
   }
+  /** Reconcile filename-keyed rows, expiry details, and date filtering without resetting audio. */
   function renderRecordings() {
     const filter = $("recording-search").value;
     const keep = new Set(state.recordings.map(recording => recording.filename));
@@ -278,6 +305,7 @@
     text("recordings-empty", !state.recordingsLoaded ? "Loading recordings..." : state.recordings.length === 0 ? "No completed recordings. New recordings appear here after a recorded call ends." : "No recordings match this date. Try another search.");
     show("recordings-empty", !state.recordingsError && (!state.recordingsLoaded || matching === 0) && !state.playing);
   }
+  /** Rebuild recent-recording shortcuts only when their source metadata changes. */
   function renderRecent() {
     const container = $("recent-recording-list");
     const signature = JSON.stringify(state.recordings.slice(0, 3));
@@ -291,6 +319,7 @@
     }
   }
 
+  /** Fetch account and voice status independently, retaining last-known snapshots on failure. */
   async function refreshStatus() {
     if (polling) return;
     polling = true;
@@ -301,6 +330,7 @@
       render();
     } finally { polling = false; }
   }
+  /** Refresh file metadata without dropping the library or players on temporary failures. */
   async function refreshRecordings() {
     if (loadingRecordings) return;
     loadingRecordings = true;
@@ -334,12 +364,19 @@
   $("go-calling-account").addEventListener("click", () => { changeAccount(state.voice.client_id); });
   $("call-form").addEventListener("submit", event => {
     event.preventDefault(); if ($("call").disabled) return;
+    let to;
     try {
-      const to = normalizeRecipient($("recipient").value), opening = $("opening-message").value.trim();
-      const body = { clientId: state.selected, to, ...(opening ? { message: opening } : {}) };
-      show("call-error", false); void action("voice/call", body, "Call requested. The live call status appears above.");
-    } catch (error) { text("call-error", error.message); show("call-error", true); $("recipient").focus(); }
+      to = normalizeRecipient($("recipient").value);
+    } catch (error) {
+      $("recipient").setAttribute("aria-invalid", "true"); text("call-error", error.message); show("call-error", true); $("recipient").focus();
+      return;
+    }
+    $("recipient").removeAttribute("aria-invalid");
+    const opening = $("opening-message").value.trim();
+    const body = { clientId: state.selected, to, ...(opening ? { message: opening } : {}) };
+    show("call-error", false); void action("voice/call", body, "Call requested. The live call status appears above.");
   });
+  /** Request hang-up only for a known active call and its configured owning account. */
   const hangup = () => { if (state.voice?.active) void action("voice/hangup", { clientId: state.voice.client_id }, "Hang-up requested."); };
   $("global-hangup").addEventListener("click", hangup); $("call-hangup").addEventListener("click", hangup);
   $("recovery-retry").addEventListener("click", () => { if (state.status?.recovery?.active) void action("api/recovery/retry", {}, "Connection retry started with saved sessions."); });
@@ -348,17 +385,27 @@
     state.resetClient = state.selected; text("reset-name", state.resetClient); text("reset-id", state.resetClient); $("reset-confirmation").value = "";
     $("confirm-reset").disabled = true; show("reset-error", false); $("reset-dialog").showModal();
   });
-  $("reset-confirmation").addEventListener("input", () => { $("confirm-reset").disabled = $("reset-confirmation").value !== state.resetClient || state.busy; });
+  /** Keep exact-ID confirmation retryable after failure while respecting recovery and busy state. */
+  function updateResetConfirmation() {
+    $("confirm-reset").disabled = $("reset-confirmation").value !== state.resetClient || state.busy || !state.status?.recovery?.active || !!state.status.recovery.operationPending;
+  }
+  $("reset-confirmation").addEventListener("input", updateResetConfirmation);
   $("cancel-reset").addEventListener("click", () => $("reset-dialog").close());
   $("reset-form").addEventListener("submit", async event => {
     event.preventDefault();
     if (!state.status?.recovery?.active || $("reset-confirmation").value !== state.resetClient || state.busy) return;
     $("confirm-reset").disabled = true;
     const ok = await action("api/recovery/reset", { clientId: state.resetClient, confirmation: $("reset-confirmation").value }, "Account reset. Scan its new QR code when it appears.");
-    if (ok) $("reset-dialog").close(); else { text("reset-error", "The account could not be reset. Check recovery status and try again."); show("reset-error", true); }
+    if (ok) $("reset-dialog").close();
+    else {
+      text("reset-error", "The account could not be reset. Check recovery status and try again."); show("reset-error", true);
+      updateResetConfirmation();
+    }
   });
 
+  /** Schedule non-overlapping account polls while skipping requests in a hidden document. */
   function schedule() { clearTimeout(timer); timer = setTimeout(async () => { if (!document.hidden) await refreshStatus(); schedule(); }, 3000); }
+  /** Poll saved recordings only while a visible Calls or Recordings view needs them. */
   function scheduleRecordings() { clearTimeout(recordingsTimer); recordingsTimer = setTimeout(async () => { if (!document.hidden && ["calls", "recordings"].includes(state.view)) await refreshRecordings(); scheduleRecordings(); }, 10000); }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { void refreshStatus(); void refreshRecordings(); } });
   render(); void refreshStatus(); void refreshRecordings(); schedule(); scheduleRecordings();
