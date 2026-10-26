@@ -354,7 +354,7 @@ session data, or message content.
 
 WhatsApp events and Home Assistant automation traces can contain phone JIDs,
 LIDs, call and message keys, quoted-message data, contact names, and message
-bodies. Saved media files can also contain private information. Redact these fields, QR codes, session data, and
+bodies. Saved media files can also contain private information. Redact these fields, QR images, pairing codes, session data, and
 internal API credentials before sharing diagnostics, logs, screenshots, or traces.
 
 ## Troubleshooting and diagnostics
@@ -365,7 +365,7 @@ Set `log_level` to `debug` and restart the add-on when investigating an
 intermittent failure. Debug mode periodically summarizes event-loop
 responsiveness, process and container resource use, API activity, health state,
 reconnects, and aggregate message and call handling. It does not enable raw
-Baileys logs or include message content, raw account identifiers, QR codes,
+Baileys logs or include message content, raw account identifiers, QR images, pairing codes,
 session data, or API tokens. Identifier-related entries use run-scoped one-way
 references for correlation. Return the option to `info` after collecting the
 relevant logs.
@@ -430,7 +430,7 @@ The recovery panel offers two choices:
   sessions unchanged. If the decryption storm returns, the clients pause again.
 - Reset and re-pair deletes only the selected client's local pairing session.
   You must type its client ID to confirm. Remove the old add-on entry from
-  WhatsApp Linked Devices, then scan the new QR code shown by the add-on.
+  WhatsApp Linked Devices, then pair again using the app's QR or phone-number option.
 
 Because the upstream error does not identify the responsible configured
 client, detection pauses all clients. Normal action requests for a paused

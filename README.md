@@ -428,13 +428,13 @@ keep using `new_whatsapp_message` without changes.
   generated credential protects API requests and is shared automatically
   through Supervisor discovery.
 - The web UI uses Home Assistant Ingress and accepts connections from the
-  Supervisor ingress proxy. Pairing QR codes appear there and in Home Assistant
+  Supervisor ingress proxy. Pairing QR images and phone-number codes appear there and in Home Assistant
   persistent notifications.
 - AppArmor restricts the Node bridge's writes to temporary files, persistent
   session data, private inbox snapshots, and attachments under `/media/whatsapp`. Container health checks
   use the local `/health` endpoint.
 
-API tokens, pairing QR codes, session data, and WhatsApp identifiers are
+API tokens, pairing QR images, phone-number pairing codes, session data, and WhatsApp identifiers are
 sensitive. Redact them from issue reports, screenshots, logs, and shared
 automation traces. Home Assistant may retain action inputs, response data,
 and message bodies in traces. Review and redact those traces before sharing them.
@@ -452,7 +452,7 @@ When diagnosing an intermittent add-on problem, set its `log_level` option to
 event-loop responsiveness, process and container resource use, API activity,
 health state, reconnects, and aggregate message and call handling. It does not
 enable raw Baileys logs or include message content, raw account identifiers, QR
-codes, session data, or API tokens. Identifier-related entries use run-scoped
+images, pairing codes, session data, or API tokens. Identifier-related entries use run-scoped
 one-way references for correlation. Return the option to `info` after collecting
 the relevant logs.
 
@@ -486,7 +486,7 @@ for encryption recovery and LID sender receipt handling.
 ## Troubleshooting
 
 - If setup cannot connect, confirm the add-on is installed and running, then restart the add-on so it can publish Supervisor discovery.
-- If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
+- If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed pairing.
 - If an action reports `unauthorized`, make sure the add-on and integration are
   both current, then restart the add-on and reload the integration so Supervisor
   discovery refreshes the managed internal credential. Because `/health` is public for
@@ -500,8 +500,8 @@ for encryption recovery and LID sender receipt handling.
 - If messages are not received, check the add-on web UI and logs for QR-code, session, and WhatsApp connection messages.
 - If the add-on reports that its clients are paused, open its Web UI. Try Retry
   connection first. If the same failure returns, use Reset and re-pair for the
-  affected client, remove the old entry from WhatsApp Linked Devices, and scan
-  the new QR code. Actions for paused clients return
+  affected client, remove the old entry from WhatsApp Linked Devices, and pair
+  again using the new QR code or phone-number pairing. Actions for paused clients return
   `client_recovery_paused` until recovery is started.
 - If call updates are not received, confirm the automation listens for
   `whatsapp_call_update` and filters on a supported `status` value. The add-on

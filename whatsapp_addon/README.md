@@ -173,8 +173,8 @@ libsignal decryption failures is detected, all WhatsApp clients are paused to
 protect the host while the add-on and Web UI remain available. Use Retry
 connection to keep the saved sessions, or use the confirmation-gated Reset and
 re-pair control for one client to delete its local session and display a new QR
-code. Remove the old add-on entry from WhatsApp Linked Devices before scanning
-the new code.
+code. Remove the old add-on entry from WhatsApp Linked Devices before pairing
+again using QR or phone-number pairing.
 
 ## App and account status sensors
 
@@ -223,7 +223,7 @@ The web UI uses Home Assistant Ingress. AppArmor restricts the Node bridge's
 writes to temporary files, persistent session data, and attachments under
 `/media/whatsapp`. Container health checks use the local `/health` endpoint.
 
-Redact API tokens, pairing QR codes, session data, phone JIDs, LIDs, and message
+Redact API tokens, pairing QR images, phone-number pairing codes, session data, phone JIDs, LIDs, and message
 content before sharing logs, diagnostics, screenshots, or automation traces.
 
 ## Diagnostics
@@ -231,7 +231,7 @@ content before sharing logs, diagnostics, screenshots, or automation traces.
 Debug logging periodically summarizes event-loop responsiveness, process and
 container resource use, API activity, health state, reconnects, and aggregate
 message and call handling. It does not enable raw Baileys logs or include
-message content, raw account identifiers, QR codes, session data, or API
+message content, raw account identifiers, QR images, pairing codes, session data, or API
 tokens. Identifier-related entries use run-scoped one-way references for
 correlation. Return the option to `info` after collecting the relevant logs.
 

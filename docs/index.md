@@ -103,5 +103,5 @@ event fields, and a processing example.
 
 WhatsApp events and Home Assistant automation traces can contain phone JIDs,
 LIDs, call and message keys, quoted-message data, contact names, and message
-bodies. Saved media files can also contain private information. Redact these fields, QR codes, session data, and
+bodies. Saved media files can also contain private information. Redact these fields, QR images, pairing codes, session data, and
 internal API credentials before sharing diagnostics, logs, screenshots, or traces.
