@@ -128,18 +128,22 @@ test("a stalled pairing request times out and retires its socket", async (t) => 
 });
 
 /** Create a real bridge client around offline Baileys sockets and persisted credentials. */
-const clientFixture = async (t, initialCreds = { registered: false }) => {
+const clientFixture = async (t, initialCreds = { registered: false }, { timeout = 100_000, authGate } = {}) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "whatsapp-pairing-"));
   const sockets = [];
   const saves = [];
   const creds = { ...initialCreds };
+  let authCalls = 0;
   const baileys = {
     proto: (await import("@whiskeysockets/baileys")).proto,
     DisconnectReason: { loggedOut: 401 },
     fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
-    useMultiFileAuthState: async () => ({
-      state: { creds, keys: {} }, saveCreds: async () => { saves.push(structuredClone(creds)); },
-    }),
+    useMultiFileAuthState: async () => {
+      // Each connect attempt loads credentials once, so tests can pause or fail a chosen attempt.
+      authCalls += 1;
+      await authGate?.(authCalls);
+      return { state: { creds, keys: {} }, saveCreds: async () => { saves.push(structuredClone(creds)); } };
+    },
     default: (options) => {
       const ev = new EventEmitter();
       const socket = { ev, ws: new EventEmitter(), authState: options.auth, requests: [], ended: false,
@@ -158,10 +162,10 @@ const clientFixture = async (t, initialCreds = { registered: false }) => {
       return socket;
     },
   };
-  const client = new WhatsappClient({ path: directory, baileys, autoConnect: false, offline: false, timeout: 100_000 });
+  const client = new WhatsappClient({ path: directory, baileys, autoConnect: false, offline: false, timeout });
   t.after(async () => { await client.disconnect(); await fs.rm(directory, { recursive: true, force: true }); });
   await client.connect();
-  return { client, sockets, creds, saves };
+  return { client, sockets, creds, saves, authCalls: () => authCalls };
 };
 
 /** Wait for asynchronous bridge work without fixed delays, even while timers are mocked. */
@@ -229,6 +233,29 @@ test("the bridge clears abandoned phone credentials before reconnecting for QR",
   }
   fixture.sockets[2].ev.emit("connection.update", { qr: "fresh-fictional-qr" });
   assert.deepEqual(qrEvents, ["first-fictional-qr", "fresh-fictional-qr"]);
+});
+
+/** Keep retrying after a failed pairing reconnect, as the other connection paths do. */
+test("switching pairing methods retries when the reconnect fails", async (t) => {
+  const fixture = await clientFixture(t, undefined, { timeout: 20, authGate: (call) => {
+    if (call === 2) throw new Error("Fictional storage failure.");
+  } });
+  fixture.sockets[0].ev.emit("connection.update", { qr: "first-fictional-qr" });
+  await assert.rejects(fixture.client.useQrPairing(), /Fictional storage failure/);
+  await waitFor(() => fixture.sockets.length === 2);
+});
+
+/** Let a stop that lands during a pairing restart, such as a recovery pause, win. */
+test("a stop during a pairing restart leaves the client without a socket", async (t) => {
+  const gate = deferred();
+  const fixture = await clientFixture(t, undefined, { authGate: (call) => (call === 2 ? gate.promise : undefined) });
+  fixture.sockets[0].ev.emit("connection.update", { qr: "first-fictional-qr" });
+  const switching = fixture.client.useQrPairing();
+  await waitFor(() => fixture.authCalls() === 2);
+  await fixture.client.disconnect();
+  gate.resolve();
+  await assert.rejects(switching, { code: "pairing_changed", status: 409 });
+  assert.equal(fixture.sockets.length, 1);
 });
 
 /** Recover an interrupted phone attempt at startup without deleting the account directory. */

@@ -276,6 +276,7 @@ class WhatsappClient extends EventEmitter {
   #pairingSession;
   #pairingHandshake;
   #credentialWrite = Promise.resolve();
+  #stops = 0;
 
   #status = {
     attempt: 0,
@@ -348,6 +349,7 @@ class WhatsappClient extends EventEmitter {
 
   /** Connect the account and attach handlers to its current Baileys socket. */
   #connect = async () => {
+    const stops = this.#stops;
     this.#pairingSession?.close();
     await this.#credentialWrite;
     const baileys = await this.#baileys;
@@ -392,6 +394,8 @@ class WhatsappClient extends EventEmitter {
     }));
     await this.#archiveStore.load(authResult.state.creds?.me?.id);
     await this.#pollStore.load(authResult.state.creds?.me?.id);
+    // A stop during this attempt, such as a recovery pause, must not leave a live socket behind.
+    if (stops !== this.#stops) return;
     const socket = (this.#conn = makeWASocket({
       version: versionResult.version,
       auth: authResult.state,
@@ -540,6 +544,7 @@ class WhatsappClient extends EventEmitter {
   };
 
   disconnect = async (reconnect = false) => {
+    if (!reconnect) this.#stops += 1;
     this.#pairingSession?.close();
     this.#closeLidSenderReceipts();
     this.#closeSocketWatchers();
@@ -583,8 +588,7 @@ class WhatsappClient extends EventEmitter {
     previous.requireAvailable();
     if (this.#pairingHandshake) throw new PairingActionError(409, "pairing_busy", "A pairing request is already in progress.");
     if (!forPhoneCode) {
-      await this.disconnect(true);
-      await this.connect();
+      await this.#reconnectForPairing();
       return undefined;
     }
     let handshake;
@@ -593,14 +597,31 @@ class WhatsappClient extends EventEmitter {
     });
     try {
       return await withTimeout((async () => {
-        await this.disconnect(true);
-        await this.connect();
+        await this.#reconnectForPairing();
         return ready;
       })(), "Pairing handshake", PAIRING_HANDSHAKE_TIMEOUT_MS);
-    } catch {
+    } catch (error) {
+      if (error instanceof PairingActionError) throw error;
       throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Wait for a new QR code, then try again.");
     } finally {
       if (this.#pairingHandshake === handshake) this.#pairingHandshake = undefined;
+    }
+  };
+
+  /** Reopen the socket for pairing with the usual retries, unless the client is stopped meanwhile. */
+  #reconnectForPairing = async () => {
+    await this.disconnect(true);
+    if (!this.#status.disconnected) {
+      try {
+        await this.connect();
+      } catch (error) {
+        // Calling connect() cancelled the reconnect that disconnect(true) scheduled.
+        this.#handleConnectFailure(error);
+        throw error;
+      }
+    }
+    if (this.#status.disconnected) {
+      throw new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
     }
   };
 
