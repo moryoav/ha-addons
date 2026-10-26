@@ -843,6 +843,7 @@ test("saved recovery state keeps configured clients paused after restart", () =>
       return new FakeClient();
     },
     logger: {},
+    httpClient: { post: async () => {} },
   });
 
   assert.equal(clientsCreated, 0);

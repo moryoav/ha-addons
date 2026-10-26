@@ -1289,7 +1289,6 @@ const createAddonRuntime = ({
 
   const setRecoveryClientStates = () => {
     for (const clientId of validatedClientIds) {
-      const wasPairing = clientStates[clientId]?.state === "pairing";
       setClientState(clientId, {
         state: "recovery_paused",
         disconnectedAt: currentIsoTime(),
@@ -1298,7 +1297,8 @@ const createAddonRuntime = ({
         pairingCode: null,
         pairingPending: false,
       });
-      if (wasPairing) void syncPairingNotification(clientId);
+      // A paused startup has no ready event to clear notifications from the previous run.
+      void syncPairingNotification(clientId);
     }
   };
 

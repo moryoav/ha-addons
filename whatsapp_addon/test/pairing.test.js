@@ -593,6 +593,30 @@ test("recovery clears displayed phone codes and blocks pairing actions", async (
   assert.ok(notifications.at(-1).url.endsWith("/dismiss"));
 });
 
+/** Clear notifications from a previous run even when recovery prevents accounts from starting. */
+test("recovery-paused startup dismisses stale pairing notifications", async () => {
+  const notifications = new Map([
+    ["whatsapp_addon_qrcode_default", { message: "Fictional previous pairing code" }],
+    ["whatsapp_addon_qrcode_backup", { message: "Fictional previous QR image" }],
+  ]);
+  const fixture = runtimeFixture({
+    initialRecoveryRecord: { active: true, reason: "libsignal_decrypt_storm", detected_at: "2026-10-26T10:00:00.000Z" },
+    httpClient: {
+      get: async () => assert.fail("Paused accounts do not need a pairing link lookup."),
+      post: async (url, body) => {
+        if (url.endsWith("/dismiss")) notifications.delete(body.notification_id);
+        if (url.endsWith("/create")) notifications.set(body.notification_id, body);
+      },
+    },
+  });
+  await fixture.runtime.reportRecoveryRequired();
+  await fixture.runtime.flushPairingNotifications();
+  assert.equal(fixture.accounts.length, 0);
+  assert.equal(notifications.has("whatsapp_addon_qrcode_default"), false);
+  assert.equal(notifications.has("whatsapp_addon_qrcode_backup"), false);
+  assert.equal(notifications.has("whatsapp_addon_recovery_required"), true);
+});
+
 /** Start an HTTP server that closes automatically after each protected-route test. */
 const serve = async (t, app) => {
   const server = await new Promise((resolve) => { const listening = app.listen(0, "127.0.0.1", () => resolve(listening)); });
