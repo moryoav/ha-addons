@@ -442,8 +442,14 @@ class CallController {
     this.lastError = ["setup_failed", "worker_failed", "voice_failed"].includes(reason) ? reason : null;
   }
 
+  /**
+   * Describe readiness and the selected account without exposing call peers.
+   * client_id stays present when setup is incomplete so the workspace can
+   * distinguish a selected account from accounts with messaging only.
+   * @returns {object} Account identity, call state, and recording availability.
+   */
   status() {
-    return { live_mode:this.options.live, configured:!!this.options.clientId && !!this.options.bridge.agent_id, connected:this.connected, active:!!this.active || !!this.endTask,
+    return { client_id:this.options.clientId || null, live_mode:this.options.live, configured:!!this.options.clientId && !!this.options.bridge.agent_id, connected:this.connected, active:!!this.active || !!this.endTask,
       state:!this.options.clientId || !this.options.bridge.agent_id ? "unconfigured" : this.endTask ? "ending" : this.active ? (this.active.answered ? "in_call" : "calling") : this.connected ? "ready" : "disconnected",
       direction:this.active?.direction || null, last_error:this.lastError,
       recording:{ ...(this.recordings?.status() || { enabled:false, retention_days:30, available:false, last_error:null }),

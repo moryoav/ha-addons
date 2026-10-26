@@ -2,6 +2,27 @@
 
 All notable changes to this repository are documented here.
 
+## 3.2.0
+
+- Aligned the HACS integration package with the 3.2.0 add-on release.
+- Fixed slow call actions reporting premature timeouts, made failed account resets
+  retryable without editing the confirmation, and associated recipient help and
+  validation errors with the input for screen readers.
+
+### Unified account workspace
+
+- Replaced separate pairing and voice pages with one responsive account
+  workspace for connections, calls, and recordings, including light and dark
+  themes and visible connection states for every account.
+- Added calling-account controls with an optional opening message and a
+  persistent Hang up control across views, account selection, and scrolling.
+- Added recording date search, playback, downloads, and expiry details while
+  preserving the shared library of older recordings.
+- Displayed pairing QR codes in Connection and reserved a disabled Link with
+  code option for a future connection method.
+- Preserved existing voice links and guarded recovery controls, including
+  exact account-ID confirmation before resetting a saved session.
+
 ## 3.1.1
 
 ### Persistent incoming message inbox

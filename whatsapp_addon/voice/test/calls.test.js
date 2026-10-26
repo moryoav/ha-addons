@@ -33,7 +33,31 @@ test("an unset conversation agent leaves messaging connected and cannot start or
   await h.controller.incoming({tag:"call",attrs:{from:PEER_DEVICE},content:[{tag:"offer",attrs:{"call-id":ID,"call-creator":PEER_DEVICE}}]});
   assert.equal(h.controller.status().connected,true);
   assert.equal(h.controller.status().configured,false);
+  assert.equal(h.controller.status().client_id,"default");
   assert.equal(h.workers.length,0);assert.equal(h.bridges.length,0);assert.equal(h.sent.length,0);
+  await h.controller.close();
+});
+
+test("voice status identifies the selected account independently of setup and connection",async()=>{
+  const cases=[
+    {voice_calls:{calling_account:""},expectedId:null,configured:false,state:"unconfigured"},
+    {voice_calls:{calling_account:"secondary",agent_id:""},expectedId:"secondary",configured:false,state:"unconfigured"},
+    {voice_calls:{calling_account:"secondary",agent_id:"conversation.synthetic_agent"},expectedId:"secondary",configured:true,state:"disconnected"},
+  ];
+  for(const entry of cases){
+    const controller=new CallController(testOptions({clients:["default","secondary"],voice_calls:entry.voice_calls}));
+    const status=controller.status();
+    assert.equal(status.client_id,entry.expectedId);
+    assert.equal(status.configured,entry.configured);
+    assert.equal(status.state,entry.state);
+    assert.equal(status.connected,false);
+    assert.equal(status.active,false);
+    assert.equal("peer" in status,false);
+    await controller.close();
+  }
+  const h=harness();
+  assert.equal(h.controller.status().client_id,"default");
+  assert.equal(h.controller.status().state,"ready");
   await h.controller.close();
 });
 
