@@ -200,6 +200,31 @@ test("a delayed poll cannot restore the code replaced by a completed pairing act
   assert.equal(ui.node("pairing-code").textContent, "NEXT-5678");
 });
 
+/** A rejected or abandoned request for another code must not hide the code that still works. */
+test("requesting another code keeps the current code until a new one replaces it", async () => {
+  const ui = await workspaceFixture();
+  Object.assign(ui.status.clients[0], { pairingMethod: "phone", pairingCode: CODE }); await ui.refresh();
+  assert.equal(ui.node("keep-pairing-code").hidden, true);
+  await ui.click("new-pairing-code");
+  assert.equal(ui.node("pairing-phone-form").hidden, false);
+  assert.equal(ui.node("pairing-code-panel").hidden, false);
+  assert.equal(ui.node("pairing-code").textContent, CODE);
+  assert.equal(ui.node("new-pairing-code").hidden, true);
+  assert.equal(ui.document.activeElement, ui.node("pairing-phone"));
+  const cooldown = "Wait 30 seconds before requesting another pairing code.";
+  ui.onAction = async () => ({ ok: false, status: 429, json: async () => ({ error: { code: "pairing_rate_limited", message: cooldown } }) });
+  ui.typePhone(PHONE); await ui.submit();
+  assert.equal(ui.node("pairing-error").textContent, cooldown);
+  assert.equal(ui.node("pairing-code").textContent, CODE);
+  assert.equal(ui.node("pairing-phone").value, PHONE);
+  await ui.click("keep-pairing-code");
+  assert.equal(ui.node("pairing-phone-form").hidden, true);
+  assert.equal(ui.node("pairing-error").hidden, true);
+  assert.equal(ui.node("pairing-code").textContent, CODE);
+  assert.equal(ui.node("new-pairing-code").hidden, false);
+  assert.equal(ui.document.activeElement, ui.node("new-pairing-code"));
+});
+
 /** Preserve the user's input and show useful failures from a non-JSON ingress response. */
 test("failed phone requests retain their draft and recover after an HTML proxy error", async () => {
   const ui = await workspaceFixture();

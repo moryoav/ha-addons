@@ -64,7 +64,7 @@
                   <form class="wa-code-request" id="pairing-phone-form">
                     <div class="wa-field"><label for="pairing-phone">WhatsApp phone number</label><input class="wa-input" id="pairing-phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="64" placeholder="+1 202 555 0123" required aria-describedby="pairing-phone-help pairing-error"></div>
                     <p class="wa-field-help" id="pairing-phone-help">Include the country code of the WhatsApp account you want to link.</p>
-                    <button class="wa-button wa-button-primary" id="generate-pairing-code" type="submit">Generate code</button>
+                    <div class="wa-panel-actions"><button class="wa-button wa-button-primary" id="generate-pairing-code" type="submit">Generate code</button><button class="wa-button" id="keep-pairing-code" type="button" hidden>Keep current code</button></div>
                   </form>
                   <p id="pairing-progress" class="wa-muted wa-small wa-pairing-help" role="status"></p>
                   <div class="wa-code-panel" id="pairing-code-panel" hidden>

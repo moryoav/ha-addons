@@ -236,14 +236,17 @@
     const available = visible && !state.statusError && !state.status?.recovery?.operationPending;
     const ready = available && client.state === "pairing" && !pending;
     const codeEnabled = state.status?.pairing_methods?.code === true;
-    const code = available && client.state === "pairing" && phone && !pending && !entry.edit &&
+    const code = available && client.state === "pairing" && phone && !pending &&
       method === "phone" && typeof client.pairingCode === "string" && /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(client.pairingCode) ? client.pairingCode : "";
+    // The current code stays usable while another is requested, including when the cooldown rejects it.
+    const requesting = !!code && entry.edit;
     $("choose-qr").setAttribute("aria-pressed", String(!phone));
     $("choose-phone").setAttribute("aria-pressed", String(phone));
     $("choose-qr").disabled = !available || pending || method === "phone" && !ready;
     $("choose-phone").disabled = !available || pending || !codeEnabled;
     show("pairing-qr-panel", !phone); show("pairing-phone-panel", phone);
-    show("pairing-phone-form", !code); show("pairing-code-panel", !!code);
+    show("pairing-phone-form", !code || requesting); show("pairing-code-panel", !!code);
+    show("new-pairing-code", !requesting); show("keep-pairing-code", requesting);
     text("pairing-code", code);
     $("pairing-phone").value = entry?.phone || "";
     $("pairing-phone").disabled = pending || !available;
@@ -484,6 +487,11 @@
   $("new-pairing-code").addEventListener("click", () => {
     const client = selectedClient(); if (!client || $("new-pairing-code").disabled) return;
     pairingState(client).edit = true; renderConnection(); $("pairing-phone").focus();
+  });
+  $("keep-pairing-code").addEventListener("click", () => {
+    const client = selectedClient(); if (!client) return;
+    const entry = pairingState(client); entry.edit = false; entry.error = "";
+    $("pairing-phone").removeAttribute("aria-invalid"); renderConnection(); $("new-pairing-code").focus();
   });
   $("refresh-recordings").addEventListener("click", () => { void refreshRecordings(); });
   $("recording-search").addEventListener("input", renderRecordings);
