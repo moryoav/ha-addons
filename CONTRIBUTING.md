@@ -117,10 +117,14 @@ the app, CI explicitly exports the Dockerfile's native `builder` target to
 builder and exports cache only, without publishing another image. CI also
 imports the older `voice-*` scopes during the transition.
 
-The release builder's `cache-gha-scope: rust` selects those architecture-prefixed
-Rust caches. Its signed registry-image cache remains available as a fallback.
-After publishing each architecture, I also export the native target on the same
-builder to keep the tag's cache rooted at Rust for release reruns.
+I import both the app and native Rust caches in release builds. I keep the full
+app export in the architecture scope and export the native target separately
+to its `-rust` scope on the same builder. I retain inline cache metadata in
+published images but do not import it: isolated AMD64 probes reproduced misses
+when that registry import was combined with the populated GitHub Actions cache.
+The release workflow uses explicit Docker and signing steps because the
+Home Assistant build-image action cannot disable that import separately.
+
 I introduced the separate Rust export while investigating the release cache
 miss. The v3.3.1 measurement showed that it did not solve reuse: both release
 architectures compiled Rust again despite reading populated cache indexes.
