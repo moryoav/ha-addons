@@ -152,10 +152,27 @@ records for seven days.
 
 I follow a successful probe with complete image tests and repeated consumers
 on fresh runners before claiming that a change fixes release performance.
-Any image-publishing experiment must use the separate `whatsapp-addon-bench`
+I select the `full` suite to build, push, sign, verify, pull, and test complete
+images twice per architecture. It compares the Rust-only GitHub Actions cache
+with the combined app and Rust caches, without importing registry inline caches
+or exporting cache entries. Each job checks the actual image platform, version,
+and embedded source provenance before running the source revision's offline
+image tests. Its timings exclude cache export and multi-architecture publication.
+
+Image-publishing experiments use the separate `whatsapp-addon-bench`
 repositories and run-specific tags. I never use the existing manual
 **Build add-on image** workflow for benchmarks: it writes the configured version
 tag even when `publish_latest` is false.
+
+The [first complete experiment](https://github.com/moryoav/ha-addons/actions/runs/40661595642)
+tested source `6885e1ce4cbd58a2827499d6eb0272aa64403098` with benchmark harness
+`01a42de070ba56c191ef65870095b019f26e08ac`. All eight fresh-runner jobs passed
+signing, source-provenance checks, and offline packaged-image tests. With the
+combined app and Rust GHA caches, build-and-push times were 40 and 63 seconds
+on amd64, and 34 and 36 seconds on aarch64. The corresponding v3.3.1 release
+steps took 24 minutes 37 seconds and 29 minutes 39 seconds. These results show
+warm-cache reuse for that source and toolchain; native dependency changes can
+still require compilation.
 
 ## Documentation
 
