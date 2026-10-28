@@ -27,13 +27,14 @@ const deferred = () => {
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 /** Exercise a socket-local pairing session using only fictional account data. */
-const sessionFixture = (requestPairingCode = async () => CODE) => {
+const sessionFixture = (requestPairingCode = async () => CODE, browser) => {
   const updates = [];
   const creds = { registered: false };
   let saved = 0;
   let ended = 0;
   const session = new PairingSession({
     creds,
+    browser,
     socket: { requestPairingCode, end: async () => { ended += 1; } },
     saveCreds: () => { saved += 1; }, onUpdate: (update) => updates.push(update),
   });
@@ -72,14 +73,18 @@ test("phone code generation waits for QR readiness and suppresses subsequent QR 
 /** Prevent concurrent requests and late responses from reviving a retired pairing code. */
 test("closing a pending request prevents stale codes and cleans the provisional identity", async () => {
   const pending = deferred();
-  const fixture = sessionFixture(() => pending.promise);
+  const browser = ["Home Assistant", "Chrome", "20.0.04"];
+  const fixture = sessionFixture(() => pending.promise, browser);
   fixture.session.onQr();
   const request = fixture.session.requestCode(PHONE);
+  assert.equal(browser[0], "Ubuntu");
   await assert.rejects(fixture.session.requestCode(PHONE), { code: "pairing_busy" });
+  assert.equal(browser[0], "Ubuntu");
   Object.assign(fixture.creds, { me: { id: `${PHONE}@s.whatsapp.net` }, pairingCode: CODE });
   fixture.session.close();
   pending.resolve(CODE);
   await assert.rejects(request, { code: "pairing_changed" });
+  assert.equal(browser[0], "Home Assistant");
   assert.equal(fixture.saved(), 1);
   assert.deepEqual(fixture.creds, { registered: false });
   assert.equal(fixture.updates.at(-1).code, null);
@@ -107,7 +112,8 @@ test("successful linking preserves account credentials and rejects further pairi
 /** Convert upstream failures into safe errors and retire the affected socket. */
 test("upstream errors and malformed codes cannot leak account data", async () => {
   for (const request of [async () => { throw new Error(`private phone ${PHONE} code ${CODE}`); }, async () => "bad code"]) {
-    const fixture = sessionFixture(request);
+    const browser = ["Home Assistant", "Chrome", "20.0.04"];
+    const fixture = sessionFixture(request, browser);
     fixture.session.onQr();
     await assert.rejects(fixture.session.requestCode(PHONE), (error) => {
       assert.equal(error.code, "pairing_failed");
@@ -116,6 +122,7 @@ test("upstream errors and malformed codes cannot leak account data", async () =>
       return true;
     });
     assert.equal(fixture.ended(), 1);
+    assert.equal(browser[0], "Home Assistant");
     assert.equal(fixture.updates.at(-1).code, null);
   }
 });
@@ -123,13 +130,15 @@ test("upstream errors and malformed codes cannot leak account data", async () =>
 /** Bound a stalled Baileys send without leaving its old code visible. */
 test("a stalled pairing request times out and retires its socket", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const fixture = sessionFixture(() => new Promise(() => {}));
+  const browser = ["Home Assistant", "Chrome", "20.0.04"];
+  const fixture = sessionFixture(() => new Promise(() => {}), browser);
   fixture.session.onQr();
   const request = fixture.session.requestCode(PHONE);
   const rejected = assert.rejects(request, { code: "pairing_failed" });
   t.mock.timers.tick(8_000);
   await rejected;
   assert.equal(fixture.ended(), 1);
+  assert.equal(browser[0], "Home Assistant");
 });
 
 /** Create a real bridge client around offline Baileys sockets and persisted credentials. */
@@ -155,9 +164,10 @@ const clientFixture = async (t, initialCreds = { registered: false }, { timeout 
     },
     default: (options) => {
       const ev = new EventEmitter();
-      const socket = { ev, ws: new EventEmitter(), authState: options.auth, requests: [], ended: false,
+      const socket = { ev, ws: new EventEmitter(), authState: options.auth, requests: [], requestBrowsers: [], browser: options.browser, ended: false,
         requestPairingCode: async (number) => {
           socket.requests.push(number);
+          socket.requestBrowsers.push([...options.browser]);
           Object.assign(creds, { pairingCode: CODE, me: { id: `${number}@s.whatsapp.net`, name: "~" } });
           ev.emit("creds.update", creds);
           return CODE;
@@ -204,6 +214,8 @@ test("phone codes are requested on a fresh socket whose QR stays hidden", async 
   assert.equal(await requestFreshCode(fixture), "ABCD-1234");
   assert.equal(fixture.sockets[0].ended, true);
   assert.deepEqual(fixture.sockets.map((socket) => socket.requests), [[], [PHONE]]);
+  assert.deepEqual(fixture.sockets[1].requestBrowsers, [["Ubuntu", "Chrome", "20.0.04"]]);
+  assert.ok(fixture.sockets.every((socket) => socket.browser[0] === "Home Assistant"));
   fixture.sockets[1].ev.emit("connection.update", { qr: "rotated-fictional-qr" });
   assert.deepEqual(qrEvents, ["first-fictional-qr"]);
 });

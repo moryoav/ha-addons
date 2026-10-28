@@ -420,6 +420,7 @@ class WhatsappClient extends EventEmitter {
     await cacheLoad;
     // A stop during this attempt, such as a recovery pause, must not leave a live socket behind.
     if (stops !== this.#stops) return;
+    const browser = ["Home Assistant", "Chrome", "20.0.04"];
     const socket = (this.#conn = makeWASocket({
       version: versionResult.version,
       auth: authResult.state,
@@ -429,7 +430,7 @@ class WhatsappClient extends EventEmitter {
         this.#emitAppStateSync(event, authResult.state.creds?.me)
       ),
       generateHighQualityLinkPreview: true,
-      browser: ["Home Assistant", "Chrome", "20.0.04"],
+      browser,
       defaultQueryTimeoutMs: undefined,
       getMessage: async (key) => {
         const message =
@@ -449,6 +450,7 @@ class WhatsappClient extends EventEmitter {
     }
     this.#pairingSession = new PairingSession({
       socket,
+      browser,
       creds: authResult.state.creds,
       saveCreds: saveCredentials,
       onUpdate: (state) => {
