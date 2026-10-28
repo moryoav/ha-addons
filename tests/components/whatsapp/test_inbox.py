@@ -58,8 +58,9 @@ async def test_non_admin_cannot_inject_whatsapp_messages(
         hass_user, client_id="http://example.com"
     )
     token = hass.auth.async_create_access_token(refresh)
-    client = await hass_client(access_token=token)
+    # Register the event API before the test server starts and freezes its routes.
     assert await async_setup_component(hass, "api", {})
+    client = await hass_client(access_token=token)
     events = []
     hass.bus.async_listen(
         "new_whatsapp_message", lambda event: events.append(event.data)
