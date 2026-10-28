@@ -120,8 +120,11 @@ jobs:
             BUILD_VERSION=ci
           tags: whatsapp-addon:ci-${{ matrix.arch }}
           load: true
-          cache-from: type=gha,scope=voice-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=voice-${{ matrix.arch }}
+          # Match release scopes and also import the warm legacy caches.
+          cache-from: |
+            type=gha,scope=${{ matrix.arch }}
+            type=gha,scope=voice-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       - name: Smoke-test voice workers and offline app startup
         shell: pwsh
