@@ -1,0 +1,150 @@
+---
+name: Build benchmark
+run-name: Build benchmark (${{ inputs.suite }}, ${{ inputs.architecture }})
+
+# This workflow never publishes images, caches, tags, or releases.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit to benchmark
+        required: true
+        type: string
+        default: 6885e1ce4cbd58a2827499d6eb0272aa64403098
+      architecture:
+        description: Native runner architecture
+        required: true
+        type: choice
+        default: amd64
+        options:
+          - amd64
+          - aarch64
+          - both
+      suite:
+        description: Dependencies-only cache diagnostics, without Rust compilation
+        required: true
+        type: choice
+        default: probe
+        options:
+          - probe
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Validate isolated benchmark
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+    steps:
+      - name: Check out benchmark helpers
+        uses: actions/checkout@v6
+        with:
+          path: benchmark-harness
+          persist-credentials: false
+
+      - name: Check benchmark isolation
+        working-directory: benchmark-harness
+        run: python -m unittest discover -s scripts/tests -p test_build_benchmark.py -v
+
+      - name: Validate source and select probes
+        id: plan
+        env:
+          BENCH_SOURCE_SHA: ${{ inputs.source_sha }}
+          BENCH_ARCHITECTURE: ${{ inputs.architecture }}
+          BENCH_SUITE: ${{ inputs.suite }}
+        run: python benchmark-harness/scripts/build_benchmark.py plan
+
+  probe:
+    name: Probe ${{ matrix.arch }} / ${{ matrix.case }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      BENCH_SOURCE_SHA: ${{ needs.plan.outputs.source_sha }}
+      BENCH_ARCHITECTURE: ${{ matrix.arch }}
+      BENCH_CASE: ${{ matrix.case }}
+      BENCH_PULL: ${{ matrix.pull }}
+      BENCH_PLATFORMS: ${{ matrix.platforms }}
+      BENCH_CACHE_FROM: ${{ matrix.cache_from }}
+    steps:
+      - name: Check out benchmark helpers
+        uses: actions/checkout@v6
+        with:
+          path: benchmark-harness
+          persist-credentials: false
+
+      - name: Check out immutable benchmark source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.plan.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+
+      - name: Set up instrumented Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: v0.38.0
+          driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          buildkitd-flags: >-
+            --allow-insecure-entitlement security.insecure
+            --allow-insecure-entitlement network.host
+            --debug --save-cache-debug
+          buildkitd-config-inline: |
+            [grpc]
+              debugAddress = "127.0.0.1:6060"
+
+      - name: Validate source and debug collection
+        id: prepare
+        env:
+          BENCH_BUILDER: ${{ steps.buildx.outputs.name }}
+        run: >-
+          python benchmark-harness/scripts/build_benchmark.py prepare
+          --source source --output "$RUNNER_TEMP/build-benchmark"
+
+      - name: Probe dependency cache
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: source/whatsapp_addon
+          file: source/whatsapp_addon/Dockerfile
+          builder: ${{ steps.buildx.outputs.name }}
+          target: dependencies
+          platforms: ${{ matrix.platforms }}
+          pull: ${{ matrix.pull }}
+          push: false
+          outputs: type=cacheonly
+          build-args: |
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_VERSION=${{ steps.prepare.outputs.version }}
+          cache-from: ${{ matrix.cache_from }}
+        env:
+          DOCKER_BUILD_SUMMARY: "true"
+          DOCKER_BUILD_RECORD_UPLOAD: "true"
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: "7"
+
+      - name: Collect cache keys and probe result
+        if: always() && steps.prepare.outcome == 'success'
+        env:
+          BENCH_BUILDER: ${{ steps.buildx.outputs.name }}
+          BENCH_BUILD_METADATA: ${{ steps.build.outputs.metadata }}
+          BENCH_BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: >-
+          python benchmark-harness/scripts/build_benchmark.py collect
+          --output "$RUNNER_TEMP/build-benchmark"
+
+      - name: Save benchmark diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}-${{ matrix.case }}
+          path: ${{ runner.temp }}/build-benchmark
+          if-no-files-found: error
+          retention-days: 7
