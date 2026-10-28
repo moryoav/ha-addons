@@ -1,5 +1,5 @@
 name: WhatsApp
-version: 3.3.0
+version: 3.3.1
 slug: whatsapp_addon
 description: WhatsApp messaging and AI voice calls for Home Assistant
 url: https://github.com/moryoav/ha-addons/tree/main/whatsapp_addon

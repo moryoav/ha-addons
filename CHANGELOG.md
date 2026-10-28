@@ -2,6 +2,12 @@
 
 All notable changes to this repository are documented here.
 
+## 3.3.1
+
+- Changed the linked-device OS label from Ubuntu to Home Assistant for new pairings.
+- Preserved canonical phone-code requests while using the custom device label.
+- Added dedicated architecture caches for native Rust builds and release reruns.
+
 ## 3.3.0
 
 - Added an Open pairing page link below the initial QR notification.

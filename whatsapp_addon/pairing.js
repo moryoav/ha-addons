@@ -48,6 +48,7 @@ const pairingWebUiPath = (slug, coreVersion) => {
 /** Own the choice, request lock, and temporary code for one unpaired socket. */
 class PairingSession {
   #socket;
+  #browser;
   #creds;
   #saveCreds;
   #onUpdate;
@@ -57,9 +58,10 @@ class PairingSession {
   #pending = false;
   #method = "qr";
 
-  /** Bind lifecycle changes to the same credentials and socket used by Baileys. */
-  constructor({ socket, creds, saveCreds, onUpdate }) {
+  /** Bind lifecycle and the optional browser tuple to this socket's credentials. */
+  constructor({ socket, browser, creds, saveCreds, onUpdate }) {
     this.#socket = socket;
+    this.#browser = browser;
     this.#creds = creds;
     this.#saveCreds = saveCreds;
     this.#onUpdate = onUpdate;
@@ -88,7 +90,12 @@ class PairingSession {
     this.#pending = true;
     this.#method = "phone";
     this.#onUpdate({ method: "phone", pending: true, code: null });
+    const originalOs = this.#browser?.[0];
     try {
+      // Baileys 6.7.23 captures this tuple by reference. WhatsApp accepts the
+      // custom registration OS, but phone-code IQs need a canonical display.
+      // QR readiness means this socket's registration payload was already sent.
+      if (this.#browser) this.#browser[0] = "Ubuntu";
       const code = await withTimeout(this.#socket.requestPairingCode(phone), "Pairing request");
       if (this.#closed || this.#paired || this.#creds?.registered === true) {
         throw new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
@@ -106,6 +113,7 @@ class PairingSession {
       if (error instanceof PairingActionError) throw error;
       throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Try again.");
     } finally {
+      if (this.#browser) this.#browser[0] = originalOs;
       this.#pending = false;
     }
   }
