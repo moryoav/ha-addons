@@ -2,11 +2,11 @@
 
 ## Choose the sending account
 
-For notifications on my personal phone, I link a separate WhatsApp account to
-the add-on and send from that account to my personal account or a shared group.
-Messages sent by the integration belong to the linked account. Linking my
-personal account makes the bot send as me, so those sends are not incoming
-messages from a separate contact.
+To receive notifications from a separate contact, link a dedicated WhatsApp
+account to the add-on and send from it to your personal account or a shared
+group. Messages sent by the integration belong to the linked account. If you
+link your personal account, automation messages are sent as you and appear as
+outgoing messages.
 Follow the [current installation guide](https://github.com/moryoav/ha-addons#installation)
 to pair that account with this add-on.
 
@@ -299,5 +299,5 @@ and `address`.
 `picture_url` is a temporary WhatsApp link. Use it soon, for example as the
 image of a notification, and look it up again later instead of storing it.
 
-Both actions require `response_variable` and share the per-client lookup rate
-limit.
+`whatsapp.get_profile` requires `response_variable` and shares the per-client
+lookup rate limit with the other lookup actions.

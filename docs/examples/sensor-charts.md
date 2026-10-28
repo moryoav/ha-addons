@@ -1,6 +1,6 @@
 # Send sensor charts
 
-I attach a graph to a temperature alert: Home Assistant logs readings to
+Attach a graph to a temperature alert: Home Assistant logs readings to
 Google Sheets, a published chart provides an image URL, and WhatsApp sends that
 image with the current reading.
 
@@ -82,7 +82,7 @@ latest alert reading may not appear in the image immediately.
 
 ## Keep a rolling chart window
 
-I use Google Apps Script to remove old readings. For a sheet
+Use Google Apps Script to remove old readings. For a sheet
 dedicated to this chart, open **Extensions > Apps Script** and add:
 
 ```javascript

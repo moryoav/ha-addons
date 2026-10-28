@@ -18,7 +18,7 @@ This project has two parts, installed separately:
   diagnostics, and setup in Home Assistant.
 
 The integration connects to the add-on's local API. Each WhatsApp account is
-paired by scanning its QR code in the add-on web UI.
+paired through the add-on web UI with a QR code or a one-time phone-pairing code.
 
 ## What it can do
 
@@ -59,7 +59,12 @@ https://github.com/moryoav/ha-addons
 
 [![Open the WhatsApp add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code and an **Open pairing page** link. Scan the QR code with WhatsApp, or follow the link, choose the account, and select **Link with code** in **Connection** to pair using your phone number. You can also reach the workspace with **Open Web UI** on the add-on page.
+Install and start the `WhatsApp` add-on. Home Assistant should show a persistent notification with a QR code and an
+**Open pairing page** link. Open the link or select **Open Web UI** on the
+add-on page.
+
+Choose an account in **Connection**, then scan its QR code with WhatsApp or
+select **Link with code** to pair using the account's phone number.
 
 ### 2. Install the integration
 
@@ -100,7 +105,7 @@ for voice calls, media downloads, retention, and logging options.
 
 ### Add-on
 
-The add-on accepts these options:
+Common add-on options include:
 
 - `clients`: one or more unique WhatsApp session names. The default is
   `default`. Names must start with a letter or digit, may contain letters,
@@ -268,139 +273,37 @@ The add-on fires these Home Assistant events:
 | `whatsapp_message_status` | A sent message was delivered, read, or played. |
 | `whatsapp_chat_read` | Received messages were read or played on another device. |
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
-| `whatsapp_call_log` | One record per finished call, incoming or outgoing. |
+| `whatsapp_call_log` | An incoming call stops ringing, or the phone shares an outgoing call record. |
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_contacts_sync` | Available contact records from WhatsApp synchronization or contact updates. |
 | `whatsapp_send_message_result` | Result event after a successful send action. |
 | `whatsapp_addon_health_failure` | Sanitized diagnostics after a previous add-on run ends unhealthy. |
 
-`new_whatsapp_message` and `whatsapp_message_sent` include the configured
-`clientId`, the detected message `type`, the Baileys message `key`, and the
-`message` payload. Other fields, such as `messageTimestamp`, are passed through
-when present.
+Message events include the configured `clientId`, detected message `type`,
+Baileys message `key`, and `message` payload. Use only `new_whatsapp_message`
+for replies and read markers so outgoing messages do not trigger another reply.
+Logging automations can listen to both message events.
 
-`new_whatsapp_message` and `whatsapp_message_sent` also include `chat_archived`:
-`true` for an archived chat, `false` for an unarchived chat,
-or `null` if its state is not known. The value comes from the latest locally
-cached WhatsApp chat state, with no extra network request per message. Known
-flags survive add-on restarts and are updated by WhatsApp synchronization.
-For `whatsapp_message_sent`, the field describes the destination chat.
-See the
-[archive-state details and automation condition](https://moryoav.github.io/ha-addons/reference/events/#chat-archive-state).
+A sent-message event confirms that the session observed the send, not that the
+recipient received or read it. Use `whatsapp_message_status` for delivery and
+read receipts. Use `whatsapp_chat_read` to detect messages read on another
+device, such as your phone.
 
-The event for a poll vote
-(`type: pollUpdateMessage`) includes a `poll_vote` object with `status`,
-`poll_id`, `poll_name`, and `selected_options`, the names of the options the
-voter has selected now. An empty list means the vote was withdrawn. WhatsApp
-encrypts votes with a secret carried only by the poll's own message, so the
-add-on keeps the newest 100 polls per account for 30 days, across restarts, to
-decode later votes. A vote on a poll it does not have still fires, with
-`poll_vote.status: error`. See the
-[poll vote fields and limits](https://moryoav.github.io/ha-addons/reference/events/#poll-votes)
-and the [automation example](https://moryoav.github.io/ha-addons/examples/messages/#react-to-a-poll-vote).
+For incoming-call automations, filter `whatsapp_call_update` to the status you
+need. Use `offer` to act once per call. When another device answers,
+`terminate` means ringing stopped on the add-on; it does not mean the call
+ended. Calls made from the phone appear later in `whatsapp_call_log`. To start
+an AI voice call from Home Assistant, use the [voice call actions](#voice-calls).
 
-`whatsapp_message_sent` fires for messages with
-`key.fromMe: true`, including messages sent from the phone, other linked
-devices, and the add-on itself when reported by WhatsApp. For this event,
-`key.remoteJid` identifies the destination chat or group and can be a LID.
-Duplicate-message checks apply to both directions. The event reports a sent
-message observed by the session; it is not a delivery or read receipt.
-
-The add-on sends this event directly to Home Assistant. Logging automations can
-listen to both events, as in the [logging example](https://moryoav.github.io/ha-addons/examples/automations/#log-received-and-sent-messages).
-Reply and mark-as-read automations should listen only to `new_whatsapp_message`
-to avoid acting on own sends.
-
-`whatsapp_contacts_sync` includes `clientId`, `source`, and a `contacts` array
-containing the contact records supplied by Baileys. It forwards history contacts,
-saved-contact records, and partial updates with their available names, LIDs, and
-phone identifiers. Fields can be missing, and a batch is not a complete address
-book. The app sends these events directly to Home Assistant without a contact
-cache or extra lookups. See the
-[contact event fields and limits](https://moryoav.github.io/ha-addons/reference/events/#contact-metadata).
-
-`whatsapp_message_status` fires when a message this account sent, from Home
-Assistant or the phone, is delivered, read, or played. Its data contains
-`clientId`, `messageId`, `chatId`, `status` (`delivered`, `read`, `played`, or
-`error`), `participant`, and `timestamp`. `messageId` matches the `message_id`
-returned by `whatsapp.send_message`. In a direct chat, `participant` and
-`timestamp` are `null`. In a group, every member's receipt is a separate event,
-with `participant` set to that member and `timestamp` to the receipt time;
-WhatsApp reports a voice message played in a group as `read`. Recipients who
-turned off read receipts only produce `delivered`. Receipts for status updates
-(stories) are not reported.
-
-`whatsapp_chat_read` fires when this account reads or plays received messages on
-another device, such as the phone. Its data contains `clientId`, `chatId`,
-`status` (`read`, or `played` for voice messages), and `messageIds`, the IDs of
-the received messages that were read. A large batch is split across several
-events of at most 100 IDs. Check `messageIds` for the message you care about,
-for example to dismiss its Home Assistant notification once you have read it on
-the phone.
-
-See the
-[unread-alert escalation](https://moryoav.github.io/ha-addons/examples/automations/#escalate-when-an-alert-is-not-read) and
-[notification dismissal](https://moryoav.github.io/ha-addons/examples/automations/#dismiss-a-notification-after-reading-the-chat-on-the-phone)
-examples.
-
-`whatsapp_call_update` fires for every call lifecycle update reported by
-Baileys. Its `status` is one of `offer`, `ringing`, `accept`, `reject`,
-`timeout`, or `terminate`. Each event has a stable payload containing
-`clientId`, `callId`, `status`, `from`, `chatId`, `isVideo`, `isGroup`,
-`groupJid`, `date`, and `offline`. Fields that are absent from an upstream
-update are `null`. The `from` and `chatId` values can be WhatsApp LIDs rather
-than phone-number JIDs. The add-on preserves the observed update order and
-retries transient delivery failures across a 33-second backoff window when Home
-Assistant Core is unavailable. Baileys lifecycle updates can still be missing
-or arrive after a reconnect, so automations should filter the status they need
-without assuming that every call produces every status.
-
-For a call answered on the phone or another device, `accept` is followed almost
-immediately by `terminate`: the call stopped ringing on the add-on's linked
-device, not the end of the call. WhatsApp sends a linked device nothing more
-about an answered call, so there is no update when it ends. `ringing` can fire
-once for each of your devices; trigger on `offer` to act once per call.
-
-`whatsapp.reject_call` declines an incoming call.
-Pass the `callId` and `from` values of its `offer` event, as in the
-[night-time example](https://moryoav.github.io/ha-addons/examples/automations/#decline-calls-at-night-and-reply-with-a-message).
-WhatsApp does not let a linked device start calls, and it does not report calls
-made from the phone as call events; `whatsapp_call_log` reports them after they
-end.
-
-`whatsapp_call_log` fires once for each finished call, in either direction.
-Its data contains `clientId`, `callId`, `direction` (`incoming` or `outgoing`),
-`result`, `isVideo`, `durationSeconds`, `startedAt`, `peer`, `participants`,
-and `groupJid`. `peer` is the other person's phone JID or LID.
-
-- **Outgoing calls** made from the phone come from the call history the phone
-  shares with the add-on, usually about 15 seconds after the call ends.
-  `result` is WhatsApp's own outcome: `connected`, `missed`, `rejected`,
-  `cancelled`, `unavailable`, `failed`, `abandoned`, `accepted_elsewhere`,
-  `invalid`, or `unknown`. `durationSeconds` is the call length, and
-  `participants` lists each called person as `{jid, result}`.
-- **Incoming calls** are followed through their `whatsapp_call_update` events
-  and reported when they stop ringing. `result` is `answered`, `declined`
-  (rejected on a device or with `whatsapp.reject_call`), or `missed`.
-  `durationSeconds` is always `null` and `participants` is empty, because
-  WhatsApp does not tell a linked device when an answered call ends or who
-  else joined it.
-
-Calls are reported only while the add-on is connected, and only once per
-`callId`. An incoming call whose `offer` the add-on did not see, or whose ending
-does not arrive within 10 minutes, is not reported. See the
-[missed-call example](https://moryoav.github.io/ha-addons/examples/automations/#notify-about-missed-calls).
-
-`whatsapp_addon_health_failure` fires on the next successful startup when the
-saved history ends with three consecutive failed native health checks. Its
-bounded data includes timestamps, failure classification, HTTP and curl result,
-probe timings and streak, plus available process and container metrics. It never
-includes message contents, account identifiers, URLs, headers, tokens, or raw
-response bodies.
+See the [event reference](https://moryoav.github.io/ha-addons/reference/events/)
+for payload fields, chat archive state, poll votes, contact metadata, call logs,
+and health reports. The [automation examples](https://moryoav.github.io/ha-addons/examples/automations/)
+cover message logging, unread-alert escalation, and missed-call notifications.
 
 ## Examples
 
-I keep the examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
+Find action and automation examples in the
+[WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
 
 - [Messages and media](https://moryoav.github.io/ha-addons/examples/messages/): text, stickers, documents, videos, polls, voice messages, locations, and reactions.
 - [Recipients and lookups](https://moryoav.github.io/ha-addons/examples/recipients/): identifiers, registration checks, profiles, and group lists.
@@ -466,15 +369,13 @@ after the connection opened, a warning is logged instead. Until WhatsApp
 finishes, new messages can wait on the server until the next reconnect. These
 lines contain counts only.
 
-Detailed decryption tracing is disabled. Its instrumentation remains commented
-out in the source for future debugging. Normal debug logging and recovery
-protection remain active.
+Detailed decryption tracing remains disabled in debug mode.
 
 Failed native health checks are retained at both log levels. If Supervisor
 replaces an unhealthy container, the next add-on run replays the saved probe
 result and surrounding runtime state into its log so the evidence survives the
-restart. That run also fires the silent `whatsapp_addon_health_failure` event
-for explicit automations or webhooks. When `log_level` is `debug`, it creates a
+restart. If the history ends with three consecutive failed probes, that run
+also fires `whatsapp_addon_health_failure` for automations or webhooks. When `log_level` is `debug`, it creates a
 Home Assistant persistent notification containing the same sanitized summary;
 `info` mode never creates this health notification. A fixed notification id
 updates the existing alert instead of accumulating duplicates.
@@ -485,7 +386,8 @@ for encryption recovery and LID sender receipt handling.
 ## Troubleshooting
 
 - If setup cannot connect, confirm the add-on is installed and running, then restart the add-on so it can publish Supervisor discovery.
-- If actions fail with a client error, confirm the `clientId` exists in the add-on options and has completed QR-code pairing.
+- If actions fail with a client error, confirm the `clientId` exists in the
+  add-on options and has completed QR-code or phone-number pairing.
 - If an action reports `unauthorized`, make sure the add-on and integration are
   both current, then restart the add-on and reload the integration so Supervisor
   discovery refreshes the managed internal credential. Because `/health` is public for
@@ -508,7 +410,8 @@ for encryption recovery and LID sender receipt handling.
   Home Assistant Core is temporarily unavailable.
 - Outgoing calls appear in `whatsapp_call_log` only after they end and the
   phone shares its call history, usually within about 15 seconds.
-- If HACS does not show the integration, confirm `hacs.json` exists at the repository root and `custom_components/whatsapp/manifest.json` exists.
+- If HACS does not show WhatsApp, search under **Integrations**. Use the
+  [manual installation steps](#installation) as a fallback.
 - Isolated libsignal `Bad MAC` and session lifecycle messages are summarized by
   the add-on instead of logging full stack traces or session data. A confirmed
   high-volume decryption failure burst activates the recovery pause described
@@ -524,7 +427,7 @@ for encryption recovery and LID sender receipt handling.
 
 ## ❤️ Help support this project
 
-If this project is useful to you, you can support my work:
+Support ongoing development through Ko-fi or GitHub Sponsors:
 
 <p>
   <a href="https://ko-fi.com/Y5B124NZ2L"><img src="https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?style=for-the-badge&amp;logo=kofi&amp;logoColor=white" alt="Support on Ko-fi" height="36"></a>

@@ -1,6 +1,6 @@
 # Incoming messages and conversation agents
 
-I filter incoming events by both the client session and destination chat
+Filter incoming events by both the client session and destination chat
 before running a reply workflow. These examples use a synthetic group JID;
 replace it with the chat that should activate your automation.
 
@@ -43,10 +43,9 @@ read markers. Keep reply triggers on `new_whatsapp_message` so outgoing
 
 ## Show the sender and group name
 
-Every `new_whatsapp_message` event carries `pushName`, the display name the
-sender set on their own WhatsApp profile. It is present for direct chats and
-for each member of a group. It is not your saved contact name, and a few
-protocol messages omit it, so keep a fallback.
+The `pushName` field, when present, is the sender's WhatsApp profile name.
+It can appear in direct and group messages and may differ from your saved
+contact name. Keep a fallback for events that omit it.
 
 The group itself is only identified by `key.remoteJid`. Use
 [`whatsapp.get_group_info`](recipients.md#look-up-a-group-name) to turn that
@@ -88,9 +87,9 @@ store the name in a helper instead of looking it up for each message.
 ## Reply with a conversation agent
 
 This requires a configured [Home Assistant conversation agent](https://www.home-assistant.io/integrations/conversation/).
-Replace `conversation.example_agent` with that agent's entity ID. I check its
-response before sending any reply and stop typing even when the agent or send
-action reports an error.
+Replace `conversation.example_agent` with that agent's entity ID. This example
+checks the response before sending a reply and stops typing even when the
+agent or send action reports an error.
 
 ```yaml
 - alias: WhatsApp conversation reply
@@ -164,7 +163,7 @@ For outgoing alerts, see [AI-written notifications](ai-notifications.md).
 
 ## Recognize incoming media
 
-I branch on the event's detected `type` and inspect the matching message object:
+Use the event's detected `type` to find the matching message object:
 
 | Event `type` | Message field | Use in a workflow |
 | --- | --- | --- |

@@ -37,7 +37,7 @@ exposed by the integration.
 
 ## Show typing before sending a message
 
-I send `composing` to the destination chat before a reply, then `paused` when
+Send `composing` to the destination chat before a reply, then `paused` when
 the reply attempt ends. Presence is a separate action from sending a message.
 
 ```yaml
@@ -68,7 +68,7 @@ still run. This does not guarantee that the message was delivered.
 
 ## Keep typing while another action runs
 
-I use a bounded background script for longer work, such as a conversation
+Use a bounded background script for longer work, such as a conversation
 agent request. Add this definition to `scripts.yaml`; in the script editor,
 use the contents beneath `whatsapp_keep_typing:`.
 

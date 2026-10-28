@@ -109,7 +109,7 @@ and [presence notifications](presence.md#notify-when-a-contact-is-online).
 
 ## Send a sensor alert with a templated message
 
-I use the same send action for water, temperature, appliance, and availability
+Use the send action for water, temperature, appliance, and availability
 alerts. The trigger supplies the value included in the message. Replace the
 sample entity and threshold with your own.
 
@@ -139,7 +139,7 @@ follow-up later, keep the send response as shown in
 
 ## Forward a local webhook to WhatsApp
 
-I use a Home Assistant webhook to accept text from another local application.
+Use a Home Assistant webhook to accept text from another local application.
 The recipient and client remain fixed in the automation. Replace the webhook
 ID with your own long, random value before using the example.
 

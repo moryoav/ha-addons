@@ -1,40 +1,43 @@
 # Support
 
-Thanks for using WhatsApp for Home Assistant.
+## Getting help
 
-## Getting Help
+Start with the documentation for the task:
 
-Start with the project documentation:
+- [README](README.md): overview, installation, configuration, and troubleshooting.
+- [Add-on guide](whatsapp_addon/DOCS.md): options, pairing, media downloads, and diagnostics.
+- [Knowledge base](https://moryoav.github.io/ha-addons/): action and automation examples and reference pages.
+- [Project changelog](CHANGELOG.md) and [add-on changelog](whatsapp_addon/CHANGELOG.md): release history.
 
-- [README](README.md) for an overview, installation, configuration, and troubleshooting.
-- [Add-on guide](whatsapp_addon/DOCS.md) for options, pairing, media downloads, and diagnostics.
-- [Knowledge base](https://moryoav.github.io/ha-addons/) for action and automation examples and reference pages.
-- [Project changelog](CHANGELOG.md) and [add-on changelog](whatsapp_addon/CHANGELOG.md) for release history.
+## Reporting bugs
 
-## Reporting Bugs
+Open a [bug report](https://github.com/moryoav/ha-addons/issues/new?template=bug_report.yml)
+and include:
 
-Use the bug report issue template when something is not working as expected.
+- The add-on, integration, and Home Assistant versions.
+- The Home Assistant installation type and architecture, such as `amd64` or
+  `aarch64`.
+- Whether the integration was installed through HACS or manually.
+- Steps to reproduce the problem, the expected result, and what happened.
+- Relevant Home Assistant and add-on logs.
 
-Please include:
+Remove credentials, QR codes, pairing codes, phone numbers, chat IDs, message
+bodies, personal paths, and private configuration before sharing logs,
+screenshots, or automation traces. Include only the configuration needed to
+reproduce the problem, with private values replaced.
 
-- Your WhatsApp for Home Assistant version.
-- Your Home Assistant version.
-- Whether you installed the integration through HACS or manually.
-- Your architecture, such as `amd64` or `aarch64`.
-- Your add-on `clients` configuration with private identifiers removed.
-- Clear reproduction steps.
-- Relevant Home Assistant and add-on logs with secrets, QR codes, phone numbers, chat ids, message bodies, and private configuration removed.
+## Feature requests
 
-## Feature Requests
+Open a [feature request](https://github.com/moryoav/ha-addons/issues/new?template=feature_request.yml)
+and describe the workflow you want to improve. Indicate whether it involves
+the add-on, the integration, or both.
 
-Use the feature request issue template for new ideas or improvements.
+## Security issues
 
-Please explain the Home Assistant workflow you want to improve and whether you think the change belongs in the add-on, the custom integration, or both.
+Follow [SECURITY.md](SECURITY.md) to report a vulnerability. Keep exploit
+details out of public issues.
 
-## Security Issues
+## Support availability
 
-If you believe you found a security vulnerability, do not open a public issue with exploit details. Follow `SECURITY.md`.
-
-## Scope of Support
-
-This project is provided by the community and may not have immediate support. The project uses an unofficial WhatsApp Web client, so WhatsApp behavior can change without notice.
+Community support is provided as time allows. The project uses an unofficial
+WhatsApp Web client, so WhatsApp behavior can change without notice.

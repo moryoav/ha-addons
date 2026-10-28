@@ -9,7 +9,7 @@ The add-on fires these Home Assistant events:
 | `whatsapp_message_status` | A sent message was delivered, read, or played. |
 | `whatsapp_chat_read` | Received messages were read or played on another device. |
 | `whatsapp_call_update` | An incoming WhatsApp call lifecycle update. |
-| `whatsapp_call_log` | One record per finished call, incoming or outgoing. |
+| `whatsapp_call_log` | One record per incoming call attempt or outgoing call from the phone. |
 | `whatsapp_presence_update` | A contact presence update. |
 | `whatsapp_contacts_sync` | Available contact records from WhatsApp synchronization or contact updates. |
 | `whatsapp_send_message_result` | Result event after a successful send action. |
@@ -87,7 +87,7 @@ exactly, so a phone-number JID does not imply a matching LID. A later state upda
 does not change an event that was already delivered. For media, the flag is
 captured when the message is received, before the download finishes.
 
-I use this condition to act only when the chat is known to be unarchived:
+Use this condition to act only when the chat is known to be unarchived:
 
 ```yaml
 conditions:
@@ -188,7 +188,7 @@ The integration fires `whatsapp_send_message_result` after a successful
 message events use **`clientId`**. It is not a delivery receipt and does not
 collect messages sent from the phone.
 
-I store the last message ID in a Text helper. Create
+To store the last sent message ID, create the Text helper
 `input_text.whatsapp_last_sent_id` with a maximum length of 255, then filter
 the collector to one client and destination:
 
@@ -271,14 +271,15 @@ once for each of your devices; trigger on `offer` to act once per call.
 `whatsapp.reject_call` declines an incoming call.
 Pass the `callId` and `from` values of its `offer` event, as in the
 [night-time example](../examples/automations.md#decline-calls-at-night-and-reply-with-a-message).
-WhatsApp does not let a linked device start calls, and it does not report calls
-made from the phone as call events; `whatsapp_call_log` reports them after they
-end.
+Calls made from the phone do not produce `whatsapp_call_update` events;
+`whatsapp_call_log` reports them after they end. To start an AI voice call from
+Home Assistant, use [`whatsapp.make_call`](../examples/voice-calls.md#make-a-call-from-home-assistant).
 
 ## Call log events
 
-`whatsapp_call_log` fires once for each finished call, in either direction.
-Its data contains `clientId`, `callId`, `direction` (`incoming` or `outgoing`),
+`whatsapp_call_log` reports incoming call attempts and outgoing calls from the
+phone. Each call is reported at most once. Its data contains `clientId`,
+`callId`, `direction` (`incoming` or `outgoing`),
 `result`, `isVideo`, `durationSeconds`, `startedAt`, `peer`, `participants`,
 and `groupJid`. `peer` is the other person's phone JID or LID.
 
@@ -304,18 +305,10 @@ does not arrive within 10 minutes, is not reported. See the
 
 `whatsapp_addon_health_failure` fires on the next successful startup when the
 saved history ends with three consecutive failed native health checks. Its
-bounded data includes timestamps, failure classification, HTTP and curl result,
-probe timings and streak, plus available process and container metrics. It never
-includes message contents, account identifiers, URLs, headers, tokens, or raw
-response bodies.
+payload includes the schema, service, run ID, first and last failure timestamps,
+failure count and streak, failure classification, HTTP and curl results, probe
+timings, and available process or container metrics. It excludes message
+contents, account identifiers, URLs, headers, tokens, and raw response bodies.
 
-`whatsapp_addon_health_failure` includes its schema and service, a run id,
-first and last failure timestamps, failure count and streak, the bounded failure
-classification, HTTP and curl result, probe timings, and any available bounded
-process or container metrics. It contains no message contents, account
-identifiers, URLs, headers, tokens, or raw response bodies.
-
-Isolated libsignal `Bad MAC`, message-counter, and session lifecycle console
-logs are filtered and summarized as counts instead of exposing full stack
-traces or session data. A confirmed high-volume decryption failure burst
-activates the recovery pause described in the [add-on documentation](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md#encryption-recovery).
+For decryption failures and recovery controls, see
+[Encryption recovery](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md#encryption-recovery).

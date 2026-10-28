@@ -63,18 +63,19 @@ the call open. Logs and bounded numeric reports omit conversations and audio.
 
 ## Offline tests
 
-From `whatsapp_addon`, run `npm ci --ignore-scripts --no-audit --no-fund` and
-`npm test`. This runs both messaging and voice Node tests. From the repository
-root, run the Home Assistant integration suite with `pytest`.
+Follow the [contributor testing guide](../../CONTRIBUTING.md#testing) for the
+integration and Node.js suites.
 
-Install `voice/requirements.txt` plus PyYAML in a Python environment, then run:
+For the Python bridge tests, use a Python 3.14 environment and run these
+commands from the repository root:
 
-```powershell
+```bash
+python -m pip install -r whatsapp_addon/voice/requirements.txt PyYAML==6.0.3
 python -m unittest discover -s whatsapp_addon/voice/test -p 'test_*.py' -v
 ```
 
-Build the production image from the normal app directory. It runs native Rust
-tests before packaging the worker:
+From the repository root, build and test the production image in PowerShell.
+The image build runs native Rust tests before packaging the worker:
 
 ```powershell
 docker build --tag whatsapp-addon:local whatsapp_addon

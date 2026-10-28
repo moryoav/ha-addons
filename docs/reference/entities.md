@@ -62,7 +62,7 @@ are not automatically deleted during outages.
 
 ## Notify through another channel when an account disconnects
 
-I use a Home Assistant mobile notification for this alert, so it can arrive
+Use a Home Assistant mobile notification for this alert so it can arrive
 while WhatsApp is disconnected. Select your account's WhatsApp connection
 entity and your own notification action before using the example.
 

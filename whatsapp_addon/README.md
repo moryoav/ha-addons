@@ -64,7 +64,12 @@ Use the button above after adding the repository. It opens the `WhatsApp` add-on
 2. Review the add-on options.
 3. Start the add-on.
 
-In a few seconds, Home Assistant should show a persistent notification with a QR code and an **Open pairing page** link. Scan the QR code with WhatsApp, or follow the link, choose the account, and select **Link with code** in **Connection** to pair using your phone number. You can also reach the workspace with **Open Web UI** on the add-on page.
+Home Assistant should show a persistent notification with a QR code and an
+**Open pairing page** link. Open the link or select **Open Web UI** on the
+add-on page.
+
+Choose an account in **Connection**, then scan its QR code with WhatsApp or
+select **Link with code** to pair using the account's phone number.
 
 ### 3. Install the integration
 
@@ -238,9 +243,7 @@ message content, raw account identifiers, QR codes, session data, or API
 tokens. Identifier-related entries use run-scoped one-way references for
 correlation. Return the option to `info` after collecting the relevant logs.
 
-Detailed decryption tracing is disabled. Its instrumentation remains commented
-out in the source for future debugging. Normal debug logging and recovery
-protection remain active.
+Detailed decryption tracing remains disabled in debug mode.
 
 Failed native health checks are recorded in a small persistent history at both
 log levels. If Supervisor replaces an unhealthy container, the new add-on run
@@ -256,7 +259,8 @@ notification.
 
 See [the repository README](https://github.com/moryoav/ha-addons/blob/main/README.md) for HACS integration setup, actions, events, troubleshooting, and removal instructions.
 
-I keep the action and automation examples in the [WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
+Find action and automation examples in the
+[WhatsApp knowledge base](https://moryoav.github.io/ha-addons/).
 
 See [the add-on documentation](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md) for add-on options and the web UI, and [the add-on changelog](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/CHANGELOG.md) for release notes.
 

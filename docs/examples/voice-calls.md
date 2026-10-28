@@ -50,8 +50,11 @@ connection state. **Connection**, **Calls**, and **Recordings** share the same
 navigation on desktop and phone.
 
 An account that needs pairing shows its current QR code in **Connection**.
-The code updates as WhatsApp provides a new one. **Link with code** is marked
-**Coming later** and is disabled; pairing-code connections are not active yet.
+The code updates as WhatsApp provides a new one. To pair without scanning,
+select **Link with code**, enter the account's phone number with its country
+code, and request a one-time code. Enter it in WhatsApp under **Linked devices >
+Link a device > Link with phone number instead**. Select **Scan QR code** to
+return to QR pairing.
 
 Under the configured calling account, open **Calls**, enter a phone number
 with its country code or a WhatsApp user ID, and select **Call**. You can add

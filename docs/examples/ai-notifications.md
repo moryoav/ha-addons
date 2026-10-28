@@ -1,6 +1,6 @@
 # AI-written notifications
 
-I use a conversation agent to vary the wording of routine notifications.
+Use a conversation agent to vary the wording of routine notifications.
 The automation supplies the facts, the agent rewrites them, and WhatsApp sends
 the result. If the agent fails or returns no usable text, this script sends
 the original message.
@@ -72,7 +72,7 @@ whatsapp_notify_ai:
       response_variable: whatsapp_result
 ```
 
-I leave out `conversation_id` here so unrelated notifications do not share a
+This example omits `conversation_id` so unrelated notifications do not share a
 conversation. A writing prompt cannot guarantee that every fact is preserved;
 send exact wording directly when the original numbers or instructions matter.
 

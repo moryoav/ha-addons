@@ -1,9 +1,11 @@
-# Proposed Changes
+## Summary
 
-> (Describe the changes and rationale behind them)
+<!-- Describe the problem, the change, and why it is needed. -->
 
-## Related Issues
+## Testing
 
-> ([Github link][autolink-references] to related issues or pull requests)
+<!-- List the checks performed and their results. Include screenshots for UI changes. -->
 
-[autolink-references]: https://help.github.com/articles/autolinked-references-and-urls/
+## Related issues
+
+<!-- Link related issues or pull requests. Use "Closes #123" only if this fully resolves the issue. -->

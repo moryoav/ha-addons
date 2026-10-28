@@ -1,13 +1,13 @@
 # Conversation history
 
-I keep a local text log for one WhatsApp chat and include recent exchanges
+Keep a local text log for one WhatsApp chat and include recent exchanges
 when asking a conversation agent for a reply.
 
 Some agents already retain context when a later call reuses the returned
 `conversation_id`. See [conversation processing](https://www.home-assistant.io/actions/conversation.process/).
-Use a separate conversation ID for each client/chat pair. File history is an
-optional alternative when I want explicit storage and retention. It is not
-provided by the WhatsApp integration.
+Use a separate conversation ID for each client/chat pair. File history offers
+explicit control over storage and retention through separate Home Assistant
+integrations.
 
 ## Prepare the history file
 

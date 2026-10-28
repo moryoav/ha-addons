@@ -80,7 +80,7 @@ data:
 
 ## Send a sticker
 
-I use a prepared image for static stickers. The image must meet all four
+Prepare the image before sending a static sticker. It must meet all four
 requirements:
 
 - **Format:** WebP (`.webp`).
@@ -160,7 +160,7 @@ data:
         - Monthly report
 ```
 
-The existing pattern also builds `values` from JSON stored in a text helper:
+To build `values` from JSON stored in a text helper, use:
 `values: "{{ states('input_text.report_choices') | from_json }}"`.
 That helper must contain a valid JSON array of strings.
 
@@ -233,7 +233,7 @@ error codes.
 
 ## React to a message sent earlier
 
-I capture the send response so a later action can react to the original
+Capture the send response so a later action can react to the original
 notification. Use the full `sent_message.key`, including any extra fields.
 
 ```yaml
@@ -262,7 +262,7 @@ when the completion action belongs to another automation run.
 
 ## Edit a sent text message
 
-I use the original `sent_message.key` to update a notification after a task
+Use the original `sent_message.key` to update a notification after a task
 finishes.
 
 ```yaml
@@ -321,7 +321,7 @@ Use `whatsapp.send_message` for both edit and delete payloads.
 
 ## Reply to a notification with a sticker
 
-I use `options.quoted` to attach a follow-up to a notification sent earlier.
+Use `options.quoted` to attach a follow-up to a notification sent earlier.
 Quoting needs the full `sent_message` object; a reaction uses its `key`.
 
 ```yaml
@@ -348,8 +348,8 @@ with `text: "Here is a follow-up."` and retain `options.quoted`.
 
 ## Build the message body with a template
 
-I also use a template that returns a dictionary when message content comes
-from another action. Here the source is a simple variable.
+When message content comes from another action, use a template that returns
+a dictionary. This example uses a simple variable as the source.
 
 ```yaml
 - variables:

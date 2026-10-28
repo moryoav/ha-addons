@@ -15,10 +15,10 @@ Install both parts before using the examples in this knowledge base.
 
 The app's account workspace keeps connection status visible beside
 **Connection**, **Calls**, and **Recordings**. Pair accounts with their QR code
-or choose **Link with code** to enter a one-time code in WhatsApp,
-manage the selected account's calls, or browse completed recordings without
-changing to a separate interface. The initial QR notification includes an
-**Open pairing page** link to this workspace.
+or choose **Link with code** to enter a one-time code in WhatsApp. Use the same
+workspace to manage the selected account's calls and browse completed
+recordings. The initial QR notification includes an **Open pairing page** link
+to this workspace.
 
 The examples use fictional phone numbers and synthetic identifiers. Replace
 `clientId`, recipients, and entity IDs with the values from your installation.
@@ -56,10 +56,10 @@ Session state. All status entities refresh together every 30 seconds. See
 | `whatsapp_message_status` | A sent message is delivered, read, or played. |
 | `whatsapp_chat_read` | You read or play received messages on another device, such as the phone. |
 | `whatsapp_call_update` | An incoming call rings, is answered, declined, or stops ringing. |
-| `whatsapp_call_log` | A call ends, incoming or made from the phone. |
+| `whatsapp_call_log` | An incoming call stops ringing, or the phone shares an outgoing call's history. |
 | `whatsapp_presence_update` | A followed contact's presence changes. |
 | `whatsapp_contacts_sync` | WhatsApp supplies contact names and identifiers through synchronization or contact updates. |
-| `whatsapp_send_message_result` | `send_message` finishes. |
+| `whatsapp_send_message_result` | `send_message` succeeds. |
 | `whatsapp_addon_health_failure` | The add-on restarts after its health checks failed. |
 
 ## Important limitation

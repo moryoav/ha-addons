@@ -6,6 +6,10 @@ All notable changes to this repository are documented here.
 
 - Reorganized the contribution guide around reporting bugs, development, testing,
   and pull requests, with direct wording and concise build benchmark guidance.
+- Simplified documentation wording, removed duplicate event descriptions, and
+  improved support, design, and pull request guidance.
+- Corrected phone-number pairing and call-event guidance, documented persistent
+  inbox configuration, and clarified voice test setup.
 
 ## 3.3.1
 

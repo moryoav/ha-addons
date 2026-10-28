@@ -587,13 +587,13 @@ compatible.
 
 ## 1.4.1
 
-- Bug QR-Code fixed
+- Fixed a QR-code bug.
 
 ## 1.4.0
 
-- Updated whatsapp library
-- Changed session saving method
-- Special functions such as sending buttons, sending lists, etc., are no longer available.
+- Updated the WhatsApp library.
+- Changed how sessions are saved.
+- Removed features such as sending buttons and lists.
 
 ## 1.3.5
 
@@ -610,38 +610,40 @@ compatible.
 
 ## 1.3.2
 
-- Bug fixed.
+- Fixed a bug.
 
 ## 1.3.0
 
-- Bug fixed.
+- Fixed a bug.
 
 ## 1.2.4
 
-- Bug fixed.
-- Added patch for receive button on iOS (Attention! iOS receive buttons only if app is open (it seems to be a iOS app bug))
+- Fixed a bug.
+- Added a patch for receiving buttons on iOS. Buttons appear to arrive only
+  while the iOS app is open.
 
 ## 1.2.2
 
-- Added the ability to always be online or offline. This could lead to not receiving notifications on other devices. (**Restard required**)
-- Bug fixed.
+- Added the ability to always be online or offline. This could lead to not receiving notifications on other devices. (**Restart required**)
+- Fixed a bug.
 
 ## 1.2.1
 
-- Fixed bug that did not allow the reception of push notifications on other devices.
-- Added event presence update.
-- Added two more services like subscribe presence and send presence update.
+- Fixed missing push notifications on other devices.
+- Added a presence update event.
+- Added services to subscribe to presence and send presence updates.
 
 ## 1.2.0
 
-- **Changed radically command and events. Please refer to doc and developer tools for change your automations.**
-- **Performance boost! (Required re-authentication)**
-- Bug fixed on send location.
-- Bug fixed on send mulitple buttons.
+- **Breaking:** Changed commands and events. Update automations using the
+  documentation and Home Assistant Developer Tools.
+- Improved performance. Re-authentication is required.
+- Fixed sending locations.
+- Fixed sending multiple buttons.
 
 ## 1.1.2
 
-- Bug fixed.
+- Fixed a bug.
 - Performance improvements.
 
 ## 1.1.1
@@ -650,12 +652,12 @@ compatible.
 
 ## 1.1.0
 
-- Added the ability to manage multiple whatsapp sessions (re-authentication required)
-- Buttons bug fixed (better visibility on android devices)
-- Message options bug fixed
-- Bug fixed.
+- Added support for multiple WhatsApp sessions (re-authentication required).
+- Improved button visibility on Android.
+- Fixed message options.
+- Fixed a bug.
 
-**NOTE:** If you have problems with the custom components being updated, please follow this steps:
+**NOTE:** If you have problems with the custom components being updated, follow these steps:
 
 - Remove Whatsapp configuration in _configuration.yaml_
 - Restart Home Assistant
@@ -664,10 +666,10 @@ compatible.
 
 ## 1.0.2
 
-- Addedd message revoke event.
+- Added a message revocation event.
 - Added buttons message type (view documentation) (may not work properly on some devices)
-- Added set status service (for sets the current user's status message)
-- Bug fixed.
+- Added a service to set the current user's status text.
+- Fixed a bug.
 
 ## 1.0.1
 

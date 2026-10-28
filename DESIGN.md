@@ -99,14 +99,14 @@ components:
 
 ## Overview
 
-**Creative North Star:** "The Account Audio Workspace"
+The workspace makes account identity, connection health, and audio tasks easy
+to scan. Use neutral surfaces, a forest-green accent, slim dividers, and system
+fonts consistently across connection controls and saved recordings.
 
-A restrained communications interface makes account identity, connection health, and audio tasks easy to scan. Cool neutral surfaces, a forest-green accent, slim dividers, and the platform UI sans give connection controls and saved media one consistent language.
-
-**Key Characteristics:**
+Key priorities:
 
 - Account identity stays separate from the selected task.
-- Compact forms and timed media rows carry useful content.
+- Compact forms and recording rows show the information needed for each task.
 - Light and dark appearances retain the same hierarchy and density.
 
 ## Colors
@@ -117,29 +117,32 @@ Forest green identifies primary actions, selection, connected status, and playba
 
 ### Neutral
 
-Cool ground surrounds the main surface; the rail and inset panels provide gentle tonal grouping. Ink carries task content, secondary text carries metadata, and rule color separates regions.
+Use the ground color around the main surface and the rail color for inset
+panels. Use the ink color for primary text, secondary text for metadata, and
+the rule color for dividers.
 
 Warning amber marks waiting states. Danger red marks errors, recovery, and destructive actions. Both use a matching soft background.
 
 The runtime QR image keeps a white scan surface in both appearances.
 
-**The Functional Color Rule.** Keep action, selection, warning, and danger roles consistent in both appearances.
+Use the same action, selection, warning, and danger colors in both appearances.
 
 ## Typography
 
-One platform UI sans stack serves headings, forms, and metadata. Headline and title roles use restrained negative tracking; labels use ordinary case. Supporting text is compact, with tabular numerals for durations and file metadata where alignment matters.
+Use the system font stack for headings, forms, and metadata. Headline and title roles use restrained negative tracking; labels use ordinary case. Supporting text is compact, with tabular numerals for durations and file metadata where alignment matters.
 
-The main headline steps down to (23px) at the narrow container breakpoint. Inputs increase to (16px) there. Section headings and labels otherwise preserve the same hierarchy.
+The main headline steps down to `23px` at the narrow container breakpoint. Inputs increase to `16px` there. Section headings and labels otherwise preserve the same hierarchy.
 
-**The Task Hierarchy Rule.** Account and section headings lead; status, capability, and time metadata remain supporting information.
+Make account and section headings prominent. Keep status, capability, and time
+metadata secondary.
 
 ## Layout
 
-The workspace is centered with a maximum width of (1440px) and an outer gutter of (16px). Desktop uses a (218px) account rail beside flexible content with (29px 28px 24px) padding. The Calls form and readiness facts share a divided two-column region.
+The workspace is centered with a maximum width of `1440px` and an outer gutter of `16px`. Desktop uses a `218px` account rail beside flexible content with `29px 28px 24px` padding. The Calls form and readiness facts share a divided two-column region.
 
-Container queries at (780px) narrow the rail to (188px) and stack call content. At (620px), accounts become a three-column selector above the workspace, pairing stacks with QR first, and task tabs span the width. At a viewport width of (620px), the outer gutter and frame border disappear. Controls reflow; recording size is omitted on smaller layouts.
+Container queries at `780px` narrow the rail to `188px` and stack call content. At `620px`, accounts become a three-column selector above the workspace, pairing stacks with QR first, and task tabs span the width. At a viewport width of `620px`, the outer gutter and frame border disappear. Controls reflow; recording size is omitted on smaller layouts.
 
-## Elevation & Depth
+## Surfaces and layering
 
 Surfaces are flat. Tonal differences, one-pixel borders, and spacing establish depth without shadows. The modal backdrop uses translucent black. The active-call strip remains sticky near the top of the workspace.
 
@@ -149,24 +152,24 @@ Controls use gently curved corners; account selections are slightly softer, and 
 
 ## Components
 
-- **Buttons:** Compact, bordered secondary controls; solid accent primary controls; soft red destructive controls. Default minimum height is (38px). Hover changes the surface or slightly darkens the primary control.
+- **Buttons:** Compact, bordered secondary controls; solid accent primary controls; soft red destructive controls. Default minimum height is `38px`. Hover changes the surface or slightly darkens the primary control.
 - **Fields:** A surface fill, thin rule border, and control radius. Labels sit above fields, with concise help below. Browser-native audio controls handle playback and seeking.
 - **Navigation:** Account buttons use a tonal selected state. Task tabs use accent text and a thin underline for the current view.
 - **Status:** A small dot accompanies text, so state is not conveyed by color alone. Waiting and recovery retain their own labels.
 - **Panels:** Tonal inset regions group connection summaries and settings. Recording rows use separators rather than individual cards.
 - **Active call:** A compact selected-tone strip shows the owning account and a destructive Hang up control across views.
-- **Focus and motion:** Keyboard focus uses an accent outline (2px) offset by (3px). Button color transitions use (160ms ease-out) only when reduced motion is not requested. Coarse-pointer icon, playback, tab, and text controls have (44px) targets.
+- **Focus and motion:** Keyboard focus uses a `2px` accent outline offset by `3px`. Button color transitions use `160ms ease-out` only when reduced motion is not requested. Coarse-pointer icon, playback, tab, and text controls have `44px` targets.
 
 ## Do's and Don'ts
 
 ### Do
 
-- **Do** preserve the same type hierarchy and semantic colors in light and dark appearances.
-- **Do** reflow forms and media rows at narrow widths.
-- **Do** retain visible focus and text labels alongside state color.
+- Preserve the same type hierarchy and semantic colors in light and dark appearances.
+- Reflow forms and media rows at narrow widths.
+- Retain visible focus and text labels alongside state color.
 
 ### Don't
 
-- **Don't** add shadows to flat workspace panels.
-- **Don't** use the accent role for errors or destructive actions.
-- **Don't** replace native audio controls with an imitation player.
+- Do not add shadows to flat workspace panels.
+- Do not use the accent role for errors or destructive actions.
+- Do not replace native audio controls with an imitation player.

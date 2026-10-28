@@ -1,8 +1,9 @@
 # Code of Conduct
 
-## Our Pledge
+## Participation
 
-We want WhatsApp for Home Assistant to be a welcoming project for people with different backgrounds, skill levels, and Home Assistant setups.
+WhatsApp for Home Assistant welcomes people with different backgrounds,
+skill levels, and Home Assistant setups.
 
 Contributors, maintainers, and users are expected to participate respectfully and constructively in issues, pull requests, discussions, and any other project spaces.
 
@@ -25,14 +26,14 @@ Examples of behavior that is not acceptable:
 - Discriminatory language or behavior.
 - Repeated disruption or bad-faith arguments.
 - Publishing private information without permission.
-- Sharing secrets, credentials, tokens, QR codes, phone numbers, chat ids, message contents, or private Home Assistant configuration from another person.
+- Sharing secrets, credentials, tokens, QR codes, phone numbers, chat IDs, message contents, or private Home Assistant configuration from another person.
 - Encouraging unsafe use of this project without clearly explaining the risk.
 
 ## Enforcement
 
 Maintainers may remove comments, close issues or pull requests, limit participation, or take other reasonable action when behavior harms the project or its community.
 
-If you see behavior that violates this Code of Conduct, please report it to the project maintainer. If the issue involves a security vulnerability, follow `SECURITY.md` instead of posting exploit details publicly.
+If you see behavior that violates this Code of Conduct, please report it to the project maintainer. If the issue involves a security vulnerability, follow [SECURITY.md](SECURITY.md) instead of posting exploit details publicly.
 
 ## Scope
 

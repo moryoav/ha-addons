@@ -1,7 +1,7 @@
 # Reusable notification scripts
 
-I use scripts to share notification behavior between automations and to return
-the WhatsApp send response to the caller. The examples use fictional recipients.
+Scripts share notification behavior between automations and return the
+WhatsApp send response to the caller. The examples use fictional recipients.
 
 ## Send a notification and return its response
 
@@ -46,7 +46,7 @@ whatsapp_notify:
       response_variable: whatsapp_result
 ```
 
-Call the script directly to receive its response. I can then send a later
+Call the script directly to receive its response, then use it to send a later
 notification as a reply to the first:
 
 ```yaml
@@ -71,7 +71,7 @@ this response to the caller. See [Home Assistant script responses](https://www.h
 
 ## Save a message key for another run
 
-I store only the message key when a later automation needs to add a completion
+Store the message key when a later automation needs to add a completion
 reaction. A quoted reply needs the full message object and should keep that
 object in a variable or suitable storage instead.
 
@@ -150,9 +150,9 @@ never truncate JSON to fit. Keys contain private chat and message identifiers.
 
 ## Send media returned by a helper
 
-I also use scripts that prepare a file and return a URL, then pass that URL to
-WhatsApp. For example, the following sequence assumes **your own**
-`script.prepare_sticker` already exists and returns a mapping containing `url`:
+A helper script can prepare a file and return a URL for WhatsApp to send.
+This example requires a separate `script.prepare_sticker` that returns a
+mapping containing `url`:
 
 ```yaml
 - action: script.prepare_sticker
