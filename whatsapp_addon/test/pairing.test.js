@@ -599,6 +599,29 @@ test("paired accounts do not repeat notification dismissals on reconnect", async
   assert.deepEqual(notifications(), ["dismiss", "create", "dismiss"]);
 });
 
+/** Replace a rotating QR in place, and remove only a QR that a long reconnect has left expired. */
+test("a rotating QR socket keeps its notification until the next QR replaces it", async () => {
+  const fixture = runtimeFixture();
+  const client = fixture.accounts[0];
+  const notifications = () => fixture.requests
+    .filter((request) => request.body.notification_id === "whatsapp_addon_qrcode_default")
+    .map((request) => request.url.split("/").at(-1));
+  client.emit("qr", "fictional-first-qr");
+  await fixture.runtime.flushPairingNotifications();
+  // Baileys ends an unscanned QR socket with 408; closing its pairing session comes first.
+  client.emit("pairing_update", { method: "qr", pending: false, code: null });
+  client.emit("disconnected", 408);
+  await fixture.runtime.flushPairingNotifications();
+  assert.deepEqual(notifications(), ["create"]);
+  client.emit("qr", "fictional-second-qr");
+  await fixture.runtime.flushPairingNotifications();
+  assert.deepEqual(notifications(), ["create", "create"]);
+  fixture.runtime.clientStates.default.lastQrAt = new Date(Date.now() - 61_000).toISOString();
+  client.emit("disconnected", 428);
+  await fixture.runtime.flushPairingNotifications();
+  assert.deepEqual(notifications(), ["create", "create", "dismiss"]);
+});
+
 /** Keep pairing notifications prompt while Supervisor cannot describe the installed app. */
 test("a failed link lookup is retried only after a pause", async () => {
   let now = Date.parse("2026-10-26T08:00:00Z");

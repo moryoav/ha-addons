@@ -59,6 +59,8 @@ const HEALTH_FAILURE_NOTIFICATION_ID = "whatsapp_addon_health_failure";
 const RECOVERY_NOTIFICATION_ID = "whatsapp_addon_recovery_required";
 // Retry a failed Web UI link lookup only after this pause, not on every pairing update.
 const WEB_UI_LOOKUP_RETRY_MS = 5 * 60_000;
+// A pairing socket closes after its last 20 second QR code and returns with a new one within seconds.
+const PAIRING_RECONNECT_GRACE_MS = 60_000;
 
 const CALL_STATUSES = new Set([
   "offer",
@@ -431,6 +433,9 @@ const createAddonRuntime = ({
     const path = clientStates[clientId]?.state === "pairing" ? await resolveWebUiPath() : webUiPath;
     const state = clientStates[clientId];
     if (state?.state !== "pairing" || (!state.qrDataUrl && state.pairingMethod !== "phone")) {
+      // Keep a recent QR through the reconnect that replaces it, instead of removing and re-adding it.
+      if (["connecting", "reconnecting", "restarting"].includes(state?.state) &&
+        Date.now() - Date.parse(state.lastQrAt) < PAIRING_RECONNECT_GRACE_MS) return;
       // Paired accounts reconnect often; dismiss only a notification that may still be shown.
       if (pairingNotificationsDismissed.has(clientId)) return;
       if (await postSupervisor("/core/api/services/persistent_notification/dismiss",
