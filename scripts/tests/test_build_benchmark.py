@@ -22,7 +22,7 @@ class BenchmarkPlanTests(unittest.TestCase):
 
     def test_architecture_and_suite_are_bounded(self):
         """Keep architecture selection and the dependencies-only suite explicit."""
-        for architecture, suite in [("armhf", "probe"), ("amd64", "full"), ("../amd64", "probe")]:
+        for architecture, suite in [("armhf", "probe"), ("amd64", "release"), ("../amd64", "probe")]:
             with self.subTest(architecture=architecture, suite=suite):
                 with self.assertRaises(ValueError):
                     benchmark.plan("a" * 40, architecture, suite)
@@ -64,16 +64,61 @@ class BenchmarkPlanTests(unittest.TestCase):
                 self.assertEqual(target.read_text(), "source_sha=" + "a" * 40 + "\n")
 
     def test_workflow_has_no_publication_or_cache_export_capability(self):
-        """Guard the execution boundary in addition to generated matrix values."""
+        """Keep probe permissions read-only and full publishing behind the guarded tag."""
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/build-benchmark.yaml").read_text()
+        probe = workflow.split("\n  probe:", 1)[1].split("\n  full:", 1)[0]
+        full = workflow.split("\n  full:", 1)[1]
         self.assertNotRegex(workflow, r"(?m)^\s*cache-to:")
-        self.assertNotIn("packages: write", workflow)
-        self.assertNotIn("id-token: write", workflow)
+        self.assertNotIn("packages: write", probe)
+        self.assertNotIn("id-token: write", probe)
         self.assertNotIn("home-assistant/builder/actions/build-image", workflow)
         self.assertNotIn("workflow_call:", workflow)
-        self.assertIn("push: false", workflow)
-        self.assertIn("outputs: type=cacheonly", workflow)
-        self.assertIn("target: dependencies", workflow)
+        self.assertIn("push: false", probe)
+        self.assertIn("outputs: type=cacheonly", probe)
+        self.assertIn("target: dependencies", probe)
+        self.assertIn("tags: ${{ steps.prepare.outputs.image }}", full)
+        self.assertIn("--certificate-identity", full)
+        self.assertIn("source/whatsapp_addon/voice/test/image-tests.ps1", full)
+
+    def test_full_matrix_repeats_both_gha_only_cases_on_fresh_jobs(self):
+        """Cover both architectures twice without importing the offending inline cache."""
+        cases = benchmark.plan("a" * 40, "both", "full")["include"]
+        self.assertEqual(len(cases), 8)
+        self.assertEqual({(entry["arch"], entry["case"], entry["repeat"]) for entry in cases}, {
+            (arch, case, repeat) for arch in benchmark.ARCHITECTURES
+            for case in ("rust-only", "gha-combined") for repeat in (1, 2)
+        })
+        for entry in cases:
+            self.assertTrue(entry["pull"])
+            self.assertEqual(entry["platforms"], "")
+            self.assertNotIn("type=registry", entry["cache_from"])
+            self.assertIn(f"type=gha,scope={entry['arch']}-rust", entry["cache_from"])
+            self.assertEqual(f"type=gha,scope={entry['arch']}\n" in entry["cache_from"], entry["case"] == "gha-combined")
+
+    def test_full_outputs_reject_production_tags_and_uncontrolled_names(self):
+        """Permit only run-specific tags in architecture-specific benchmark repositories."""
+        image = benchmark.full_destination("12345", "1", "amd64", "gha-combined", 2)
+        self.assertEqual(image, "ghcr.io/moryoav/amd64-whatsapp-addon-bench:run-12345-1-gha-combined-repeat-2")
+        for run_id, attempt, arch, case, repeat in [
+            ("latest", "1", "amd64", "rust-only", 1),
+            ("123", "latest", "amd64", "rust-only", 1),
+            ("123", "1", "multi", "rust-only", 1),
+            ("123", "1", "amd64", "release-inline", 1),
+            ("123", "1", "amd64", "rust-only", 3),
+        ]:
+            with self.subTest(run_id=run_id, attempt=attempt, arch=arch, case=case, repeat=repeat):
+                with self.assertRaises(ValueError):
+                    benchmark.full_destination(run_id, attempt, arch, case, repeat)
+
+    def test_phase_markers_are_write_once(self):
+        """Avoid silently changing the timing boundaries of an already recorded phase."""
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder)
+            benchmark.mark(target, "build-start")
+            with self.assertRaises(ValueError):
+                benchmark.mark(target, "build-start")
+            with self.assertRaises(ValueError):
+                benchmark.mark(target, "production")
 
     def test_diagnostics_redact_tokens_but_keep_cache_digests(self):
         """Remove raw credentials and signed query secrets without losing SHA evidence."""
