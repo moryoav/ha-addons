@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+- Reorganized the contribution guide around reporting bugs, development, testing,
+  and pull requests, with direct wording and concise build benchmark guidance.
+
 ## 3.3.1
 
 - Changed the linked-device OS label from Ubuntu to Home Assistant for new pairings.
