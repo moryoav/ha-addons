@@ -40,10 +40,20 @@
     return [date.toISOString(), date.toLocaleString(), date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })].join(" ").toLowerCase().includes(search);
   }
 
-  /** Retain the user's account choice before preferring the configured calling account. */
-  function selectAccount(clients, currentId, preferredId) {
+  /** Detect an account waiting to pair, including the brief reconnect between its QR codes. */
+  function needsPairing(client) {
+    if (client?.state === "pairing") return true;
+    const qrAt = Date.parse(client?.lastQrAt), connectedAt = Date.parse(client?.connectedAt);
+    return ["connecting", "reconnecting", "restarting"].includes(client?.state) &&
+      Number.isFinite(qrAt) && (!Number.isFinite(connectedAt) || connectedAt < qrAt);
+  }
+
+  /** Retain the user's account choice, then prefer an account waiting to pair or the calling account. */
+  function selectAccount(clients, currentId, preferredId, preferPairing = false) {
     const ids = (clients || []).map(client => client?.id).filter(id => typeof id === "string");
-    return ids.includes(currentId) ? currentId : ids.includes(preferredId) ? preferredId : ids[0] || null;
+    if (ids.includes(currentId)) return currentId;
+    const pairing = preferPairing && (clients || []).find(client => typeof client?.id === "string" && needsPairing(client));
+    return pairing ? pairing.id : ids.includes(preferredId) ? preferredId : ids[0] || null;
   }
 
   /** Combine socket and account state so stale voice metadata cannot override recovery. */
@@ -314,7 +324,8 @@
       const client = clients.find(item => item.id === id);
       if (!client || state.status?.recovery?.active || ["connected", "logged_out", "recovery_paused", "disconnected"].includes(client.state)) pairingStates.delete(id);
     }
-    state.selected = selectAccount(clients, state.selected, state.voice?.client_id);
+    // Pairing notifications cannot link to one account, so Connection opens the account waiting to pair.
+    state.selected = selectAccount(clients, state.selected, state.voice?.client_id, state.view === "connection");
     renderAccounts(); renderConnection(); renderCalling(); renderRecent();
     const client = selectedClient();
     text("account-title", state.selected || "WhatsApp accounts");

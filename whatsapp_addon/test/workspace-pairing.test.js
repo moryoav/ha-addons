@@ -91,13 +91,14 @@ function documentFixture() {
 async function settle() { for (let index = 0; index < 4; index++) await new Promise(resolve => setImmediate(resolve)); }
 
 /** Boot the actual workspace script against controllable offline HTTP responses. */
-async function workspaceFixture() {
+async function workspaceFixture(setup) {
   const document = documentFixture(), posts = [], timers = [];
-  const fixture = { document, posts, timers, failStatus: false,
+  const fixture = { document, posts, timers, failStatus: false, search: "",
     status: { clients: ["default", "backup"].map(id => ({ id, state: "pairing", pairingMethod: "qr", qrDataUrl: QR })), pairing_methods: { qr: true, code: true }, recovery: { active: false } },
     voice: { client_id: "default", active: true, state: "connected", configured: true, live_mode: true, connected: true },
     onAction: async () => ({ ok: true, json: async () => ({ status: "pairing_started" }) }) };
-  const location = new URL("http://example.invalid/api/hassio_ingress/synthetic/");
+  setup?.(fixture);
+  const location = new URL("http://example.invalid/api/hassio_ingress/synthetic/" + fixture.search);
   const context = { document, URL, URLSearchParams, AbortController,
     window: { location, history: { replaceState() {} } },
     setTimeout: (callback, delay) => { const timer = { callback, delay }; timers.push(timer); return timer; }, clearTimeout() {},
@@ -117,6 +118,21 @@ async function workspaceFixture() {
   await settle();
   return fixture;
 }
+
+/** Home Assistant opens the app without an account, so the page must find the one to pair. */
+test("the Connection view first opens the account waiting to pair, not the calling account", async () => {
+  const connectDefault = fixture => { Object.assign(fixture.status.clients[0], { state: "connected", qrDataUrl: null }); };
+  const ui = await workspaceFixture(connectDefault);
+  assert.equal(ui.node("account-title").textContent, "backup");
+  assert.equal(ui.node("pairing").hidden, false);
+  assert.equal(ui.node("pairing-qr").getAttribute("src"), QR);
+  const calls = await workspaceFixture(fixture => { connectDefault(fixture); fixture.search = "?view=calls"; });
+  assert.equal(calls.node("account-title").textContent, "default");
+  // A later pairing never moves an account the page already shows.
+  const settled = await workspaceFixture(fixture => { for (const client of fixture.status.clients) Object.assign(client, { state: "connected", qrDataUrl: null }); });
+  Object.assign(settled.status.clients[1], { state: "pairing", qrDataUrl: QR }); await settled.refresh();
+  assert.equal(settled.node("account-title").textContent, "default");
+});
 
 /** Mirror the accepted international input contract without accepting arbitrary recipient IDs. */
 test("phone pairing input accepts formatting and rejects local numbers, URLs, and IDs", () => {
