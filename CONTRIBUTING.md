@@ -121,21 +121,41 @@ The release builder's `cache-gha-scope: rust` selects those architecture-prefixe
 Rust caches. Its signed registry-image cache remains available as a fallback.
 After publishing each architecture, I also export the native target on the same
 builder to keep the tag's cache rooted at Rust for release reruns.
-I keep the Rust export separate because a cached Rust stage in CI did not give
-the release usable Rust records through the full app's cache export. Matching
-scope names alone did not fix that handoff. Exporting the native target directly
-avoids relying on its transitive export through the app's different base image.
+I introduced the separate Rust export while investigating the release cache
+miss. The v3.3.1 measurement showed that it did not solve reuse: both release
+architectures compiled Rust again despite reading populated cache indexes.
+I do not treat an index being present or a local cache hit as proof of reuse
+on another runner.
 
 Before publishing a release tag, I wait for both add-on image jobs on `main`
 to finish successfully. Release tags can reuse those default-branch caches;
 caches written only by a pull request or feature branch do not warm `main`.
 
-For the next feature release, I check that unchanged Rust steps report `CACHED`
-and compare architecture build-and-push times with
-[v3.3.0](https://github.com/moryoav/ha-addons/actions/runs/40643306333)
-(29 minutes 15 seconds overall, with about 25 minutes of Rust work per
-architecture). I do not claim a speedup until that release measures it. A native
+I measure cache changes with isolated build benchmarks before publishing a
+release. The [v3.3.1 baseline](https://github.com/moryoav/ha-addons/actions/runs/40651500767)
+took 31 minutes 30 seconds overall; the architecture build-and-push steps took
+24 minutes 37 seconds on amd64 and 29 minutes 39 seconds on aarch64. A native
 source, toolchain, lockfile, or patch change can still require compilation.
+
+### Build benchmarks
+
+I use the manually triggered **Build benchmark** workflow to investigate build
+changes without bumping versions, creating release tags, or publishing a GitHub
+release. I select an immutable source commit and the native runner architecture.
+
+The initial dependency probes compare CI and release options on separate fresh
+runners. They stop before Rust compilation, import existing caches read-only,
+and export no cache entries or container images. I capture the actual BuildKit
+cache-key inputs through a debug endpoint bound to the builder container's
+loopback interface. The workflow retains those diagnostics and Docker build
+records for seven days.
+
+I follow a successful probe with complete image tests and repeated consumers
+on fresh runners before claiming that a change fixes release performance.
+Any image-publishing experiment must use the separate `whatsapp-addon-bench`
+repositories and run-specific tags. I never use the existing manual
+**Build add-on image** workflow for benchmarks: it writes the configured version
+tag even when `publish_latest` is false.
 
 ## Documentation
 
