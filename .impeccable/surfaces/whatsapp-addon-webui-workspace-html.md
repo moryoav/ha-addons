@@ -31,7 +31,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Behavior and truth boundaries
 
-- The UI renders runtime account states and QR data. Link with code is disabled with Coming later; no future-flow preview ships.
+- The UI renders runtime account states, QR data, and explicitly requested phone-pairing codes. Link with code collects the selected account's international phone number; the operator enters the returned code in WhatsApp. Pending pairing does not block another account's active-call controls. Pairing secrets disappear when the account connects, recovery starts, or current status is unavailable.
 - Only the configured calling account can start the one supported call. The agent handles the conversation.
 - The shared recording store has no account or contact attribution. Show date, duration, size, and expiry without inventing identity.
 - Retain native audio elements across polling and filtering so playback and seeking are not reset.

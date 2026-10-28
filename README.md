@@ -59,7 +59,7 @@ https://github.com/moryoav/ha-addons
 
 [![Open the WhatsApp add-on page](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=ea396823_whatsapp_addon&repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
 
-Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also select **Open Web UI** on the add-on page, choose the account, and open **Connection** to see its current pairing QR code. Scan the code with the WhatsApp mobile app.
+Install and start the `WhatsApp` add-on. In a few seconds, Home Assistant should show a persistent notification with a QR code and an **Open pairing page** link. Scan the QR code with WhatsApp, or follow the link, choose the account, and select **Link with code** in **Connection** to pair using your phone number. You can also reach the workspace with **Open Web UI** on the add-on page.
 
 ### 2. Install the integration
 
@@ -113,7 +113,7 @@ saves it privately, and keeps it across restarts. Supervisor discovery shares
 it with the integration, which applies credential changes automatically.
 There is no token to enter or manage in the app configuration.
 
-Each client gets its own QR-code pairing flow and persisted add-on session data.
+Each client gets its own choice of QR or phone-number pairing and persisted add-on session data.
 
 Supplemental delivery receipts for decrypted own-device LID messages are always
 enabled for every account. They do not mark chats as read. Detailed decryption
@@ -122,8 +122,9 @@ tracing is disabled; neither behavior has a configuration switch.
 The add-on page includes an **Open Web UI** action through Home Assistant Ingress.
 One account workspace provides **Connection**, **Calls**, and **Recordings**,
 with each account's connection state visible as you move between them. The
-Connection view shows the current QR code while an account is pairing. **Link
-with code** is marked **Coming later** and is not available yet.
+Connection view shows the current QR code while an account is pairing. Select
+**Link with code**, enter the account's phone number with its country code, and
+request a one-time code to enter in WhatsApp. **Scan QR code** returns to QR pairing.
 
 Choose the configured calling account to start a call with a phone number or
 WhatsApp user ID, add an optional opening message, and browse completed

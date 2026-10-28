@@ -15,8 +15,9 @@ add-on and integration.
 
 1. Start the add-on and select **Open Web UI** on its Home Assistant page.
 2. Choose the account and open **Connection**. Scan the pairing QR code with
-   WhatsApp on your phone. A QR code also appears in a Home Assistant persistent
-   notification.
+   WhatsApp on your phone, or select **Link with code** to pair using your phone
+   number. A persistent notification also includes the QR code and a link to
+   this workspace.
 3. Add **WhatsApp** under **Settings > Devices & services**. Supervisor discovery
    supplies the local API address and automatically managed credential.
 4. Use the configured session name, `default` unless changed, as `clientId`
@@ -112,9 +113,20 @@ for **WhatsApp > Linked devices > Link a device** on your phone. Keep the page
 open while linking. The QR code changes as the WhatsApp runtime provides a new
 one and disappears once the account connects.
 
-**Link with code** is a reserved connection method marked **Coming later**.
-It is disabled because pairing-code connections are not supported yet. It
-does not request a code or replace the current QR pairing flow.
+To pair without scanning, select **Link with code** and enter the WhatsApp
+account's phone number with its country code, such as `+1 202 555 0123`. This
+number is separate from the configured account ID, such as `default`.
+Request a code, then enter the displayed eight-character code in WhatsApp under
+**Linked devices > Link a device > Link with phone number instead**.
+Keep the page open while linking. If the code expires, request a new one.
+Successful code requests are limited to one per account every 30 seconds;
+failed requests can be retried without waiting for that cooldown.
+
+Select **Scan QR code** to abandon the code and start fresh QR pairing.
+Pairing codes are shown only in the authenticated workspace and pairing
+notification. They are cleared after linking or disconnection and kept out of
+the integration status API, logs, and diagnostics. Treat both codes and QR
+images as private. Existing linked accounts keep their saved sessions.
 
 Recovery controls appear when the runtime pauses accounts after repeated
 encryption failures. **Retry connection** reconnects with the saved sessions.

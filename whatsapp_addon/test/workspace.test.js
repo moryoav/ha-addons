@@ -71,6 +71,27 @@ test("account selection retains valid choices and initially prefers the calling 
   assert.equal(selectAccount([], "removed", "missing"), null);
 });
 
+test("account selection on the Connection view first opens an account waiting to pair", () => {
+  const earlier = "2026-10-26T10:00:00.000Z", later = "2026-10-26T11:00:00.000Z";
+  const clients = [{ id: "first", state: "connected" }, { id: "calling", state: "connected" },
+    { id: "unpaired", state: "pairing" }];
+  assert.equal(selectAccount(clients, null, "calling", true), "unpaired");
+  assert.equal(selectAccount(clients, null, "calling"), "calling");
+  assert.equal(selectAccount(clients, "first", "calling", true), "first");
+  // Between QR codes the socket reconnects, but a QR newer than the last connection still needs pairing.
+  for (const [client, waiting] of [
+    [{ state: "reconnecting", lastQrAt: later }, true],
+    [{ state: "connecting", lastQrAt: later, connectedAt: earlier }, true],
+    [{ state: "restarting", lastQrAt: earlier, connectedAt: later }, false],
+    [{ state: "reconnecting" }, false],
+    [{ state: "logged_out", lastQrAt: later }, false],
+    [{ state: "recovery_paused", lastQrAt: later }, false],
+  ]) {
+    const expected = waiting ? "rotating" : "calling";
+    assert.equal(selectAccount([{ id: "calling", state: "connected" }, { id: "rotating", ...client }], null, "calling", true), expected);
+  }
+});
+
 test("voice availability combines account, socket, recovery, and stale status", () => {
   const status = { clients: [{ id: "calling", state: "connected" }],
     recovery: { active: false } };

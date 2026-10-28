@@ -169,7 +169,7 @@
   #workspace .wa-code-panel { border: 1px solid var(--wa-rule); border-radius: 12px; background: var(--wa-rail); padding: 23px 18px; text-align: center; margin-top: 24px; }
   #workspace .wa-pairing-code { display: flex; justify-content: center; flex-wrap: wrap; gap: 15px; font: 600 30px/1.4 ui-monospace, "Consolas", monospace; letter-spacing: .12em; color: var(--wa-ink); margin: 12px 0; font-variant-numeric: tabular-nums; }
   #workspace .wa-code-panel .wa-pairing-caption { margin: 0 auto 16px; }
-  #workspace .wa-code-steps { margin: 22px 0 18px; padding-left: 19px; color: var(--wa-secondary); font-size: 13px; }
+  #workspace .wa-code-steps { margin: 22px 0 18px; padding-left: 19px; color: var(--wa-secondary); font-size: 13px; text-align: left; }
   #workspace .wa-code-steps li { margin: 9px 0; }
   #workspace .wa-empty { border: 1px solid var(--wa-rule); border-radius: 12px; padding: 25px; }
   #workspace .wa-empty p { margin: 8px 0 18px; max-width: 48ch; color: var(--wa-secondary); font-size: 13px; }
@@ -247,6 +247,9 @@ body { margin: 0; padding: 16px; background: light-dark(#f4f6f7, #141a1d); }
 #workspace .wa-app { min-height: calc(100dvh - 32px); }
 #workspace .wa-qr img { display: block; width: 222px; height: 222px; object-fit: contain; }
 #workspace .wa-pairing-help { margin-top: 10px; }
+#workspace #pairing-phone-panel { max-width: 520px; }
+#workspace .wa-code-request .wa-field-help { margin-top: -9px; }
+#workspace .wa-pairing-code { overflow-wrap: anywhere; }
 #workspace .wa-error, #workspace .wa-recovery { padding: 16px; background: var(--wa-danger-ground); color: var(--wa-danger); border-radius: 10px; margin: 0 0 22px; }
 #workspace .wa-recovery h2 { font-size: 18px; }
 #workspace .wa-recovery p { margin: 10px 0; }

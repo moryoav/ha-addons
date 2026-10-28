@@ -1,3 +1,15 @@
+## 3.3.0
+
+- Added an Open pairing page link below the initial QR notification.
+- Enabled per-account phone-number pairing in the unified Connection view,
+  with one-time codes, mobile instructions, and an option to return to QR pairing.
+- Preserved saved sessions and account drafts across pairing transitions,
+  and cleared temporary codes after linking, disconnection, or recovery.
+- Prevented stopped connection attempts from writing credentials or changing
+  cache files after a session reset, and bounded version lookups during pairing.
+- Recovered phone-link attempts interrupted before the signed account identity
+  arrives, while preserving completed QR and phone pairings.
+
 ## 3.2.0
 
 - Fixed slow call actions reporting premature timeouts, made failed account resets

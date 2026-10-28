@@ -23,7 +23,14 @@ const { MessageDedupe } = require("./message-dedupe");
 const { MessageRetryCache } = require("./message-retry-cache");
 const { attachOfflineSyncMonitor } = require("./offline-sync");
 const { PollStore } = require("./poll-store");
+const {
+  PairingActionError,
+  PairingSession,
+  clearUnregisteredPairing,
+  normalizePairingPhone,
+} = require("./pairing");
 const { chatReadsFrom, messageStatusesFrom } = require("./receipts");
+const { QUERY_TIMEOUT_MS, withTimeout } = require("./timeout");
 const {
   RequestValidationError,
   normalizeCallId,
@@ -60,23 +67,24 @@ const GROUP_JID_PATTERN = /^\d[\d-]{3,62}\d@g\.us$/;
 const GROUP_ADMIN_ROLES = new Set(["admin", "superadmin"]);
 // Seconds; rejects zero, negatives, NaN and values past the year 2100.
 const MAX_UNIX_SECONDS = 4_102_444_800;
-// Baileys waits for WhatsApp's answer without a timeout of its own. Stay below
-// the integration's 10 second request timeout so a stuck query fails cleanly.
-const QUERY_TIMEOUT_MS = 8_000;
+// Bound the fresh socket a phone code waits for, including its reconnect.
+const PAIRING_HANDSHAKE_TIMEOUT_MS = 15_000;
 // WhatsApp answers lookups of hidden or missing profile data with these codes.
 const UNAVAILABLE_CODES = new Set([401, 403, 404]);
 
-const withTimeout = (promise, label, timeoutMs = QUERY_TIMEOUT_MS) => {
-  let timer;
-  const timeout = new Promise((resolve, reject) => {
-    timer = setTimeout(() => {
-      reject(Object.assign(new Error(`${label} timed out.`), {
-        statusCode: 408,
-      }));
-    }, timeoutMs);
-    timer.unref?.();
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+/** Report that a stop or logout ended the connection a pairing request was waiting for. */
+const pairingChangedError = () =>
+  new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
+
+// Baileys only advances these counters, so a late update must not move them back.
+const GROWING_CREDENTIALS = ["nextPreKeyId", "firstUnuploadedPreKeyId", "accountSyncCounter", "lastAccountSyncTimestamp"];
+
+/** Apply a partial credential update as Baileys does, keeping the higher value of each counter. */
+const mergeCredentialUpdate = (creds, update) => {
+  const counters = GROWING_CREDENTIALS
+    .filter((key) => Number.isFinite(creds[key]) && Number.isFinite(update[key]))
+    .map((key) => [key, Math.max(creds[key], update[key])]);
+  Object.assign(creds, update, Object.fromEntries(counters));
 };
 
 const optionalString = (value) =>
@@ -265,6 +273,12 @@ class WhatsappClient extends EventEmitter {
   #contactListeners;
   #contactsRequest;
   #pollStore;
+  #pairingSession;
+  #pairingHandshake;
+  #credentials;
+  #credentialWrite = Promise.resolve();
+  #cacheLoad = Promise.resolve();
+  #stops = 0;
 
   #status = {
     attempt: 0,
@@ -337,7 +351,12 @@ class WhatsappClient extends EventEmitter {
 
   /** Connect the account and attach handlers to its current Baileys socket. */
   #connect = async () => {
+    const stops = this.#stops;
+    this.#pairingSession?.close();
+    await this.#credentialWrite;
+    if (stops !== this.#stops) return;
     const baileys = await this.#baileys;
+    if (stops !== this.#stops) return;
     this.#baileys = baileys;
     const {
       default: makeWASocket,
@@ -353,7 +372,8 @@ class WhatsappClient extends EventEmitter {
       throw new WhatsappProtocolError();
     }
 
-    const versionResult = await fetchLatestBaileysVersion();
+    const versionResult = await fetchLatestBaileysVersion({ timeout: QUERY_TIMEOUT_MS });
+    if (stops !== this.#stops) return;
     if (
       !versionResult ||
       !Array.isArray(versionResult.version) ||
@@ -364,6 +384,7 @@ class WhatsappClient extends EventEmitter {
     }
 
     const authResult = await useMultiFileAuthState(this.#path);
+    if (stops !== this.#stops) return;
     if (
       !authResult ||
       !authResult.state ||
@@ -371,12 +392,34 @@ class WhatsappClient extends EventEmitter {
     ) {
       throw new WhatsappProtocolError();
     }
+    /** Serialize writes so cleanup cannot be overwritten by an earlier credential event. */
+    const saveCredentials = (state) => {
+      this.#credentialWrite = this.#credentialWrite
+        .then(() => authResult.saveCreds(state))
+        .catch((error) => this.emit("client_error", new WhatsappUpstreamError("credential update", safeUpstreamCode(error))));
+      return this.#credentialWrite;
+    };
+    // Each connection loads its own copy, so updates from a replaced socket must be folded into this one.
+    this.#credentials = { creds: authResult.state.creds, save: saveCredentials };
+
+    if (clearUnregisteredPairing(authResult.state.creds)) {
+      // A reset must wait for cleanup already writing, and cancel cleanup not yet started.
+      const cleanup = this.#credentialWrite.then(() => {
+        if (stops === this.#stops) return authResult.saveCreds();
+      });
+      this.#credentialWrite = cleanup.catch(() => {});
+      await cleanup;
+      if (stops !== this.#stops) return;
+    }
 
     const retryCache = (this.#retryCache ||= new MessageRetryCache({
       codec: proto?.Message,
     }));
-    await this.#archiveStore.load(authResult.state.creds?.me?.id);
-    await this.#pollStore.load(authResult.state.creds?.me?.id);
+    const cacheLoad = this.#loadSessionCaches(authResult.state.creds?.me?.id, stops);
+    this.#cacheLoad = cacheLoad.catch(() => {});
+    await cacheLoad;
+    // A stop during this attempt, such as a recovery pause, must not leave a live socket behind.
+    if (stops !== this.#stops) return;
     const socket = (this.#conn = makeWASocket({
       version: versionResult.version,
       auth: authResult.state,
@@ -404,6 +447,14 @@ class WhatsappClient extends EventEmitter {
     if (!this.#conn?.ev || typeof this.#conn.ev.on !== "function") {
       throw new WhatsappProtocolError();
     }
+    this.#pairingSession = new PairingSession({
+      socket,
+      creds: authResult.state.creds,
+      saveCreds: saveCredentials,
+      onUpdate: (state) => {
+        if (this.#conn === socket) this.emit("pairing_update", state);
+      },
+    });
     this.#closeSocketWatchers();
     const contactListeners = new Map();
     for (const source of ["messaging-history.set", "contacts.upsert", "contacts.update"]) {
@@ -478,7 +529,18 @@ class WhatsappClient extends EventEmitter {
     // }
 
     this.#conn.ev.on("creds.update", (state) => {
-      if (state?.me?.id) {
+      if (stops !== this.#stops) return;
+      const current = this.#credentials;
+      if (current?.creds !== authResult.state.creds) {
+        // A replaced socket can still finish work, such as storing a new app state key. Its whole
+        // credentials object is stale, but a partial update belongs in the newer connection's copy.
+        if (current && isPlainObject(state) && state !== authResult.state.creds) {
+          mergeCredentialUpdate(current.creds, state);
+          void current.save(current.creds);
+        }
+        return;
+      }
+      if (state?.me?.id && (!state.pairingCode || authResult.state.creds?.registered === true)) {
         if (this.#conn === socket) {
           this.#archiveStore.setOwner(state.me.id);
           this.#pollStore.setOwner(state.me.id);
@@ -489,20 +551,19 @@ class WhatsappClient extends EventEmitter {
         });
       }
 
-      Promise.resolve()
-        .then(() => authResult.saveCreds(state))
-        .catch((error) => {
-          this.emit(
-            "client_error",
-            new WhatsappUpstreamError(
-              "credential update",
-              safeUpstreamCode(error)
-            )
-          );
-        });
+      void saveCredentials(state);
     });
 
-    this.#conn.ev.on("connection.update", this.#onConnectionUpdate);
+    this.#conn.ev.on("connection.update", (event) => {
+      if (this.#conn === socket && stops === this.#stops) this.#onConnectionUpdate(event);
+    });
+  };
+
+  /** Finish active cache reads before reset, and skip subsequent loads after a stop. */
+  #loadSessionCaches = async (account, stops) => {
+    await this.#archiveStore.load(account);
+    if (stops !== this.#stops) return;
+    await this.#pollStore.load(account);
   };
 
   #handleConnectFailure = (error) => {
@@ -517,6 +578,11 @@ class WhatsappClient extends EventEmitter {
   };
 
   disconnect = async (reconnect = false) => {
+    if (!reconnect) {
+      this.#stops += 1;
+      this.#cancelPairingHandshake();
+    }
+    this.#pairingSession?.close();
     this.#closeLidSenderReceipts();
     this.#closeSocketWatchers();
     clearInterval(this.#refreshInterval);
@@ -534,8 +600,74 @@ class WhatsappClient extends EventEmitter {
     if (this.#conn && typeof this.#conn.end === "function") {
       await this.#conn.end();
     }
+    await this.#cacheLoad;
     await this.#archiveStore.flush();
     await this.#pollStore.flush();
+    await this.#credentialWrite;
+  };
+
+  /** Request a phone-number code on a fresh socket so it lasts the full pairing window. */
+  requestPairingCode = async (phoneNumber) => {
+    if (!this.#pairingSession) throw new PairingActionError(409, "pairing_unavailable", "Wait for a QR code before requesting a pairing code.");
+    const phone = normalizePairingPhone(phoneNumber);
+    const session = await this.#restartPairing(true);
+    return session.requestCode(phone);
+  };
+
+  /** Restart an unfinished pairing handshake to display a fresh QR code. */
+  useQrPairing = async () => {
+    if (!this.#pairingSession) throw new PairingActionError(409, "pairing_unavailable", "Wait for the pairing page to be ready, then try again.");
+    await this.#restartPairing(false);
+  };
+
+  /** Replace an unpaired socket; a phone code takes its handshake instead of showing its QR. */
+  #restartPairing = async (forPhoneCode) => {
+    const previous = this.#pairingSession;
+    previous.requireAvailable();
+    if (this.#pairingHandshake) throw new PairingActionError(409, "pairing_busy", "A pairing request is already in progress.");
+    if (!forPhoneCode) {
+      await this.#reconnectForPairing();
+      return undefined;
+    }
+    let handshake;
+    const ready = new Promise((resolve, reject) => {
+      handshake = this.#pairingHandshake = { previous, resolve, reject };
+    });
+    // A stop can reject the handshake before the reconnect below returns it.
+    ready.catch(() => {});
+    try {
+      return await withTimeout((async () => {
+        await this.#reconnectForPairing();
+        return ready;
+      })(), "Pairing handshake", PAIRING_HANDSHAKE_TIMEOUT_MS);
+    } catch (error) {
+      if (error instanceof PairingActionError) throw error;
+      throw new PairingActionError(502, "pairing_failed", "WhatsApp could not generate a pairing code. Try again.");
+    } finally {
+      if (this.#pairingHandshake === handshake) this.#pairingHandshake = undefined;
+    }
+  };
+
+  /** Reopen the socket for pairing with the usual retries, unless the client is stopped meanwhile. */
+  #reconnectForPairing = async () => {
+    await this.disconnect(true);
+    if (!this.#status.disconnected) {
+      try {
+        await this.connect();
+      } catch (error) {
+        // Calling connect() cancelled the reconnect that disconnect(true) scheduled.
+        this.#handleConnectFailure(error);
+        throw error;
+      }
+    }
+    if (this.#status.disconnected) throw pairingChangedError();
+  };
+
+  /** Fail a phone-code request at once when no fresh socket will come to answer it. */
+  #cancelPairingHandshake = () => {
+    const handshake = this.#pairingHandshake;
+    this.#pairingHandshake = undefined;
+    handshake?.reject(pairingChangedError());
   };
 
   restart = async () => {
@@ -751,7 +883,17 @@ class WhatsappClient extends EventEmitter {
   };
 
   #onConnectionUpdate = (event) => {
-    if (event?.qr) this.emit("qr", event.qr);
+    if (event?.qr && this.#pairingSession?.onQr()) {
+      const handshake = this.#pairingHandshake;
+      if (handshake && handshake.previous !== this.#pairingSession) {
+        // The waiting phone-code request owns this fresh handshake, so its QR stays hidden.
+        this.#pairingHandshake = undefined;
+        handshake.resolve(this.#pairingSession);
+      } else {
+        this.emit("qr", event.qr);
+      }
+    }
+    if (event?.isNewLogin || event?.connection === "open") this.#pairingSession?.complete();
     if (event?.connection === "open") this.#onConnected();
     else if (event?.connection === "close") this.#onDisconnected(event);
   };
@@ -880,6 +1022,7 @@ class WhatsappClient extends EventEmitter {
   };
 
   #onDisconnected = ({ lastDisconnect } = {}) => {
+    this.#pairingSession?.close();
     this.#status.connected = false;
     this.#closeSocketWatchers();
     clearInterval(this.#refreshInterval);
@@ -888,6 +1031,7 @@ class WhatsappClient extends EventEmitter {
     const upstreamCode = safeUpstreamCode(lastDisconnect?.error);
     const statusCode = Number.isInteger(upstreamCode) ? upstreamCode : null;
     if (statusCode === this.#baileys.DisconnectReason?.loggedOut) {
+      this.#cancelPairingHandshake();
       this.#archiveStore.clear();
       this.#pollStore.clear();
       this.#clearRetryCache();

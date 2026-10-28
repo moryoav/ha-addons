@@ -14,10 +14,11 @@ Install both parts before using the examples in this knowledge base.
 - [Review add-on options and the web UI](https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/DOCS.md).
 
 The app's account workspace keeps connection status visible beside
-**Connection**, **Calls**, and **Recordings**. Pair accounts with their QR code,
+**Connection**, **Calls**, and **Recordings**. Pair accounts with their QR code
+or choose **Link with code** to enter a one-time code in WhatsApp,
 manage the selected account's calls, or browse completed recordings without
-changing to a separate interface. Code pairing is reserved for a future
-feature and is currently disabled.
+changing to a separate interface. The initial QR notification includes an
+**Open pairing page** link to this workspace.
 
 The examples use fictional phone numbers and synthetic identifiers. Replace
 `clientId`, recipients, and entity IDs with the values from your installation.
@@ -109,5 +110,5 @@ event fields, and a processing example.
 
 WhatsApp events and Home Assistant automation traces can contain phone JIDs,
 LIDs, call and message keys, quoted-message data, contact names, and message
-bodies. Saved media files can also contain private information. Redact these fields, QR codes, session data, and
+bodies. Saved media files can also contain private information. Redact these fields, QR images, pairing codes, session data, and
 internal API credentials before sharing diagnostics, logs, screenshots, or traces.

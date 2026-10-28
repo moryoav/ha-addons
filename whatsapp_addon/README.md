@@ -64,7 +64,7 @@ Use the button above after adding the repository. It opens the `WhatsApp` add-on
 2. Review the add-on options.
 3. Start the add-on.
 
-In a few seconds, Home Assistant should show a persistent notification with a QR code. You can also select **Open Web UI** on the add-on page, choose the account, and open **Connection** to see its current pairing QR code. Scan the code with the WhatsApp mobile app.
+In a few seconds, Home Assistant should show a persistent notification with a QR code and an **Open pairing page** link. Scan the QR code with WhatsApp, or follow the link, choose the account, and select **Link with code** in **Connection** to pair using your phone number. You can also reach the workspace with **Open Web UI** on the add-on page.
 
 ### 3. Install the integration
 
@@ -157,8 +157,12 @@ through Home Assistant Ingress. Account connection states stay visible beside
 the **Connection**, **Calls**, and **Recordings** views on desktop and phone.
 
 Choose an account and open **Connection** to see its current QR code while
-pairing. Codes update as WhatsApp provides them. **Link with code** is marked
-**Coming later** and cannot be used yet.
+pairing. Codes update as WhatsApp provides them. To pair without scanning,
+select **Link with code**, enter that WhatsApp account's phone number with its
+country code, and request a code. Enter the displayed code in WhatsApp under
+**Linked devices > Link a device > Link with phone number instead**.
+Select **Scan QR code** to return to QR pairing. Existing linked accounts keep
+their saved sessions.
 
 The selected calling account has controls for calling a phone number or
 WhatsApp user ID, an optional opening message, and **Hang up**. Active-call

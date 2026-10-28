@@ -45,7 +45,7 @@ test("ingress trusts the peer address rather than forwarded headers", () => {
   assert.equal(allowed, true);
 });
 
-test("status joins account state without exposing internals or enabling code pairing", () => {
+test("status joins account state and advertises pairing methods without exposing internals", () => {
   const snapshot = createStatusSnapshot({
     clients: { default: { sessionSecret: "synthetic-private-value" }, backup: {} },
     clientStates: {
@@ -63,7 +63,7 @@ test("status joins account state without exposing internals or enabling code pai
   assert.equal(snapshot.clients[1].qrDataUrl, "data:image/png;base64,synthetic-placeholder");
   assert.equal(snapshot.clients[2].connectedAt, "2026-06-01T00:01:00.000Z");
   assert.equal(JSON.stringify(snapshot).includes("synthetic-private-value"), false);
-  assert.deepEqual(snapshot.pairing_methods, { qr: true, code: false });
+  assert.deepEqual(snapshot.pairing_methods, { qr: true, code: true });
   assert.deepEqual(snapshot.recovery, { active: false, reason: null, detectedAt: null,
     failedDecryptMessages: 0, sessionErrors: 0, operationPending: false });
 });

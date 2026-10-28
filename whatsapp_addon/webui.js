@@ -5,6 +5,7 @@ const WORKSPACE_ROOT = path.join(__dirname, "webui");
 const WORKSPACE_TEMPLATE = fs.readFileSync(path.join(WORKSPACE_ROOT, "workspace.html"), "utf8");
 
 const { RecoveryActionError } = require("./recovery");
+const { PairingActionError } = require("./pairing");
 
 const INGRESS_PORT = 8099;
 const INGRESS_PROXY_IP = "172.30.32.2";
@@ -77,7 +78,7 @@ const createStatusSnapshot = ({ clients, clientStates, recovery }) => {
     status: recovery?.active ? "recovery_paused" : "ok",
     updatedAt: new Date().toISOString(),
     client_count: ids.length,
-    pairing_methods: { qr: true, code: false },
+    pairing_methods: { qr: true, code: true },
     recovery: {
       active: !!recovery?.active,
       reason: recovery?.active ? recovery.reason : null,
@@ -102,6 +103,9 @@ const createStatusSnapshot = ({ clients, clientStates, recovery }) => {
         disconnectedAt: state.disconnectedAt || null,
         lastErrorCode: state.lastErrorCode || null,
         qrDataUrl: state.qrDataUrl || null,
+        pairingMethod: state.pairingMethod === "phone" ? "phone" : "qr",
+        pairingPending: state.pairingPending === true,
+        pairingCode: state.pairingCode || null,
       };
     }),
   };
@@ -126,6 +130,8 @@ const createWebUiApp = ({
   recovery,
   retryRecovery,
   resetRecoveryClient,
+  requestPairingCode,
+  useQrPairing,
   allowedIngressAddress = INGRESS_PROXY_IP,
 }) => {
   const express = require("express");
@@ -146,6 +152,25 @@ const createWebUiApp = ({
   app.get(/\/api\/status$/, (req, res) => {
     res.json(createStatusSnapshot({ clients, clientStates, recovery }));
   });
+
+  /** Require JSON and a non-simple header before changing an account's pairing. */
+  const pairingRoute = (action, phone) => (req, res, next) => {
+    Promise.resolve().then(async () => {
+      if (req.get("x-whatsapp-pairing") !== "1" || req.get("sec-fetch-site") === "cross-site") {
+        throw new PairingActionError(403, "pairing_forbidden", "Open the pairing page in Home Assistant and try again.");
+      }
+      if (!req.is("application/json") || !req.body || typeof req.body !== "object" || Array.isArray(req.body) ||
+          Object.keys(req.body).some((key) => !["clientId", ...(phone ? ["phoneNumber"] : [])].includes(key))) {
+        throw new PairingActionError(400, "invalid_request", "A JSON pairing request is required.");
+      }
+      if (typeof action !== "function") throw new PairingActionError(503, "pairing_unavailable", "Pairing controls are unavailable.");
+      await action(req.body.clientId, ...(phone ? [req.body.phoneNumber] : []));
+      res.json({ status: "pairing_started" });
+    }).catch((error) => next(error instanceof PairingActionError ? error
+      : new PairingActionError(502, "pairing_failed", "The pairing request failed. Refresh the page and try again.")));
+  };
+  app.post(/\/api\/pairing\/phone$/, pairingRoute(requestPairingCode, true));
+  app.post(/\/api\/pairing\/qr$/, pairingRoute(useQrPairing, false));
 
   app.post(/\/api\/recovery\/retry$/, (req, res, next) => {
     Promise.resolve()
@@ -187,7 +212,7 @@ const createWebUiApp = ({
   });
 
   app.use((error, req, res, next) => {
-    if (error instanceof RecoveryActionError) {
+    if (error instanceof RecoveryActionError || error instanceof PairingActionError) {
       res.status(error.status).json({
         error: { code: error.code, message: error.message },
       });

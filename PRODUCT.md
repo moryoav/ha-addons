@@ -20,10 +20,10 @@ The add-on Web UI opens through Home Assistant ingress. The custom integration s
 
 ## Capabilities and Constraints
 
-- Multiple accounts can connect for messaging. Their connection and QR-pairing states are shown independently.
+- Multiple accounts can connect for messaging. Their connection, QR, and phone-number pairing states are shown independently.
 - Voice calling uses one configured account and supports one direct audio call at a time. A Home Assistant conversation agent handles the conversation.
 - The browser does not supply the call microphone. The UI does not provide a conversation inbox, contact directory, transcripts, or live audio monitoring.
-- Connection shows the current runtime QR code while pairing. Link with code remains disabled and marked Coming later; no future pairing flow is active.
+- Connection shows the current runtime QR code while pairing. Link with code lets the operator request a one-time code for the selected account's international phone number and enter it in WhatsApp. The initial QR notification links to this workspace. Returning to Scan QR code starts a fresh QR handshake.
 - Recording is optional. Completed WAV files support native browser playback, seeking, download, and configurable retention.
 - The recording library is shared by the add-on. Its metadata has date, duration, size, and expiry, without account or contact identity. Older files can belong to a previously configured calling account.
 - An active call belongs to the configured calling account. Its Hang up control remains available across account and view changes.

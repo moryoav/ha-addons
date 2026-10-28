@@ -16,6 +16,15 @@
     return digits + "@s.whatsapp.net";
   }
 
+  /** Validate international pairing input without accepting a JID, URL, or local number. */
+  function normalizePairingPhone(value) {
+    if (typeof value === "string" && value.length <= 64 && /^\+?[\d ()-]+$/.test(value.trim())) {
+      const digits = value.trim().replace(/[ ()-]/g, "").replace(/^\+/, "");
+      if (/^[1-9]\d{6,14}$/.test(digits)) return digits;
+    }
+    throw new TypeError("Enter your WhatsApp phone number including its country code.");
+  }
+
   /** Build a relative protected media URL using only RecordingStore's filename format. */
   function recordingUrl(filename, download = false) {
     if (typeof filename !== "string" || !RECORDING_FILE.test(filename)) throw new TypeError("Invalid recording filename.");
@@ -31,10 +40,20 @@
     return [date.toISOString(), date.toLocaleString(), date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })].join(" ").toLowerCase().includes(search);
   }
 
-  /** Retain the user's account choice before preferring the configured calling account. */
-  function selectAccount(clients, currentId, preferredId) {
+  /** Detect an account waiting to pair, including the brief reconnect between its QR codes. */
+  function needsPairing(client) {
+    if (client?.state === "pairing") return true;
+    const qrAt = Date.parse(client?.lastQrAt), connectedAt = Date.parse(client?.connectedAt);
+    return ["connecting", "reconnecting", "restarting"].includes(client?.state) &&
+      Number.isFinite(qrAt) && (!Number.isFinite(connectedAt) || connectedAt < qrAt);
+  }
+
+  /** Retain the user's account choice, then prefer an account waiting to pair or the calling account. */
+  function selectAccount(clients, currentId, preferredId, preferPairing = false) {
     const ids = (clients || []).map(client => client?.id).filter(id => typeof id === "string");
-    return ids.includes(currentId) ? currentId : ids.includes(preferredId) ? preferredId : ids[0] || null;
+    if (ids.includes(currentId)) return currentId;
+    const pairing = preferPairing && (clients || []).find(client => typeof client?.id === "string" && needsPairing(client));
+    return pairing ? pairing.id : ids.includes(preferredId) ? preferredId : ids[0] || null;
   }
 
   /** Combine socket and account state so stale voice metadata cannot override recovery. */
@@ -51,15 +70,17 @@
 
   /** Bound polls to eight seconds and allow actions time for staged worker startup or shutdown. */
   async function request(endpoint, body) {
+    const pairing = ["api/pairing/phone", "api/pairing/qr"].includes(endpoint);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), body === undefined ? 8000 : 90000);
+    const timeout = setTimeout(() => controller.abort(), body === undefined ? 8000 : pairing ? 30000 : 90000);
     try {
       const response = await fetch(endpoint, { cache: "no-store", credentials: "same-origin", signal: controller.signal,
-        ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(typeof payload?.error?.message === "string" ? payload.error.message : "The request could not complete.");
+        ...(body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", ...(pairing ? { "x-whatsapp-pairing": "1" } : {}) }, body: JSON.stringify(body) }) });
+      const payload = await response.json().catch(error => { if (!response.ok && pairing) return {}; throw error; });
+      if (!response.ok) throw new Error(typeof payload?.error?.message === "string" ? payload.error.message : pairing ? "The pairing request failed. Try again." : "The request could not complete.");
       return payload;
     } catch (error) {
+      if (error?.name === "AbortError" && pairing) throw new Error("The pairing request timed out. Refresh status before trying again; the request may still be running.");
       if (error?.name === "AbortError") throw new Error(body === undefined
         ? "The status request timed out. Refresh to check the current connection."
         : "The request timed out. Check the current call or connection status before trying again; the action may still be running.");
@@ -67,7 +88,7 @@
     } finally { clearTimeout(timeout); }
   }
 
-  if (typeof module !== "undefined" && module.exports) module.exports = { normalizeRecipient, recordingMatches, recordingUrl, selectAccount, voiceAvailability, request };
+  if (typeof module !== "undefined" && module.exports) module.exports = { normalizeRecipient, normalizePairingPhone, recordingMatches, recordingUrl, selectAccount, voiceAvailability, request };
   if (typeof document === "undefined") return;
 
   const root = document.getElementById("workspace");
@@ -79,10 +100,11 @@
   const requestedView = new URLSearchParams(window.location.search).get("view");
   const state = { status: null, voice: null, selected: null, view: viewNames.includes(requestedView) ? requestedView : root.dataset.initialView,
     statusError: false, voiceError: false, recordingsError: false, recordings: [], recordingSettings: null,
-    recordingsLoaded: false, busy: false, playing: null, resetClient: null };
+    recordingsLoaded: false, busy: false, playing: null, resetClient: null, statusRevision: 0 };
   const accountNodes = new Map();
   const recordingNodes = new Map();
-  let polling = false, loadingRecordings = false, timer, recordingsTimer;
+  const pairingStates = new Map();
+  let polling = false, loadingRecordings = false, timer, recordingsTimer, pollRevision = 0;
 
   // These small, local SVG paths are UI controls, never server-supplied markup.
   const paths = {
@@ -165,7 +187,7 @@
   function renderConnection() {
     const client = selectedClient(), recovery = state.status?.recovery;
     const connected = client?.state === "connected";
-    const pairing = !!client && !connected && ["connecting", "pairing", "restarting"].includes(client.state) && !recovery?.active;
+    const pairing = !!client && !connected && (["connecting", "pairing", "restarting"].includes(client.state) || client.state === "reconnecting" && pairingStates.has(client.id)) && !recovery?.active;
     show("connection-summary", !pairing);
     show("pairing", pairing);
     text("connection-title", pairing ? "Connect " + client.id : "Connection");
@@ -179,6 +201,7 @@
     else $("pairing-qr").removeAttribute("src");
     text("pairing-status", validQr ? "Waiting for scan" : "Waiting for a QR code...");
     text("pairing-placeholder", state.statusError ? "Connection status is unavailable. Refresh to check for a current QR code." : "A QR code will appear here when WhatsApp is ready for pairing.");
+    renderPairing(client, pairing);
     text("messaging-state", connected ? "Ready" : labels[client?.state] || "Unavailable");
     text("connection-voice", availability.label);
     text("connected-at", dateLabel(client?.connectedAt)); text("checked-at", dateLabel(state.status?.updatedAt));
@@ -186,6 +209,87 @@
     show("connection-details", !!client && !pairing); show("connection-shortcuts", !!client && isCallingAccount());
     show("reset-actions", !!client && !!recovery?.active);
     $("reset-account").disabled = state.busy || !!recovery?.operationPending;
+  }
+
+  /** Keep a draft and explicit method choice for each account without retaining pairing codes. */
+  function pairingState(client) {
+    let entry = pairingStates.get(client.id);
+    if (!entry) {
+      const method = client.pairingMethod === "phone" ? "phone" : "qr";
+      entry = { choice: method, method, phone: "", error: "", pending: null, edit: false, afterAction: -1 };
+      pairingStates.set(client.id, entry);
+    }
+    return entry;
+  }
+
+  /** Render only fresh secrets while retaining drafts through polling and brief reconnects. */
+  function renderPairing(client, visible) {
+    const entry = visible ? pairingState(client) : null;
+    const method = client?.pairingMethod === "phone" ? "phone" : "qr";
+    if (entry && method !== entry.method) {
+      entry.method = method;
+      if (!entry.pending && method === "phone") entry.choice = method;
+    }
+    const phone = entry?.choice === "phone";
+    const awaitingStatus = entry && state.statusRevision <= entry.afterAction;
+    const pending = !!entry?.pending || !!client?.pairingPending || awaitingStatus;
+    const available = visible && !state.statusError && !state.status?.recovery?.operationPending;
+    const ready = available && client.state === "pairing" && !pending;
+    const codeEnabled = state.status?.pairing_methods?.code === true;
+    const code = available && client.state === "pairing" && phone && !pending &&
+      method === "phone" && typeof client.pairingCode === "string" && /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(client.pairingCode) ? client.pairingCode : "";
+    // The current code stays usable while another is requested, including when the cooldown rejects it.
+    const requesting = !!code && entry.edit;
+    $("choose-qr").setAttribute("aria-pressed", String(!phone));
+    $("choose-phone").setAttribute("aria-pressed", String(phone));
+    $("choose-qr").disabled = !available || pending || method === "phone" && !ready;
+    $("choose-phone").disabled = !available || pending || !codeEnabled;
+    show("pairing-qr-panel", !phone); show("pairing-phone-panel", phone);
+    show("pairing-phone-form", !code || requesting); show("pairing-code-panel", !!code);
+    show("new-pairing-code", !requesting); show("keep-pairing-code", requesting);
+    text("pairing-code", code);
+    $("pairing-phone").value = entry?.phone || "";
+    $("pairing-phone").disabled = pending || !available;
+    $("generate-pairing-code").disabled = !ready || !codeEnabled;
+    text("generate-pairing-code", pending && !awaitingStatus ? "Generating code..." : "Generate code");
+    $("new-pairing-code").disabled = !ready;
+    text("pairing-progress", !available
+      ? "Connection status is unavailable. Refresh to continue pairing." : !ready
+        ? awaitingStatus ? "Checking the latest pairing status..." : pending ? "Generating a code. Keep this page open..."
+          : "Wait for WhatsApp to be ready before requesting a code." : "");
+    text("pairing-error", entry?.error || ""); show("pairing-error", !!entry?.error);
+  }
+
+  /** Run one explicit pairing action per account without blocking an active call's controls. */
+  async function pairingAction(method) {
+    const client = selectedClient();
+    if (!client || client.state !== "pairing" || state.statusError || state.status?.recovery?.active || state.status?.recovery?.operationPending || client.pairingPending) return;
+    const entry = pairingState(client);
+    if (entry.pending) return;
+    let phoneNumber;
+    if (method === "phone") {
+      try { phoneNumber = normalizePairingPhone(entry.phone); }
+      catch (error) {
+        entry.error = error.message; $("pairing-phone").setAttribute("aria-invalid", "true"); renderConnection(); $("pairing-phone").focus(); return;
+      }
+    }
+    $("pairing-phone").removeAttribute("aria-invalid");
+    entry.pending = method; entry.error = ""; entry.choice = method;
+    renderConnection();
+    try {
+      await request("api/pairing/" + method, { clientId: client.id, ...(method === "phone" ? { phoneNumber } : {}) });
+      if (pairingStates.get(client.id) === entry) { entry.phone = ""; entry.edit = false; }
+    } catch (error) {
+      if (pairingStates.get(client.id) === entry) {
+        entry.error = error?.name === "SyntaxError" ? "The pairing request failed. Refresh status and try again." : error.message || "The pairing request failed. Try again.";
+        if (method === "qr") entry.choice = "phone";
+      }
+    } finally {
+      // A poll already in flight can still contain the code retired by this action.
+      entry.afterAction = pollRevision;
+      entry.pending = null;
+      await refreshStatus(); render();
+    }
   }
 
   /** Keep the call owner actionable globally and gate selected-account controls by readiness. */
@@ -219,7 +323,12 @@
   /** Reconcile snapshots and task visibility without recreating inputs or native players. */
   function render() {
     const clients = state.status?.clients || [];
-    state.selected = selectAccount(clients, state.selected, state.voice?.client_id);
+    for (const [id] of pairingStates) {
+      const client = clients.find(item => item.id === id);
+      if (!client || state.status?.recovery?.active || ["connected", "logged_out", "recovery_paused", "disconnected"].includes(client.state)) pairingStates.delete(id);
+    }
+    // Pairing notifications cannot link to one account, so Connection opens the account waiting to pair.
+    state.selected = selectAccount(clients, state.selected, state.voice?.client_id, state.view === "connection");
     renderAccounts(); renderConnection(); renderCalling(); renderRecent();
     const client = selectedClient();
     text("account-title", state.selected || "WhatsApp accounts");
@@ -323,9 +432,10 @@
   async function refreshStatus() {
     if (polling) return;
     polling = true;
+    const revision = ++pollRevision;
     try {
       const results = await Promise.allSettled([request("api/status"), request("voice/status")]);
-      if (results[0].status === "fulfilled" && Array.isArray(results[0].value.clients)) { state.status = results[0].value; state.statusError = false; } else state.statusError = true;
+      if (results[0].status === "fulfilled" && Array.isArray(results[0].value.clients)) { state.status = results[0].value; state.statusRevision = revision; state.statusError = false; } else state.statusError = true;
       if (results[1].status === "fulfilled" && typeof results[1].value.active === "boolean") { state.voice = results[1].value; state.voiceError = false; } else state.voiceError = true;
       render();
     } finally { polling = false; }
@@ -359,6 +469,30 @@
   });
   $("refresh").addEventListener("click", () => { void refreshStatus(); void refreshRecordings(); });
   $("refresh-pairing").addEventListener("click", () => { void refreshStatus(); });
+  $("choose-phone").addEventListener("click", () => {
+    const client = selectedClient(); if (!client || $("choose-phone").disabled) return;
+    const entry = pairingState(client); entry.choice = "phone"; entry.error = ""; renderConnection();
+    if (!$("pairing-phone-form").hidden) $("pairing-phone").focus();
+  });
+  $("choose-qr").addEventListener("click", () => {
+    const client = selectedClient(); if (!client || $("choose-qr").disabled) return;
+    const entry = pairingState(client); entry.error = "";
+    if (client.pairingMethod === "phone") void pairingAction("qr");
+    else { entry.choice = "qr"; renderConnection(); }
+  });
+  $("pairing-phone").addEventListener("input", () => {
+    const client = selectedClient(); if (client) pairingState(client).phone = $("pairing-phone").value;
+  });
+  $("pairing-phone-form").addEventListener("submit", event => { event.preventDefault(); if (!$("generate-pairing-code").disabled) void pairingAction("phone"); });
+  $("new-pairing-code").addEventListener("click", () => {
+    const client = selectedClient(); if (!client || $("new-pairing-code").disabled) return;
+    pairingState(client).edit = true; renderConnection(); $("pairing-phone").focus();
+  });
+  $("keep-pairing-code").addEventListener("click", () => {
+    const client = selectedClient(); if (!client) return;
+    const entry = pairingState(client); entry.edit = false; entry.error = "";
+    $("pairing-phone").removeAttribute("aria-invalid"); renderConnection(); $("new-pairing-code").focus();
+  });
   $("refresh-recordings").addEventListener("click", () => { void refreshRecordings(); });
   $("recording-search").addEventListener("input", renderRecordings);
   $("go-calling-account").addEventListener("click", () => { changeAccount(state.voice.client_id); });

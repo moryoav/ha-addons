@@ -55,11 +55,26 @@
               <section id="pairing" aria-label="Account pairing" hidden>
                 <p class="wa-muted">Link this account to WhatsApp.</p>
                 <div class="wa-pairing-methods" role="group" aria-label="How to link this account">
-                  <button class="wa-pairing-method" type="button" aria-pressed="true"><span data-icon="qr" aria-hidden="true"></span><span>Scan QR code<small>Use your phone camera</small></span></button>
-                  <button class="wa-pairing-method" type="button" disabled aria-pressed="false" aria-describedby="code-unavailable"><span data-icon="keyboard" aria-hidden="true"></span><span>Link with code<small>Coming later</small></span></button>
+                  <button class="wa-pairing-method" id="choose-qr" type="button" aria-pressed="true"><span data-icon="qr" aria-hidden="true"></span><span>Scan QR code<small>Use your phone camera</small></span></button>
+                  <button class="wa-pairing-method" id="choose-phone" type="button" disabled aria-pressed="false"><span data-icon="keyboard" aria-hidden="true"></span><span>Link with code<small>Use your phone number</small></span></button>
                 </div>
-                <p id="code-unavailable" class="wa-muted wa-small wa-pairing-help">Code pairing will become available here when it is enabled.</p>
-                <div class="wa-pairing"><div><h3>Scan to connect</h3><ol><li>Open WhatsApp on your phone.</li><li>Go to Linked devices.</li><li>Tap Link a device and scan the QR code.</li></ol><p class="wa-muted wa-small">Keep this page open. New QR codes appear automatically while pairing.</p></div><div class="wa-qr-area"><span id="pairing-status" class="wa-pairing-wait" role="status">Waiting for a QR code...</span><div class="wa-qr"><img id="pairing-qr" width="222" height="222" alt="WhatsApp pairing QR code" hidden><p class="wa-qr-placeholder" id="pairing-placeholder">Preparing your QR code...</p></div><button class="wa-text-button" id="refresh-pairing" type="button"><span data-icon="refresh" aria-hidden="true"></span>Refresh status</button></div></div>
+                <p id="pairing-error" class="wa-inline-error" role="alert" hidden></p>
+                <div class="wa-pairing" id="pairing-qr-panel"><div><h3>Scan to connect</h3><ol><li>Open WhatsApp on your phone.</li><li>Go to Linked devices.</li><li>Tap Link a device and scan the QR code.</li></ol><p class="wa-muted wa-small">Keep this page open. New QR codes appear automatically while pairing.</p></div><div class="wa-qr-area"><span id="pairing-status" class="wa-pairing-wait" role="status">Waiting for a QR code...</span><div class="wa-qr"><img id="pairing-qr" width="222" height="222" alt="WhatsApp pairing QR code" hidden><p class="wa-qr-placeholder" id="pairing-placeholder">Preparing your QR code...</p></div><button class="wa-text-button" id="refresh-pairing" type="button"><span data-icon="refresh" aria-hidden="true"></span>Refresh status</button></div></div>
+                <div id="pairing-phone-panel" hidden>
+                  <form class="wa-code-request" id="pairing-phone-form">
+                    <div class="wa-field"><label for="pairing-phone">WhatsApp phone number</label><input class="wa-input" id="pairing-phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="64" placeholder="+1 202 555 0123" required aria-describedby="pairing-phone-help pairing-error"></div>
+                    <p class="wa-field-help" id="pairing-phone-help">Include the country code of the WhatsApp account you want to link.</p>
+                    <div class="wa-panel-actions"><button class="wa-button wa-button-primary" id="generate-pairing-code" type="submit">Generate code</button><button class="wa-button" id="keep-pairing-code" type="button" hidden>Keep current code</button></div>
+                  </form>
+                  <p id="pairing-progress" class="wa-muted wa-small wa-pairing-help" role="status"></p>
+                  <div class="wa-code-panel" id="pairing-code-panel" hidden>
+                    <h3>Enter this code in WhatsApp</h3>
+                    <output class="wa-pairing-code" id="pairing-code" aria-label="Pairing code" aria-live="polite"></output>
+                    <p class="wa-pairing-caption">Use this code while this pairing session is open.</p>
+                    <ol class="wa-code-steps"><li>Open WhatsApp on your phone.</li><li>Go to Linked devices and tap Link a device.</li><li>Choose Link with phone number instead and enter the code above.</li></ol>
+                    <button class="wa-button" id="new-pairing-code" type="button">Request another code</button>
+                  </div>
+                </div>
               </section>
               <dl class="wa-details" id="connection-details"><div><dt>Messaging</dt><dd id="messaging-state">Unavailable</dd></div><div><dt>Voice calls</dt><dd id="connection-voice">Unavailable</dd></div><div><dt>Connected since</dt><dd id="connected-at">-</dd></div><div><dt>Last checked</dt><dd id="checked-at">-</dd></div><div><dt>Last QR code</dt><dd id="last-qr-at">-</dd></div><div><dt>Last error</dt><dd id="last-error">-</dd></div></dl>
               <div class="wa-panel-actions" id="connection-shortcuts" hidden><button class="wa-button wa-button-primary" data-view="calls" type="button"><span data-icon="phone" aria-hidden="true"></span>Make a call</button><button class="wa-button" data-view="recordings" type="button"><span data-icon="recordings" aria-hidden="true"></span>Browse recordings</button></div>
