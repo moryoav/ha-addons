@@ -76,6 +76,17 @@ const UNAVAILABLE_CODES = new Set([401, 403, 404]);
 const pairingChangedError = () =>
   new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
 
+// Baileys only advances these counters, so a late update must not move them back.
+const GROWING_CREDENTIALS = ["nextPreKeyId", "firstUnuploadedPreKeyId", "accountSyncCounter", "lastAccountSyncTimestamp"];
+
+/** Apply a partial credential update as Baileys does, keeping the higher value of each counter. */
+const mergeCredentialUpdate = (creds, update) => {
+  const counters = GROWING_CREDENTIALS
+    .filter((key) => Number.isFinite(creds[key]) && Number.isFinite(update[key]))
+    .map((key) => [key, Math.max(creds[key], update[key])]);
+  Object.assign(creds, update, Object.fromEntries(counters));
+};
+
 const optionalString = (value) =>
   typeof value === "string" && value !== "" ? value : null;
 
@@ -264,6 +275,7 @@ class WhatsappClient extends EventEmitter {
   #pollStore;
   #pairingSession;
   #pairingHandshake;
+  #credentials;
   #credentialWrite = Promise.resolve();
   #cacheLoad = Promise.resolve();
   #stops = 0;
@@ -380,6 +392,15 @@ class WhatsappClient extends EventEmitter {
     ) {
       throw new WhatsappProtocolError();
     }
+    /** Serialize writes so cleanup cannot be overwritten by an earlier credential event. */
+    const saveCredentials = (state) => {
+      this.#credentialWrite = this.#credentialWrite
+        .then(() => authResult.saveCreds(state))
+        .catch((error) => this.emit("client_error", new WhatsappUpstreamError("credential update", safeUpstreamCode(error))));
+      return this.#credentialWrite;
+    };
+    // Each connection loads its own copy, so updates from a replaced socket must be folded into this one.
+    this.#credentials = { creds: authResult.state.creds, save: saveCredentials };
 
     if (clearUnregisteredPairing(authResult.state.creds)) {
       // A reset must wait for cleanup already writing, and cancel cleanup not yet started.
@@ -426,13 +447,6 @@ class WhatsappClient extends EventEmitter {
     if (!this.#conn?.ev || typeof this.#conn.ev.on !== "function") {
       throw new WhatsappProtocolError();
     }
-    /** Serialize writes so cleanup cannot be overwritten by an earlier credential event. */
-    const saveCredentials = (state) => {
-      this.#credentialWrite = this.#credentialWrite
-        .then(() => authResult.saveCreds(state))
-        .catch((error) => this.emit("client_error", new WhatsappUpstreamError("credential update", safeUpstreamCode(error))));
-      return this.#credentialWrite;
-    };
     this.#pairingSession = new PairingSession({
       socket,
       creds: authResult.state.creds,
@@ -515,7 +529,17 @@ class WhatsappClient extends EventEmitter {
     // }
 
     this.#conn.ev.on("creds.update", (state) => {
-      if (this.#conn !== socket || stops !== this.#stops) return;
+      if (stops !== this.#stops) return;
+      const current = this.#credentials;
+      if (current?.creds !== authResult.state.creds) {
+        // A replaced socket can still finish work, such as storing a new app state key. Its whole
+        // credentials object is stale, but a partial update belongs in the newer connection's copy.
+        if (current && isPlainObject(state) && state !== authResult.state.creds) {
+          mergeCredentialUpdate(current.creds, state);
+          void current.save(current.creds);
+        }
+        return;
+      }
       if (state?.me?.id && (!state.pairingCode || authResult.state.creds?.registered === true)) {
         if (this.#conn === socket) {
           this.#archiveStore.setOwner(state.me.id);

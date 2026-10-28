@@ -70,3 +70,53 @@ test("fresh clients recover interrupted phone linking and retain signed identiti
     });
   }
 });
+
+/** Keep work a replaced socket finishes late, since the newer socket loaded its own credentials. */
+test("late partial updates from a replaced socket reach the current credentials on disk", async (t) => {
+  const actual = await import("@whiskeysockets/baileys");
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "whatsapp-auth-late-"));
+  const sockets = [];
+  const seed = await actual.useMultiFileAuthState(directory);
+  Object.assign(seed.state.creds, { registered: true, me: { id: `${PHONE}:7@s.whatsapp.net` },
+    account: { details: Buffer.from("fictional-signed-account") }, nextPreKeyId: 31, firstUnuploadedPreKeyId: 31 });
+  await seed.saveCreds();
+  const baileys = {
+    proto: actual.proto,
+    DisconnectReason: actual.DisconnectReason,
+    fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 1] }),
+    useMultiFileAuthState: actual.useMultiFileAuthState,
+    default: ({ auth }) => {
+      const ev = new EventEmitter();
+      // Like Baileys, each socket applies updates to the credentials it was created with.
+      ev.on("creds.update", (update) => Object.assign(auth.creds, update));
+      const socket = { ev, ws: new EventEmitter(), authState: auth, end: () => ev.emit("connection.update", { connection: "close" }) };
+      sockets.push(socket);
+      return socket;
+    },
+  };
+  const client = new WhatsappClient({ path: directory, baileys, autoConnect: false, timeout: 1 });
+  t.after(async () => { await client.disconnect(); await fs.rm(directory, { recursive: true, force: true }); });
+  await client.connect();
+  const [replaced] = sockets;
+  replaced.ev.emit("connection.update", { connection: "close", lastDisconnect: { error: { statusCode: 428 } } });
+  const deadline = Date.now() + 2_000;
+  while (sockets.length < 2) {
+    assert.ok(Date.now() < deadline, "The client did not reconnect.");
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const current = sockets[1];
+  current.ev.emit("creds.update", { nextPreKeyId: 61, firstUnuploadedPreKeyId: 61 });
+  replaced.ev.emit("creds.update", { myAppStateKeyId: "AAAAAQ==", nextPreKeyId: 41, firstUnuploadedPreKeyId: 41 });
+  // The replaced socket's whole object is stale, so it must not overwrite newer values.
+  replaced.authState.creds.lastPropHash = "fictional-stale-hash";
+  replaced.ev.emit("creds.update", replaced.authState.creds);
+  await client.disconnect();
+  const reopened = await actual.useMultiFileAuthState(directory);
+  for (const creds of [current.authState.creds, reopened.state.creds]) {
+    assert.equal(creds.myAppStateKeyId, "AAAAAQ==");
+    assert.equal(creds.nextPreKeyId, 61);
+    assert.equal(creds.firstUnuploadedPreKeyId, 61);
+    assert.equal(creds.lastPropHash, undefined);
+    assert.equal(creds.me.id, `${PHONE}:7@s.whatsapp.net`);
+  }
+});
