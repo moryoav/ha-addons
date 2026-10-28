@@ -111,18 +111,31 @@ For HACS readiness, the HACS and Hassfest GitHub Actions should pass without ign
 
 ### Release build cache
 
-I share the `amd64` and `aarch64` image-cache scopes between CI and the release
-builder. CI also imports the older `voice-*` scopes during the transition, but
-exports the full build cache to the shared scopes.
+I keep the full app caches in the `amd64` and `aarch64` scopes. After building
+the app, CI explicitly exports the Dockerfile's native `builder` target to
+`amd64-rust` and `aarch64-rust` with `mode=max`. This uses the same Buildx
+builder and exports cache only, without publishing another image. CI also
+imports the older `voice-*` scopes during the transition.
+
+The release builder's `cache-gha-scope: rust` selects those architecture-prefixed
+Rust caches. Its signed registry-image cache remains available as a fallback.
+After publishing each architecture, I also export the native target on the same
+builder to keep the tag's cache rooted at Rust for release reruns.
+I keep the Rust export separate because a cached Rust stage in CI did not give
+the release usable Rust records through the full app's cache export. Matching
+scope names alone did not fix that handoff. Exporting the native target directly
+avoids relying on its transitive export through the app's different base image.
 
 Before publishing a release tag, I wait for both add-on image jobs on `main`
 to finish successfully. Release tags can reuse those default-branch caches;
 caches written only by a pull request or feature branch do not warm `main`.
 
-For the next release, I compare the architecture build-and-push steps and the
-Rust compilation stage with the [v3.2.0 baseline](https://github.com/moryoav/ha-addons/actions/runs/40330347550)
-(33 minutes 31 seconds overall). A native source, toolchain, lockfile, or patch
-change can still require compilation even when cache sharing works.
+For the next feature release, I check that unchanged Rust steps report `CACHED`
+and compare architecture build-and-push times with
+[v3.3.0](https://github.com/moryoav/ha-addons/actions/runs/40643306333)
+(29 minutes 15 seconds overall, with about 25 minutes of Rust work per
+architecture). I do not claim a speedup until that release measures it. A native
+source, toolchain, lockfile, or patch change can still require compilation.
 
 ## Documentation
 
