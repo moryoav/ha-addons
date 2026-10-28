@@ -429,7 +429,7 @@ class WhatsappClient extends EventEmitter {
         this.#emitAppStateSync(event, authResult.state.creds?.me)
       ),
       generateHighQualityLinkPreview: true,
-      browser: ["Ubuntu", "Chrome", "20.0.04"],
+      browser: ["Home Assistant", "Chrome", "20.0.04"],
       defaultQueryTimeoutMs: undefined,
       getMessage: async (key) => {
         const message =

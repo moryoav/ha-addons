@@ -1,3 +1,7 @@
+## 3.3.1
+
+- Changed the linked-device OS label from Ubuntu to Home Assistant for new pairings.
+
 ## 3.3.0
 
 - Added an Open pairing page link below the initial QR notification.
