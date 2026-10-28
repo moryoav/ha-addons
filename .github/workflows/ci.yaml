@@ -120,11 +120,28 @@ jobs:
             BUILD_VERSION=ci
           tags: whatsapp-addon:ci-${{ matrix.arch }}
           load: true
-          # Match release scopes and also import the warm legacy caches.
+          # Keep the app cache and import the explicit Rust and legacy caches.
           cache-from: |
             type=gha,scope=${{ matrix.arch }}
+            type=gha,scope=${{ matrix.arch }}-rust
             type=gha,scope=voice-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      # Export Rust as the root target instead of relying on a transitive
+      # COPY --from cache export through the app's different base image.
+      # The previous step already built this target on the same Buildx builder.
+      - name: Export native Rust cache for releases
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ env.ADDON_PATH }}
+          platforms: ${{ matrix.platform }}
+          target: builder
+          outputs: type=cacheonly
+          cache-from: |
+            type=gha,scope=${{ matrix.arch }}-rust
+            type=gha,scope=${{ matrix.arch }}
+            type=gha,scope=voice-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-rust
 
       - name: Smoke-test voice workers and offline app startup
         shell: pwsh

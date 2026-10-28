@@ -102,6 +102,9 @@ jobs:
         uses: home-assistant/builder/actions/build-image@2026.03.2
         with:
           arch: ${{ matrix.arch }}
+          # The builder prefixes this with the architecture, matching CI's
+          # explicit native target export rather than the final app cache.
+          cache-gha-scope: rust
           container-registry-password: ${{ secrets.GITHUB_TOKEN }}
           context: ${{ env.ADDON_PATH }}
           image: ${{ matrix.image }}
@@ -111,6 +114,17 @@ jobs:
             io.hass.type=app
           push: "true"
           version: ${{ needs.version.outputs.version }}
+
+      # Keep this scope rooted at Rust after the app exporter updates it, so
+      # a release rerun can also reuse the tag's cache on the same ref.
+      - name: Export native Rust cache for release reruns
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.ADDON_PATH }}
+          target: builder
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=${{ matrix.arch }}-rust
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-rust
 
   manifest:
     name: Publish multi-arch manifest
