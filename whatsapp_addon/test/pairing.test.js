@@ -224,6 +224,35 @@ test("a phone request fails cleanly when its fresh socket never becomes ready", 
   assert.deepEqual(fixture.sockets[1].requests, []);
 });
 
+/** Answer a waiting phone request as soon as no fresh socket can arrive, not at its deadline. */
+test("a stop or logout before the fresh QR ends a phone request at once", async (t) => {
+  for (const interrupt of [
+    (fixture) => fixture.client.disconnect(),
+    (fixture) => fixture.sockets[1].ev.emit("connection.update", { connection: "close", lastDisconnect: { error: { statusCode: 401 } } }),
+  ]) {
+    const fixture = await clientFixture(t);
+    fixture.sockets[0].ev.emit("connection.update", { qr: "first-fictional-qr" });
+    let outcome;
+    fixture.client.requestPairingCode(PHONE).then((code) => { outcome = code; }, (error) => { outcome = error; });
+    await waitFor(() => fixture.sockets.length === 2);
+    await interrupt(fixture);
+    await waitFor(() => outcome !== undefined);
+    assert.equal(outcome.code, "pairing_changed");
+    assert.equal(outcome.status, 409);
+    assert.deepEqual(fixture.sockets[1].requests, []);
+  }
+  // A stop while the fresh socket still loads credentials rejects a handshake nothing awaits yet.
+  const gate = deferred();
+  const fixture = await clientFixture(t, undefined, { authGate: (call) => (call === 2 ? gate.promise : undefined) });
+  fixture.sockets[0].ev.emit("connection.update", { qr: "first-fictional-qr" });
+  const request = fixture.client.requestPairingCode(PHONE);
+  await waitFor(() => fixture.authCalls() === 2);
+  await fixture.client.disconnect();
+  gate.resolve();
+  await assert.rejects(request, { code: "pairing_changed", status: 409 });
+  assert.equal(fixture.sockets.length, 1);
+});
+
 /** Fall back to Baileys' bundled version before a fresh phone handshake times out. */
 test("a stalled version lookup cannot strand a fresh phone pairing connection", async (t) => {
   const fixture = await clientFixture(t);

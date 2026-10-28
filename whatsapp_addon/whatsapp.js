@@ -72,6 +72,10 @@ const PAIRING_HANDSHAKE_TIMEOUT_MS = 15_000;
 // WhatsApp answers lookups of hidden or missing profile data with these codes.
 const UNAVAILABLE_CODES = new Set([401, 403, 404]);
 
+/** Report that a stop or logout ended the connection a pairing request was waiting for. */
+const pairingChangedError = () =>
+  new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
+
 const optionalString = (value) =>
   typeof value === "string" && value !== "" ? value : null;
 
@@ -550,7 +554,10 @@ class WhatsappClient extends EventEmitter {
   };
 
   disconnect = async (reconnect = false) => {
-    if (!reconnect) this.#stops += 1;
+    if (!reconnect) {
+      this.#stops += 1;
+      this.#cancelPairingHandshake();
+    }
     this.#pairingSession?.close();
     this.#closeLidSenderReceipts();
     this.#closeSocketWatchers();
@@ -599,9 +606,11 @@ class WhatsappClient extends EventEmitter {
       return undefined;
     }
     let handshake;
-    const ready = new Promise((resolve) => {
-      handshake = this.#pairingHandshake = { previous, resolve };
+    const ready = new Promise((resolve, reject) => {
+      handshake = this.#pairingHandshake = { previous, resolve, reject };
     });
+    // A stop can reject the handshake before the reconnect below returns it.
+    ready.catch(() => {});
     try {
       return await withTimeout((async () => {
         await this.#reconnectForPairing();
@@ -627,9 +636,14 @@ class WhatsappClient extends EventEmitter {
         throw error;
       }
     }
-    if (this.#status.disconnected) {
-      throw new PairingActionError(409, "pairing_changed", "The pairing session changed. Refresh the page before trying again.");
-    }
+    if (this.#status.disconnected) throw pairingChangedError();
+  };
+
+  /** Fail a phone-code request at once when no fresh socket will come to answer it. */
+  #cancelPairingHandshake = () => {
+    const handshake = this.#pairingHandshake;
+    this.#pairingHandshake = undefined;
+    handshake?.reject(pairingChangedError());
   };
 
   restart = async () => {
@@ -993,6 +1007,7 @@ class WhatsappClient extends EventEmitter {
     const upstreamCode = safeUpstreamCode(lastDisconnect?.error);
     const statusCode = Number.isInteger(upstreamCode) ? upstreamCode : null;
     if (statusCode === this.#baileys.DisconnectReason?.loggedOut) {
+      this.#cancelPairingHandshake();
       this.#archiveStore.clear();
       this.#pollStore.clear();
       this.#clearRetryCache();
