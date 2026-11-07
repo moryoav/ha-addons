@@ -48,9 +48,9 @@ jobs:
             pytest_homeassistant: "0.13.190"
             pytest_cov: "6.0.0"
             pycares: "4.5.0"
-          - homeassistant: "2026.7.4 (current stable)"
+          - homeassistant: "2026.10.4 (modern registry)"
             python: "3.14"
-            pytest_homeassistant: "0.13.348"
+            pytest_homeassistant: "0.13.375"
             pytest_cov: "7.1.0"
             pycares: "5.0.1"
     steps:
