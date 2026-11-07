@@ -76,6 +76,7 @@ class WhatsappRuntimeData:
 
     client: WhatsappClient
     coordinator: WhatsappStatusCoordinator | None = None
+    app_device_id: str | None = None
 
 
 SEND_MESSAGE_SCHEMA = vol.Schema(
@@ -485,13 +486,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = WhatsappStatusCoordinator(hass, entry, client)
     await coordinator.async_config_entry_first_refresh()
-    entry.runtime_data = WhatsappRuntimeData(client=client, coordinator=coordinator)
-    dr.async_get(hass).async_get_or_create(
+    app_device = dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, app_device_identifier(entry))},
         name="WhatsApp app",
         model="WhatsApp app",
         entry_type=dr.DeviceEntryType.SERVICE,
+    )
+    entry.runtime_data = WhatsappRuntimeData(
+        client=client, coordinator=coordinator, app_device_id=app_device.id
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_entry))

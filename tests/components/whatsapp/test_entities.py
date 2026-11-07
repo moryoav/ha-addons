@@ -63,23 +63,32 @@ async def refresh(hass, entry):
     await hass.async_block_till_done()
 
 
+def devices_by_identifier(registry, entry):
+    """Index the entry's devices by their WhatsApp identifiers."""
+    return {
+        identifier: device
+        for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
+        for domain, identifier in device.identifiers
+        if domain == DOMAIN
+    }
+
+
 async def test_separate_devices_and_entity_names(
-    hass, enable_custom_integrations, account_api
+    hass, enable_custom_integrations, account_api, caplog
 ) -> None:
     """Each account owns two entities, alongside one shared app device."""
     entry = await setup_entry(hass)
+    assert "deprecated `via_device` parameter" not in caplog.text
     registry = dr.async_get(hass)
-    devices = dr.async_entries_for_config_entry(registry, entry.entry_id)
-    assert {device.name for device in devices} == {
+    devices = devices_by_identifier(registry, entry)
+    assert {device.name for device in devices.values()} == {
         "WhatsApp app",
         "WhatsApp (personal)",
         "WhatsApp (work)",
     }
-    app = registry.async_get_device({(DOMAIN, app_device_identifier(entry))})
-    personal = registry.async_get_device(
-        {(DOMAIN, f"{entry.entry_id}_account_personal")}
-    )
-    work = registry.async_get_device({(DOMAIN, f"{entry.entry_id}_account_work")})
+    app = devices[app_device_identifier(entry)]
+    personal = devices[f"{entry.entry_id}_account_personal"]
+    work = devices[f"{entry.entry_id}_account_work"]
     assert personal.id != work.id
     assert personal.via_device_id == work.via_device_id == app.id
 
@@ -182,13 +191,15 @@ async def test_dynamic_accounts_and_safe_device_removal(
     }
     await refresh(hass, entry)
     registry = dr.async_get(hass)
-    devices = dr.async_entries_for_config_entry(registry, entry.entry_id)
+    devices = devices_by_identifier(registry, entry)
     assert len(devices) == 4
     assert (
         len(er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)) == 7
     )
-    app = registry.async_get_device({(DOMAIN, app_device_identifier(entry))})
-    work = registry.async_get_device({(DOMAIN, f"{entry.entry_id}_account_work")})
+    app = devices[app_device_identifier(entry)]
+    work = devices[f"{entry.entry_id}_account_work"]
+    new_account = devices[f"{entry.entry_id}_account_app"]
+    assert new_account.via_device_id == app.id
     assert not await async_remove_config_entry_device(hass, entry, app)
     assert not await async_remove_config_entry_device(hass, entry, work)
 
@@ -220,7 +231,7 @@ async def test_dynamic_accounts_and_safe_device_removal(
         len(er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)) == 7
     )
     assert (
-        registry.async_get_device({(DOMAIN, f"{entry.entry_id}_account_work")}).id
+        devices_by_identifier(registry, entry)[f"{entry.entry_id}_account_work"].id
         == work.id
     )
 
@@ -249,6 +260,11 @@ async def test_legacy_upgrade_and_unload(
             er.async_get(hass), entry.entry_id
         )
     }
+    registry = dr.async_get(hass)
+    device_links = {
+        device.id: device.via_device_id
+        for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
+    }
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert not coordinator._listeners
@@ -262,6 +278,10 @@ async def test_legacy_upgrade_and_unload(
             er.async_get(hass), entry.entry_id
         )
     } == identities
+    assert {
+        device.id: device.via_device_id
+        for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
+    } == device_links
 
 
 async def test_deleted_account_can_be_discovered_again(
@@ -271,7 +291,7 @@ async def test_deleted_account_can_be_discovered_again(
     _, status, _ = account_api
     entry = await setup_entry(hass)
     registry = dr.async_get(hass)
-    work = registry.async_get_device({(DOMAIN, f"{entry.entry_id}_account_work")})
+    work = devices_by_identifier(registry, entry)[f"{entry.entry_id}_account_work"]
     status.return_value = {"personal": "connected"}
     await refresh(hass, entry)
     registry.async_remove_device(work.id)

@@ -72,8 +72,8 @@ pytest
 ```
 
 Home Assistant imports Unix-only modules, so native Windows Python cannot run
-this suite. CI checks both the minimum supported and current stable Home
-Assistant versions.
+this suite. CI checks the minimum supported Home Assistant version and versions
+on both sides of the device registry API change.
 
 ### Add-on
 

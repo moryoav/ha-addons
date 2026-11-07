@@ -4,6 +4,8 @@ All notable changes to this repository are documented here.
 
 ## Unreleased
 
+- Fixed a Home Assistant deprecation warning when registering WhatsApp account
+  devices.
 - Reorganized the contribution guide around reporting bugs, development, testing,
   and pull requests, with direct wording and concise build benchmark guidance.
 - Simplified documentation wording, removed duplicate event descriptions, and

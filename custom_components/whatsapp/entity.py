@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MAJOR_VERSION, MINOR_VERSION
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -34,12 +35,18 @@ class WhatsappAccountEntity(CoordinatorEntity[WhatsappStatusCoordinator]):
         self.client_id = client_id
         identifier = f"{entry.entry_id}_account_{client_id}"
         self._attr_unique_id = f"{identifier}_{key}"
+        # Core before 2026.8 accepts only the app's identifier tuple.
+        app_device_link = (
+            {"via_device_id": entry.runtime_data.app_device_id}
+            if (MAJOR_VERSION, MINOR_VERSION) >= (2026, 8)
+            else {"via_device": (DOMAIN, app_device_identifier(entry))}
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, identifier)},
             name=f"WhatsApp ({client_id})",
             model="WhatsApp account",
             entry_type=DeviceEntryType.SERVICE,
-            via_device=(DOMAIN, app_device_identifier(entry)),
+            **app_device_link,
         )
 
     @property
