@@ -272,30 +272,60 @@ async def test_hassio_flow_ignores_malformed_discovery_url(
     detect.assert_awaited_once_with(hass, [])
 
 
-async def test_reconfigure_flow(hass, enable_custom_integrations) -> None:
-    """Test reconfigure rediscoveres the add-on."""
-    flow = await hass.config_entries.flow.async_create_flow(
-        DOMAIN,
-        context={"source": "reconfigure"},
-        data=None,
-    )
-    flow._get_reconfigure_entry = lambda: MockConfigEntry(
+@pytest.mark.parametrize(
+    ("state", "previous_url"),
+    [
+        (config_entries.ConfigEntryState.LOADED, "http://old-addon:3000"),
+        (config_entries.ConfigEntryState.LOADED, "http://new-addon:3000"),
+        (config_entries.ConfigEntryState.SETUP_RETRY, "http://old-addon:3000"),
+    ],
+    ids=["changed-url", "unchanged-url", "setup-retry"],
+)
+async def test_reconfigure_flow(
+    hass, enable_custom_integrations, caplog, state, previous_url
+) -> None:
+    """Test reconfigure saves the detected URL and reloads exactly once."""
+    detected_url = "http://new-addon:3000"
+    entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_URL: "http://old-addon:3000"},
+        data={CONF_URL: previous_url, CONF_API_TOKEN: "saved-token"},
     )
-    flow.async_update_reload_and_abort = lambda entry, data_updates: {
-        "type": FlowResultType.ABORT,
-        "data_updates": data_updates,
-    }
+    entry.add_to_hass(hass)
+    if state is config_entries.ConfigEntryState.LOADED:
+        with (
+            patch(
+                "custom_components.whatsapp.WhatsappClient.async_health",
+                AsyncMock(return_value={"status": "ok"}),
+            ),
+            patch.object(
+                hass.config_entries, "async_forward_entry_setups", AsyncMock()
+            ),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+    else:
+        entry.mock_state(hass, state)
 
-    with patch(
-        "custom_components.whatsapp.config_flow._async_detect_addon_url",
-        AsyncMock(return_value="http://new-addon:3000"),
+    with (
+        patch(
+            "custom_components.whatsapp.config_flow._async_detect_addon_url",
+            AsyncMock(return_value=detected_url),
+        ),
+        patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload,
     ):
-        result = await flow.async_step_reconfigure({})
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": config_entries.SOURCE_RECONFIGURE,
+                "entry_id": entry.entry_id,
+            },
+        )
+        await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT
-    assert result["data_updates"] == {CONF_URL: "http://new-addon:3000"}
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == {CONF_URL: detected_url, CONF_API_TOKEN: "saved-token"}
+    reload.assert_awaited_once_with(entry.entry_id)
+    assert "should use it for scheduling a reload" not in caplog.text
 
 
 async def test_reconfigure_flow_cannot_connect(
