@@ -103,7 +103,13 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors={"base": "cannot_connect"} if user_input is not None else {},
             )
 
-        return self._update_entry_and_abort(self._get_reconfigure_entry(), url)
+        entry = self._get_reconfigure_entry()
+        entries = self.hass.config_entries
+        updated = entries.async_update_entry(entry, data={**entry.data, CONF_URL: url})
+        # Let the registered update listener reload the entry when the URL changes.
+        if not updated or not entry.update_listeners:
+            entries.async_schedule_reload(entry.entry_id)
+        return self.async_abort(reason="reconfigure_successful")
 
     async def _async_create_or_update_entry(
         self,
@@ -132,20 +138,6 @@ class WhatsappConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if api_token is not None:
             data[CONF_API_TOKEN] = api_token
         return self.async_create_entry(title=title, data=data)
-
-    def _update_entry_and_abort(self, entry: config_entries.ConfigEntry, url: str):
-        """Update an entry and abort, supporting older Home Assistant test cores."""
-        if hasattr(self, "async_update_reload_and_abort"):
-            return self.async_update_reload_and_abort(
-                entry,
-                data_updates={CONF_URL: url},
-            )
-
-        self.hass.config_entries.async_update_entry(
-            entry,
-            data={**entry.data, CONF_URL: url},
-        )
-        return self.async_abort(reason="reconfigure_successful")
 
 
 def _url_from_discovery_config(config: dict[str, Any]) -> str | None:

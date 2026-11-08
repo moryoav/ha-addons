@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+- Fixed a Home Assistant deprecation warning when reconfiguring the WhatsApp
+  integration.
+
 ## 3.3.2
 
 - Fixed a Home Assistant deprecation warning when registering WhatsApp account
