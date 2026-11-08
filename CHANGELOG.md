@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented here.
 
-## Unreleased
+## 3.3.3
 
 - Fixed a Home Assistant deprecation warning when reconfiguring the WhatsApp
   integration.

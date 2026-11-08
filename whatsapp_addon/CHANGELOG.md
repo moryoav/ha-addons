@@ -1,3 +1,8 @@
+## 3.3.3
+
+- Aligned the add-on version with the integration release that fixes the Home
+  Assistant reconfigure warning.
+
 ## 3.3.2
 
 - Aligned the add-on version with the integration release that fixes the account
