@@ -34,11 +34,11 @@ _MEDIA_URL = {vol.Required("url"): _NONEMPTY_TEXT}
 _CAPTION = {vol.Optional("caption"): str}
 _IMAGE_VIDEO = vol.Schema({**_MEDIA_URL, **_CAPTION})
 _MEDIA_SCHEMAS = {
-    "image": _IMAGE_VIDEO,
-    "video": _IMAGE_VIDEO,
-    "sticker": vol.Schema(_MEDIA_URL),
-    "audio": vol.Schema({**_MEDIA_URL, vol.Optional("ptt"): bool}),
-    "document": vol.Schema(
+    "Image": _IMAGE_VIDEO,
+    "Video": _IMAGE_VIDEO,
+    "Sticker": vol.Schema(_MEDIA_URL),
+    "Audio": vol.Schema({**_MEDIA_URL, vol.Optional("ptt"): bool}),
+    "Document": vol.Schema(
         {
             **_MEDIA_URL,
             **_CAPTION,
@@ -48,8 +48,8 @@ _MEDIA_SCHEMAS = {
     ),
 }
 _CONTENT_SCHEMAS = {
-    "text": _NONEMPTY_TEXT,
-    "location": vol.Schema(
+    "Text": _NONEMPTY_TEXT,
+    "Location": vol.Schema(
         {
             vol.Required("latitude"): vol.All(
                 vol.Coerce(float), vol.Range(min=-90, max=90)
@@ -59,28 +59,32 @@ _CONTENT_SCHEMAS = {
             ),
         }
     ),
-    "poll": vol.Schema(
+    "Poll": vol.Schema(
         {
             vol.Required("name"): _NONEMPTY_TEXT,
             vol.Required("values"): vol.All([_NONEMPTY_TEXT], vol.Length(min=2)),
         }
     ),
-    "yaml": vol.Schema(dict),
+    "Custom YAML": vol.Schema(dict),
     **_MEDIA_SCHEMAS,
 }
 
 
 def _message_body(message: dict[str, Any]) -> dict[str, Any]:
     """Convert only the active Home Assistant choice to a Baileys body."""
-    kind = message.get("active_choice")
-    if not isinstance(kind, str) or kind not in _CONTENT_SCHEMAS or kind not in message:
+    choice = message.get("active_choice")
+    if (
+        not isinstance(choice, str)
+        or choice not in _CONTENT_SCHEMAS
+        or choice not in message
+    ):
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="send_message_content_required",
         )
 
     try:
-        content = _CONTENT_SCHEMAS[kind](message[kind])
+        content = _CONTENT_SCHEMAS[choice](message[choice])
     except vol.Invalid as err:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
@@ -88,18 +92,19 @@ def _message_body(message: dict[str, Any]) -> dict[str, Any]:
             translation_placeholders={"error": str(err)},
         ) from err
 
-    if kind == "yaml":
+    if choice == "Custom YAML":
         return content
-    if kind == "location":
+    kind = choice.lower()
+    if choice == "Location":
         return {
             kind: {
                 "degreesLatitude": content["latitude"],
                 "degreesLongitude": content["longitude"],
             }
         }
-    if kind in _MEDIA_SCHEMAS:
+    if choice in _MEDIA_SCHEMAS:
         url = content.pop("url")
-        if kind == "document":
+        if choice == "Document":
             content["fileName"] = content.pop("file_name")
         return {kind: {"url": url}, **content}
     return {kind: content}

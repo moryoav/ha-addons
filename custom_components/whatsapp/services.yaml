@@ -16,13 +16,13 @@ send_message:
       required: true
       selector:
         choose:
-          translation_key: message_type
+          # Choice keys remain visible when the editor opens before translations load.
           choices:
-            text:
+            Text:
               selector:
                 text:
                   multiline: true
-            image:
+            Image:
               selector: &image_video
                 object:
                   translation_key: message_media
@@ -37,19 +37,19 @@ send_message:
                       selector:
                         text:
                           multiline: true
-            video:
+            Video:
               selector: *image_video
-            sticker:
+            Sticker:
               selector:
                 object:
                   translation_key: message_sticker
                   label_field: url
                   fields:
                     url: *media_url
-            location:
+            Location:
               selector:
                 location:
-            audio:
+            Audio:
               selector:
                 object:
                   translation_key: message_media
@@ -59,7 +59,7 @@ send_message:
                     ptt:
                       selector:
                         boolean:
-            document:
+            Document:
               selector:
                 object:
                   translation_key: message_media
@@ -74,7 +74,7 @@ send_message:
                     mimetype:
                       selector:
                         text:
-            poll:
+            Poll:
               selector:
                 object:
                   translation_key: message_poll
@@ -89,7 +89,7 @@ send_message:
                       selector:
                         text:
                           multiple: true
-            yaml:
+            Custom YAML:
               selector:
                 object:
     advanced_send_options:

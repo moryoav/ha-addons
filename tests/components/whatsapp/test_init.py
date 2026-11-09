@@ -299,34 +299,34 @@ async def test_send_message_without_response_still_fires_result_event(
 @pytest.mark.parametrize(
     ("kind", "fields", "body"),
     [
-        ("text", "First line\nSecond line", {"text": "First line\nSecond line"}),
+        ("Text", "First line\nSecond line", {"text": "First line\nSecond line"}),
         (
-            "image",
+            "Image",
             {"url": "https://example.com/picture.jpg", "caption": "Caption"},
             {"image": {"url": "https://example.com/picture.jpg"}, "caption": "Caption"},
         ),
         (
-            "video",
+            "Video",
             {"url": "https://example.com/clip.mp4"},
             {"video": {"url": "https://example.com/clip.mp4"}},
         ),
         (
-            "sticker",
+            "Sticker",
             {"url": "https://example.com/sticker.webp"},
             {"sticker": {"url": "https://example.com/sticker.webp"}},
         ),
         (
-            "location",
+            "Location",
             {"latitude": 12.5, "longitude": -45.25},
             {"location": {"degreesLatitude": 12.5, "degreesLongitude": -45.25}},
         ),
         (
-            "audio",
+            "Audio",
             {"url": "https://example.com/audio.ogg", "ptt": True},
             {"audio": {"url": "https://example.com/audio.ogg"}, "ptt": True},
         ),
         (
-            "document",
+            "Document",
             {
                 "url": "https://example.com/report.pdf",
                 "file_name": "Report.pdf",
@@ -341,12 +341,12 @@ async def test_send_message_without_response_still_fires_result_event(
             },
         ),
         (
-            "poll",
+            "Poll",
             {"name": "Which day?", "values": ["Monday", "Tuesday"]},
             {"poll": {"name": "Which day?", "values": ["Monday", "Tuesday"]}},
         ),
         (
-            "yaml",
+            "Custom YAML",
             {"text": "Edited text", "edit": {"id": "original"}},
             {"text": "Edited text", "edit": {"id": "original"}},
         ),
@@ -367,7 +367,7 @@ async def test_send_message_picker(
     response = await hass.services.async_call(
         DOMAIN,
         "send_message",
-        {**target, "message": {"active_choice": kind, "text": "Draft", kind: fields}},
+        {**target, "message": {"active_choice": kind, "Text": "Draft", kind: fields}},
         blocking=True,
         return_response=True,
     )
@@ -426,7 +426,7 @@ async def test_send_message_quote_preset(hass, enable_custom_integrations, event
     options = {"mediaUploadTimeoutMs": 3000}
     data = {
         **target,
-        "message": {"active_choice": "text", "text": "Reply"},
+        "message": {"active_choice": "Text", "Text": "Reply"},
         "reply_to": preset,
         "options": options,
     }
@@ -455,13 +455,13 @@ async def test_send_message_quote_preset(hass, enable_custom_integrations, event
     ("data", "error"),
     [
         ({}, "send_message_content_required"),
-        ({"message": {"active_choice": "video"}}, "send_message_content_required"),
+        ({"message": {"active_choice": "Video"}}, "send_message_content_required"),
         (
-            {"message": {"active_choice": "image", "image": {"caption": "Caption"}}},
+            {"message": {"active_choice": "Image", "Image": {"caption": "Caption"}}},
             "send_message_invalid_content",
         ),
         (
-            {"message": {"active_choice": "yaml", "yaml": []}},
+            {"message": {"active_choice": "Custom YAML", "Custom YAML": []}},
             "send_message_invalid_content",
         ),
     ],

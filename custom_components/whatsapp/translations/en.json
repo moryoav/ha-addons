@@ -169,19 +169,6 @@
     }
   },
   "selector": {
-    "message_type": {
-      "choices": {
-        "text": "Text",
-        "image": "Image",
-        "video": "Video",
-        "sticker": "Sticker",
-        "location": "Location",
-        "audio": "Audio",
-        "document": "Document",
-        "poll": "Poll",
-        "yaml": "Custom YAML"
-      }
-    },
     "message_media": {
       "fields": {
         "url": {
