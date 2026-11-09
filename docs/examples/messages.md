@@ -1,8 +1,9 @@
 # Messages and media
 
 In the automation editor, choose **Message type** in `whatsapp.send_message`.
-Choose **Custom YAML** to paste a raw body. In a YAML automation, you can use
-`data.body` and `data.options` as shown in the examples below.
+Each pair shows the editor's `data.message` format and the supported legacy
+`data.body` format. Use one format per action. Choose **Custom YAML** to paste
+a raw body in the editor.
 See [recipients and number lookup](recipients.md) for target formats.
 
 For file examples, replace `https://files.example.com/...` with a URL the
@@ -10,6 +11,20 @@ add-on can download. The URL must return the file itself. A path on the Home
 Assistant host is not automatically a path inside the add-on container.
 
 ## Send a text message
+
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 12025550123@s.whatsapp.net
+  message:
+    active_choice: Text
+    Text: Hi from Home Assistant
+```
+
+**Legacy YAML** (`data.body`)
 
 ```yaml
 action: whatsapp.send_message
@@ -21,6 +36,21 @@ data:
 ```
 
 ## Capture the sent message id
+
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+- action: whatsapp.send_message
+  response_variable: whatsapp_result
+  data:
+    clientId: default
+    to: 12025550123@s.whatsapp.net
+    message:
+      active_choice: Text
+      Text: This call stores the sent WhatsApp message id.
+```
+
+**Legacy YAML** (`data.body`)
 
 ```yaml
 - action: whatsapp.send_message
@@ -43,6 +73,22 @@ to collect results in a separate event listener.
 
 ## Send an image
 
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 12025550123@s.whatsapp.net
+  message:
+    active_choice: Image
+    Image:
+      url: "https://dummyimage.com/600x400/000/fff.png"
+      caption: Simple text
+```
+
+**Legacy YAML** (`data.body`)
+
 ```yaml
 action: whatsapp.send_message
 data:
@@ -56,6 +102,22 @@ data:
 
 ## Send a voice message
 
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 12025550123@s.whatsapp.net
+  message:
+    active_choice: Audio
+    Audio:
+      url: "https://github.com/moryoav/ha-addons/blob/main/whatsapp_addon/examples/hello_world.mp3?raw=true"
+      ptt: true # Send audio as a voice
+```
+
+**Legacy YAML** (`data.body`)
+
 ```yaml
 action: whatsapp.send_message
 data:
@@ -68,6 +130,22 @@ data:
 ```
 
 ## Send a location
+
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 12025550123@s.whatsapp.net
+  message:
+    active_choice: Location
+    Location:
+      latitude: 24.121231
+      longitude: 55.1121221
+```
+
+**Legacy YAML** (`data.body`)
 
 ```yaml
 action: whatsapp.send_message
@@ -93,6 +171,21 @@ requirements:
 Image generation, resizing, background removal, and conversion to WebP happen
 before the send action.
 
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 120363000000000000@g.us
+  message:
+    active_choice: Sticker
+    Sticker:
+      url: "https://files.example.com/ready.webp"
+```
+
+**Legacy YAML** (`data.body`)
+
 ```yaml
 action: whatsapp.send_message
 data:
@@ -110,6 +203,24 @@ does not generate stickers.
 
 ## Send a document
 
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 12025550123@s.whatsapp.net
+  message:
+    active_choice: Document
+    Document:
+      url: "https://files.example.com/report.pdf"
+      file_name: report.pdf
+      mimetype: application/pdf
+      caption: "Here is the report."
+```
+
+**Legacy YAML** (`data.body`)
+
 ```yaml
 action: whatsapp.send_message
 data:
@@ -123,11 +234,28 @@ data:
     caption: "Here is the report."
 ```
 
-`fileName`, `mimetype`, and `caption` belong in `body`, alongside `document`.
+The editor uses `file_name` inside `Document`. In the legacy format,
+`fileName`, `mimetype`, and `caption` are alongside `document` in `body`.
 Use a MIME type that matches the actual file. A document export or download
 from another application must finish before this action runs.
 
 ## Send a video
+
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 12025550123@s.whatsapp.net
+  message:
+    active_choice: Video
+    Video:
+      url: "https://files.example.com/clip.mp4"
+      caption: "Here is the clip."
+```
+
+**Legacy YAML** (`data.body`)
 
 ```yaml
 action: whatsapp.send_message
@@ -148,6 +276,25 @@ URLs, a Home Assistant `repeat.for_each` can send one video per URL.
 
 This three-option poll lets the recipient select multiple options.
 
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+action: whatsapp.send_message
+data:
+  clientId: default
+  to: 120363000000000000@g.us
+  message:
+    active_choice: Poll
+    Poll:
+      name: Which report would you like?
+      values:
+        - Daily report
+        - Weekly report
+        - Monthly report
+```
+
+**Legacy YAML** (`data.body`)
+
 ```yaml
 action: whatsapp.send_message
 data:
@@ -162,7 +309,7 @@ data:
         - Monthly report
 ```
 
-To build `values` from JSON stored in a text helper, use:
+Both formats can build `values` from JSON stored in a text helper with
 `values: "{{ states('input_text.report_choices') | from_json }}"`.
 That helper must contain a valid JSON array of strings.
 
@@ -173,7 +320,37 @@ object whose `pollCreationMessageKey.id` matches the sent poll's message ID.
 
 The event for a vote also carries a `poll_vote`
 object with the names of the options the voter has selected. This automation
-answers when someone picks the weekly report in the poll above:
+answers when someone picks the weekly report in the poll above.
+
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+- alias: Send the report chosen in the WhatsApp poll
+  triggers:
+    - trigger: event
+      event_type: new_whatsapp_message
+      event_data:
+        clientId: default
+        type: pollUpdateMessage
+  conditions:
+    - condition: template
+      value_template: >-
+        {% set vote = trigger.event.data.get('poll_vote', {}) %}
+        {{ vote.get('status') == 'ready'
+           and vote.poll_name == 'Which report would you like?'
+           and 'Weekly report' in vote.selected_options }}
+  actions:
+    - action: whatsapp.send_message
+      data:
+        clientId: default
+        to: "{{ trigger.event.data.key.remoteJid }}"
+        message:
+          active_choice: Text
+          Text: Here is the weekly report.
+  mode: queued
+```
+
+**Legacy YAML** (`data.body`)
 
 ```yaml
 - alias: Send the report chosen in the WhatsApp poll
@@ -327,8 +504,31 @@ In the editor, open **Advanced send options** and enable **Quote the incoming
 WhatsApp message**. For a reply to a previous send, replace the preset template
 with the earlier action's `sent_message` response.
 
-Use `options.quoted` to attach a follow-up to a notification sent earlier.
-Quoting needs the full `sent_message` object; a reaction uses its `key`.
+Quoting uses the full `sent_message` object. A reaction uses its `key`.
+
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: 120363000000000000@g.us
+    message:
+      active_choice: Text
+      Text: "The task is complete."
+  response_variable: completed_message
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: "{{ completed_message.sent_message.key.remoteJid }}"
+    message:
+      active_choice: Sticker
+      Sticker:
+        url: "https://files.example.com/ready.webp"
+    reply_to: "{{ completed_message.sent_message }}"
+```
+
+**Legacy YAML** (`data.body`)
 
 ```yaml
 - action: whatsapp.send_message
@@ -349,13 +549,29 @@ Quoting needs the full `sent_message` object; a reaction uses its `key`.
       quoted: "{{ completed_message.sent_message }}"
 ```
 
-The quoted follow-up can also be a text message: replace the sticker body
-with `text: "Here is a follow-up."` and retain `options.quoted`.
+For a text follow-up, choose **Text** and keep the quote template. In the
+legacy example, use `body.text` and keep `options.quoted`.
 
 ## Build the message body with a template
 
-When message content comes from another action, use a template that returns
-a dictionary. This example uses a simple variable as the source.
+Use a template to set the text from another action. This example uses a
+simple variable as the source.
+
+**Editor-generated YAML** (`data.message`)
+
+```yaml
+- variables:
+    reply_text: "The task is complete."
+- action: whatsapp.send_message
+  data:
+    clientId: default
+    to: 12025550123@s.whatsapp.net
+    message:
+      active_choice: Text
+      Text: "{{ reply_text | string | trim }}"
+```
+
+**Legacy YAML** (`data.body`)
 
 ```yaml
 - variables:
@@ -367,6 +583,6 @@ a dictionary. This example uses a simple variable as the source.
     body: '{{ {"text": reply_text | string | trim} }}'
 ```
 
-The rendered `body` must be an object. Converting the inner text to a string
-also handles content that Home Assistant interpreted as a number.
+The legacy `body` template returns an object. Converting the inner text to a
+string also handles content that Home Assistant interpreted as a number.
 See [Home Assistant action templates](https://www.home-assistant.io/docs/scripts/perform-actions/#use-templates-to-determine-the-attributes).

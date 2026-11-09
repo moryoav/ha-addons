@@ -269,8 +269,10 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
 
 `whatsapp.send_message` has a **Message type** picker in the automation editor.
 Choose **Custom YAML** for a raw message payload. Open **Advanced send options**
-to quote an incoming WhatsApp message or add custom Baileys options. Existing
-YAML actions can continue to use `data.body` and `data.options`.
+to quote an incoming WhatsApp message or add custom Baileys options. The
+[message examples](https://moryoav.github.io/ha-addons/examples/messages/) show
+the editor's `data.message` format alongside the supported legacy `data.body`
+format.
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the event

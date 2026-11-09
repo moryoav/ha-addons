@@ -2,6 +2,11 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+- Documented the editor-generated YAML for each supported message type
+  alongside its legacy YAML example.
+
 ## 3.5.0
 
 - Added a message type picker for text, media, locations, polls, and custom
