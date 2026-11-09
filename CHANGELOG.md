@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented here.
 
-## Unreleased
+## 3.4.0
 
 - Added a WhatsApp account dropdown to Home Assistant actions and prefilled the
   account ID when only one account is configured.

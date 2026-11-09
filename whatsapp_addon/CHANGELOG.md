@@ -1,3 +1,9 @@
+## 3.4.0
+
+- Aligned the add-on version with the integration release that adds account
+  selection to Home Assistant actions.
+- Updated the integration setup instructions for Home Assistant Marketplace.
+
 ## 3.3.3
 
 - Aligned the add-on version with the integration release that fixes the Home
