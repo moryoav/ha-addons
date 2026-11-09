@@ -231,6 +231,12 @@ When replying to an incoming event, the safest target is usually:
 
 ## Actions
 
+In the automation editor, choose the WhatsApp account from the **Client ID**
+dropdown. Home Assistant prefills the ID when you add an action and there is
+only one configured account. If the account list is unavailable, enter the ID
+manually. Refresh the page after adding or removing accounts to load the latest
+choices. In YAML, pass the account ID as `data.clientId`.
+
 The integration registers these Home Assistant actions under the `whatsapp` domain:
 
 - `whatsapp.send_message`: send text, media, location, reactions, or any payload supported by the add-on.
