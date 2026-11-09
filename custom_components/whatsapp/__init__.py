@@ -515,6 +515,7 @@ async def _async_setup_client_id_selectors(
 
     @callback
     def async_publish(client_ids: tuple[str, ...]) -> None:
+        """Publish changed account choices or restore the original text fields."""
         nonlocal published_ids
         if client_ids == published_ids:
             return
@@ -537,6 +538,7 @@ async def _async_setup_client_id_selectors(
 
     @callback
     def async_update() -> None:
+        """Refresh choices, treating a failed status update as unavailable."""
         accounts = coordinator.data if coordinator.last_update_success else None
         async_publish(tuple(sorted(accounts or ())))
 
@@ -544,6 +546,7 @@ async def _async_setup_client_id_selectors(
 
     @callback
     def async_cleanup() -> None:
+        """Stop listening and restore the original action fields on unload."""
         unsubscribe()
         async_publish(())
 
