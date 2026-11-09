@@ -10,7 +10,7 @@ import pytest
 import voluptuous as vol
 import yaml
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import Event
+from homeassistant.core import Context, Event
 from homeassistant.exceptions import (
     ConfigEntryError,
     ConfigEntryNotReady,
@@ -378,6 +378,49 @@ async def test_send_message_picker(
     assert response["message_id"] == "fixture"
 
 
+@pytest.mark.parametrize(
+    ("kind", "fields", "body"),
+    [
+        ("Text", "{{ states('sensor.temperature') }}", {"text": "21.5"}),
+        ("Text", "{{ false }}", {"text": "False"}),
+        (
+            "Image",
+            {"url": "https://example.com/picture.jpg", "caption": "{{ 0 }}"},
+            {"image": {"url": "https://example.com/picture.jpg"}, "caption": "0"},
+        ),
+        (
+            "Document",
+            {"url": "https://example.com/report.pdf", "file_name": "{{ 2026 }}"},
+            {"document": {"url": "https://example.com/report.pdf"}, "fileName": "2026"},
+        ),
+        (
+            "Poll",
+            {"name": "{{ 42 }}", "values": ["{{ true }}", "{{ 0 }}"]},
+            {"poll": {"name": "42", "values": ["True", "0"]}},
+        ),
+    ],
+    ids=["sensor-state", "boolean", "caption", "filename", "poll"],
+)
+async def test_send_message_picker_templates(
+    hass, enable_custom_integrations, kind, fields, body
+) -> None:
+    """Send native scalar template results as strings in picker text fields."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_send_message.return_value = {}
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+    hass.states.async_set("sensor.temperature", "21.5")
+
+    target = {"clientId": "default", "to": "12025550123@s.whatsapp.net"}
+    data = {**target, "message": {"active_choice": kind, kind: fields}}
+    sequence = cv.SCRIPT_SCHEMA([{"action": "whatsapp.send_message", "data": data}])
+    await Script(hass, sequence, "Templated WhatsApp send", DOMAIN).async_run(
+        context=Context()
+    )
+
+    client.async_send_message.assert_awaited_once_with({**target, "body": body})
+
+
 async def test_send_message_legacy_templates(hass, enable_custom_integrations) -> None:
     """Render and forward existing YAML body and options templates unchanged."""
     client = AsyncMock(spec=WhatsappClient)
@@ -456,6 +499,18 @@ async def test_send_message_quote_preset(hass, enable_custom_integrations, event
     [
         ({}, "send_message_content_required"),
         ({"message": {"active_choice": "Video"}}, "send_message_content_required"),
+        (
+            {"message": {"active_choice": "Text", "Text": ""}},
+            "send_message_invalid_content",
+        ),
+        (
+            {"message": {"active_choice": "Text", "Text": None}},
+            "send_message_invalid_content",
+        ),
+        (
+            {"message": {"active_choice": "Text", "Text": ["Nested"]}},
+            "send_message_invalid_content",
+        ),
         (
             {"message": {"active_choice": "Image", "Image": {"caption": "Caption"}}},
             "send_message_invalid_content",

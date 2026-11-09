@@ -29,9 +29,11 @@ SEND_MESSAGE_SCHEMA = vol.Schema(
     }
 )
 
-_NONEMPTY_TEXT = vol.All(str, vol.Length(min=1))
-_MEDIA_URL = {vol.Required("url"): _NONEMPTY_TEXT}
-_CAPTION = {vol.Optional("caption"): str}
+# Home Assistant can render templates as native numbers and booleans.
+_TEXT = vol.All(vol.Any(str, bool, int, float), cv.string)
+_NONEMPTY_TEXT = vol.All(_TEXT, vol.Length(min=1))
+_MEDIA_URL = {vol.Required("url"): vol.All(str, vol.Length(min=1))}
+_CAPTION = {vol.Optional("caption"): _TEXT}
 _IMAGE_VIDEO = vol.Schema({**_MEDIA_URL, **_CAPTION})
 _MEDIA_SCHEMAS = {
     "Image": _IMAGE_VIDEO,
