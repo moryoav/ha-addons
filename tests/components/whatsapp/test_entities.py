@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, PropertyMock, patch
 import pytest
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.whatsapp import async_remove_config_entry_device
@@ -63,6 +64,14 @@ async def refresh(hass, entry):
     await hass.async_block_till_done()
 
 
+async def action_descriptions(ws):
+    """Read the descriptions the Home Assistant frontend receives."""
+    await ws.send_json_auto_id({"type": "get_services"})
+    result = await ws.receive_json()
+    assert result["success"]
+    return result["result"][DOMAIN]
+
+
 def devices_by_identifier(registry, entry):
     """Index the entry's devices by their WhatsApp identifiers."""
     return {
@@ -71,6 +80,53 @@ def devices_by_identifier(registry, entry):
         for domain, identifier in device.identifiers
         if domain == DOMAIN
     }
+
+
+async def test_action_account_dropdown(
+    hass, enable_custom_integrations, account_api, hass_ws_client
+) -> None:
+    """Publish actual account IDs and prefill only a sole configured account."""
+    _, status, _ = account_api
+    assert await async_setup_component(hass, DOMAIN, {})
+    ws = await hass_ws_client(hass)
+    original = await action_descriptions(ws)
+
+    status.return_value = {"personal": "connected"}
+    entry = await setup_entry(hass)
+    single = await action_descriptions(ws)
+
+    status.return_value = {"work": "disconnected", "personal": "connected"}
+    await refresh(hass, entry)
+    multiple = await action_descriptions(ws)
+
+    assert single.keys() == multiple.keys() == original.keys()
+    for action, description in original.items():
+        fields = description["fields"]
+        client_field = fields["clientId"]
+        assert single[action]["fields"] == {
+            **fields,
+            "clientId": {
+                **client_field,
+                "default": "personal",
+                "selector": {"select": {"options": ["personal"], "custom_value": True}},
+            },
+        }
+        assert multiple[action]["fields"] == {
+            **fields,
+            "clientId": {
+                **client_field,
+                "selector": {
+                    "select": {"options": ["personal", "work"], "custom_value": True}
+                },
+            },
+        }
+        assert single[action].get("response") == description.get("response")
+        assert multiple[action].get("response") == description.get("response")
+
+    status.return_value = {"work": "connected"}
+    await refresh(hass, entry)
+    updated = await action_descriptions(ws)
+    assert updated["send_message"]["fields"]["clientId"]["default"] == "work"
 
 
 async def test_separate_devices_and_entity_names(
@@ -148,11 +204,12 @@ async def test_account_states_are_independent(
 
 
 async def test_outages_and_account_api_failure(
-    hass, enable_custom_integrations, account_api
+    hass, enable_custom_integrations, account_api, hass_ws_client
 ) -> None:
     """Separate a failed status request from an app that cannot be reached."""
     health, status, _ = account_api
     entry = await setup_entry(hass)
+    ws = await hass_ws_client(hass)
     app_entity = entity_id(hass, entry, None, "connection")
     account_entities = [
         entity_id(hass, entry, "personal", key)
@@ -161,17 +218,25 @@ async def test_outages_and_account_api_failure(
 
     status.side_effect = WhatsappApiError(status=401)
     await refresh(hass, entry)
+    unavailable = await action_descriptions(ws)
+    assert "text" in unavailable["send_message"]["fields"]["clientId"]["selector"]
     assert hass.states.get(app_entity).state == "on"
     for target in account_entities:
         assert hass.states.get(target).state == "unavailable"
 
+    status.side_effect = None
+    await refresh(hass, entry)
+    recovered = await action_descriptions(ws)
+    assert "select" in recovered["send_message"]["fields"]["clientId"]["selector"]
+
     health.side_effect = WhatsappCannotConnect()
     await refresh(hass, entry)
+    assert await action_descriptions(ws) == unavailable
     assert hass.states.get(app_entity).state == "off"
     for target in account_entities:
         assert hass.states.get(target).state == "unavailable"
 
-    health.side_effect = status.side_effect = None
+    health.side_effect = None
     await refresh(hass, entry)
     assert hass.states.get(app_entity).state == "on"
     assert hass.states.get(account_entities[0]).state == "on"
@@ -237,13 +302,18 @@ async def test_dynamic_accounts_and_safe_device_removal(
 
 
 async def test_legacy_upgrade_and_unload(
-    hass, enable_custom_integrations, account_api
+    hass, enable_custom_integrations, account_api, hass_ws_client
 ) -> None:
     """Discover accounts after an app upgrade and retain IDs across reloads."""
     _, status, capabilities = account_api
     capabilities.return_value = None
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data.coordinator
+    ws = await hass_ws_client(hass)
+    legacy = await action_descriptions(ws)
+    legacy_field = legacy["send_message"]["fields"]["clientId"]
+    assert "text" in legacy_field["selector"]
+    assert "default" not in legacy_field
     assert (
         len(er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)) == 1
     )
@@ -251,6 +321,8 @@ async def test_legacy_upgrade_and_unload(
 
     capabilities.return_value = frozenset({"get_status"})
     await refresh(hass, entry)
+    upgraded = await action_descriptions(ws)
+    assert "select" in upgraded["send_message"]["fields"]["clientId"]["selector"]
     assert (
         len(er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)) == 5
     )
@@ -267,11 +339,14 @@ async def test_legacy_upgrade_and_unload(
     }
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+    unloaded = await action_descriptions(ws)
+    assert unloaded["send_message"]["fields"]["clientId"] == legacy_field
     assert not coordinator._listeners
     assert coordinator._unsub_refresh is None
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    assert await action_descriptions(ws) == upgraded
     assert {
         entity.unique_id: entity.entity_id
         for entity in er.async_entries_for_config_entry(

@@ -360,6 +360,7 @@ async def test_detect_addon_url_uses_first_working_candidate(
     attempts = []
 
     async def validate(hass, url):
+        """Record each probe and simulate an unreachable first candidate."""
         attempts.append(url)
         if url == "http://bad:3000":
             raise WhatsappCannotConnect

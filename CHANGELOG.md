@@ -2,6 +2,13 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+- Added a WhatsApp account dropdown to Home Assistant actions and prefilled the
+  account ID when only one account is configured.
+- Updated the integration installation and removal instructions for
+  Home Assistant Marketplace.
+
 ## 3.3.3
 
 - Fixed a Home Assistant deprecation warning when reconfiguring the WhatsApp

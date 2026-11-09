@@ -23,6 +23,7 @@ async def async_setup_entry(
 
     @callback
     def async_add_accounts() -> None:
+        """Add session state sensors for newly discovered WhatsApp accounts."""
         if not coordinator.last_update_success or coordinator.data is None:
             return
         new_accounts = set(coordinator.data) - known_accounts

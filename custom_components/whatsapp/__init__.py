@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable
 import voluptuous as vol
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.exceptions import (
     ConfigEntryError,
     HomeAssistantError,
@@ -18,6 +18,10 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntry
+from homeassistant.helpers.service import (
+    async_get_all_descriptions,
+    async_set_service_schema,
+)
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.setup import async_setup_component
 
@@ -497,8 +501,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client=client, coordinator=coordinator, app_device_id=app_device.id
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await _async_setup_client_id_selectors(hass, entry, coordinator)
     entry.async_on_unload(entry.add_update_listener(_async_update_entry))
     return True
+
+
+async def _async_setup_client_id_selectors(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: WhatsappStatusCoordinator
+) -> None:
+    """Update action editor fields from the configured accounts."""
+    descriptions = (await async_get_all_descriptions(hass)).get(DOMAIN, {})
+    published_ids: tuple[str, ...] = ()
+
+    @callback
+    def async_publish(client_ids: tuple[str, ...]) -> None:
+        """Publish changed account choices or restore the original text fields."""
+        nonlocal published_ids
+        if client_ids == published_ids:
+            return
+
+        selector = {"select": {"options": list(client_ids), "custom_value": True}}
+        for action, description in descriptions.items():
+            fields = description["fields"]
+            if ATTR_CLIENT_ID not in fields:
+                continue
+            if client_ids:
+                field = {**fields[ATTR_CLIENT_ID], "selector": selector}
+                if len(client_ids) == 1:
+                    field["default"] = client_ids[0]
+                description = {
+                    **description,
+                    "fields": {**fields, ATTR_CLIENT_ID: field},
+                }
+            async_set_service_schema(hass, DOMAIN, action, description)
+        published_ids = client_ids
+
+    @callback
+    def async_update() -> None:
+        """Refresh choices, treating a failed status update as unavailable."""
+        accounts = coordinator.data if coordinator.last_update_success else None
+        async_publish(tuple(sorted(accounts or ())))
+
+    unsubscribe = coordinator.async_add_listener(async_update)
+
+    @callback
+    def async_cleanup() -> None:
+        """Stop listening and restore the original action fields on unload."""
+        unsubscribe()
+        async_publish(())
+
+    entry.async_on_unload(async_cleanup)
+    async_update()
 
 
 async def _async_update_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
