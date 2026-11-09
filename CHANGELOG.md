@@ -2,7 +2,7 @@
 
 All notable changes to this repository are documented here.
 
-## Unreleased
+## 3.5.0
 
 - Added a message type picker for text, media, locations, polls, and custom
   YAML in the WhatsApp send action. Existing YAML actions keep working.

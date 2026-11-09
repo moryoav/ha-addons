@@ -1,3 +1,8 @@
+## 3.5.0
+
+- Aligned the app version with the integration release that adds the message
+  type picker and advanced send options.
+
 ## 3.4.0
 
 - Aligned the add-on version with the integration release that adds account
