@@ -2,7 +2,7 @@
 
 ![Supports aarch64 Architecture][aarch64-shield]
 ![Supports amd64 Architecture][amd64-shield]
-[![HACS][hacs-badge]][hacs-url]
+[![Marketplace][marketplace-badge]][marketplace-url]
 [![License][license-badge]][license-url]
 
 # WhatsApp for Home Assistant
@@ -68,13 +68,16 @@ select **Link with code** to pair using the account's phone number.
 
 ### 2. Install the integration
 
-[![Open the WhatsApp HACS repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=moryoav&repository=ha-addons&category=integration)
+[![Open WhatsApp in Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=moryoav&repository=ha-addons&category=integration)
 
-WhatsApp is available in the default HACS catalog, so no custom repository setup is required.
+WhatsApp is available in the default Marketplace catalog.
 
-1. Select the button above, or open HACS and search for **WhatsApp** under **Integrations**.
-2. Select **WhatsApp** and choose **Download**.
-3. Restart Home Assistant.
+1. Open **Settings > Marketplace** and search for **WhatsApp**, or use the button above.
+2. Open **WhatsApp**, select **Install**, and confirm.
+3. Complete setup when it opens.
+
+Restarting Home Assistant after installation is recommended so it can process
+the WhatsApp app's Supervisor discovery information.
 
 As a manual fallback, copy `custom_components/whatsapp` into:
 
@@ -86,7 +89,7 @@ Then restart Home Assistant.
 
 ### 3. Configure the integration
 
-In Home Assistant, go to:
+If WhatsApp still needs setup, use the button below or open the setup flow in Home Assistant.
 
 [![Add the WhatsApp integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=whatsapp)
 
@@ -400,7 +403,7 @@ for encryption recovery and LID sender receipt handling.
   container monitoring, a stale token is detected on the first protected action rather
   than during setup.
 - If an action is unsupported or its endpoint is missing, update both the
-  add-on and HACS integration, then restart Home Assistant.
+  WhatsApp app and integration, then restart Home Assistant.
 - A vote with `poll_vote.error: unknown_poll` belongs to a poll the add-on does
   not have: one it did not receive, one more than 30 days old, or one pushed out
   by 100 newer polls.
@@ -416,8 +419,6 @@ for encryption recovery and LID sender receipt handling.
   Home Assistant Core is temporarily unavailable.
 - Outgoing calls appear in `whatsapp_call_log` only after they end and the
   phone shares its call history, usually within about 15 seconds.
-- If HACS does not show WhatsApp, search under **Integrations**. Use the
-  [manual installation steps](#installation) as a fallback.
 - Isolated libsignal `Bad MAC` and session lifecycle messages are summarized by
   the add-on instead of logging full stack traces or session data. A confirmed
   high-volume decryption failure burst activates the recovery pause described
@@ -426,8 +427,9 @@ for encryption recovery and LID sender receipt handling.
 ## Removal
 
 1. Delete the WhatsApp integration under **Settings > Devices & services**.
-2. Remove the integration through HACS, or delete
-   `/config/custom_components/whatsapp` if you installed it manually.
+2. For Marketplace installs, confirm the uninstall prompt or open **WhatsApp**
+   in **Settings > Marketplace** and choose **Uninstall** from the three-dot
+   menu. For manual installs, delete `/config/custom_components/whatsapp`.
 3. Remove the `WhatsApp` add-on.
 4. Restart Home Assistant.
 
@@ -450,8 +452,8 @@ for the shared Baileys session adapter, native call worker, GPT-Live bridge,
 and container validation. The messaging dependencies stay pinned while the
 call worker is built from a fixed upstream revision and guarded patches.
 
-[hacs-badge]: https://img.shields.io/badge/HACS-41BDF5.svg?style=flat-square
-[hacs-url]: #installation
+[marketplace-badge]: https://img.shields.io/badge/Marketplace-41BDF5.svg?style=flat-square
+[marketplace-url]: #installation
 [license-badge]: https://img.shields.io/github/license/moryoav/ha-addons?style=flat-square
 [license-url]: https://github.com/moryoav/ha-addons/blob/main/LICENSE
 
