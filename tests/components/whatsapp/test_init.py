@@ -10,12 +10,15 @@ import pytest
 import voluptuous as vol
 import yaml
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import Event
 from homeassistant.exceptions import (
     ConfigEntryError,
     ConfigEntryNotReady,
     HomeAssistantError,
     ServiceValidationError,
 )
+from homeassistant.helpers import config_validation as cv, selector
+from homeassistant.helpers.script import Script
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.whatsapp import (
@@ -291,6 +294,192 @@ async def test_send_message_without_response_still_fires_result_event(
     assert response is None
     assert len(events) == 1
     assert events[0].data["sent_message"] == {"key": {"id": "abc"}}
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields", "body"),
+    [
+        ("text", "First line\nSecond line", {"text": "First line\nSecond line"}),
+        (
+            "image",
+            {"url": "https://example.com/picture.jpg", "caption": "Caption"},
+            {"image": {"url": "https://example.com/picture.jpg"}, "caption": "Caption"},
+        ),
+        (
+            "video",
+            {"url": "https://example.com/clip.mp4"},
+            {"video": {"url": "https://example.com/clip.mp4"}},
+        ),
+        (
+            "sticker",
+            {"url": "https://example.com/sticker.webp"},
+            {"sticker": {"url": "https://example.com/sticker.webp"}},
+        ),
+        (
+            "location",
+            {"latitude": 12.5, "longitude": -45.25},
+            {"location": {"degreesLatitude": 12.5, "degreesLongitude": -45.25}},
+        ),
+        (
+            "audio",
+            {"url": "https://example.com/audio.ogg", "ptt": True},
+            {"audio": {"url": "https://example.com/audio.ogg"}, "ptt": True},
+        ),
+        (
+            "document",
+            {
+                "url": "https://example.com/report.pdf",
+                "file_name": "Report.pdf",
+                "mimetype": "application/pdf",
+                "caption": "Report",
+            },
+            {
+                "document": {"url": "https://example.com/report.pdf"},
+                "fileName": "Report.pdf",
+                "mimetype": "application/pdf",
+                "caption": "Report",
+            },
+        ),
+        (
+            "poll",
+            {"name": "Which day?", "values": ["Monday", "Tuesday"]},
+            {"poll": {"name": "Which day?", "values": ["Monday", "Tuesday"]}},
+        ),
+        (
+            "yaml",
+            {"text": "Edited text", "edit": {"id": "original"}},
+            {"text": "Edited text", "edit": {"id": "original"}},
+        ),
+    ],
+)
+async def test_send_message_picker(
+    hass, enable_custom_integrations, kind, fields, body
+):
+    """Send only the selected message type and return the normalized payload."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_send_message.return_value = {"key": {"id": "fixture"}}
+    _entry_with_client(hass, client)
+    events = []
+    hass.bus.async_listen("whatsapp_send_message_result", events.append)
+    assert await async_setup(hass, {})
+
+    target = {"clientId": "default", "to": "12025550123@s.whatsapp.net"}
+    response = await hass.services.async_call(
+        DOMAIN,
+        "send_message",
+        {**target, "message": {"active_choice": kind, "text": "Draft", kind: fields}},
+        blocking=True,
+        return_response=True,
+    )
+    await hass.async_block_till_done()
+
+    client.async_send_message.assert_awaited_once_with({**target, "body": body})
+    assert response["body"] == events[0].data["body"] == body
+    assert response["message_id"] == "fixture"
+
+
+async def test_send_message_legacy_templates(hass, enable_custom_integrations) -> None:
+    """Render and forward existing YAML body and options templates unchanged."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_send_message.return_value = {}
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    target = {"clientId": "default", "to": "12025550123@s.whatsapp.net"}
+    body = {"image": {"url": "https://example.com/picture.jpg"}, "viewOnce": True}
+    quoted = {"key": {"id": "original"}, "message": {"conversation": "Original"}}
+    options = {"quoted": quoted, "mediaUploadTimeoutMs": 3000}
+    sequence = cv.SCRIPT_SCHEMA(
+        [
+            {
+                "action": "whatsapp.send_message",
+                "data": {**target, "body": "{{ body }}", "options": "{{ options }}"},
+            }
+        ]
+    )
+    await Script(hass, sequence, "Legacy WhatsApp send", DOMAIN).async_run(
+        {"body": body, "options": options}
+    )
+    client.async_send_message.assert_awaited_once_with(
+        {**target, "body": body, "options": options}
+    )
+
+
+@pytest.mark.parametrize(
+    "event_type", ["new_whatsapp_message", "unrelated_event", None]
+)
+async def test_send_message_quote_preset(hass, enable_custom_integrations, event_type):
+    """Render the preset for the incoming event and reject other run contexts."""
+    client = AsyncMock(spec=WhatsappClient)
+    client.async_send_message.return_value = {}
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+
+    path = (
+        Path(__file__).resolve().parents[3] / "custom_components/whatsapp/services.yaml"
+    )
+    services = yaml.safe_load(path.read_text())
+    preset = services["send_message"]["fields"]["advanced_send_options"]["fields"][
+        "reply_to"
+    ]["selector"]["constant"]["value"]
+    target = {"clientId": "default", "to": "12025550123@s.whatsapp.net"}
+    options = {"mediaUploadTimeoutMs": 3000}
+    data = {
+        **target,
+        "message": {"active_choice": "text", "text": "Reply"},
+        "reply_to": preset,
+        "options": options,
+    }
+    sequence = cv.SCRIPT_SCHEMA([{"action": "whatsapp.send_message", "data": data}])
+    script = Script(hass, sequence, "Quote a WhatsApp message", DOMAIN)
+    quoted = {"key": {"id": "incoming"}, "message": {"conversation": "Incoming"}}
+    variables = (
+        {"trigger": {"platform": "event", "event": Event(event_type, quoted)}}
+        if event_type
+        else {}
+    )
+    if event_type != "new_whatsapp_message":
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await script.async_run(variables)
+        assert exc_info.value.translation_key == "send_message_invalid_quote"
+        client.async_send_message.assert_not_awaited()
+        return
+
+    await script.async_run(variables)
+    client.async_send_message.assert_awaited_once_with(
+        {**target, "body": {"text": "Reply"}, "options": {**options, "quoted": quoted}}
+    )
+
+
+@pytest.mark.parametrize(
+    ("data", "error"),
+    [
+        ({}, "send_message_content_required"),
+        ({"message": {"active_choice": "video"}}, "send_message_content_required"),
+        (
+            {"message": {"active_choice": "image", "image": {"caption": "Caption"}}},
+            "send_message_invalid_content",
+        ),
+        (
+            {"message": {"active_choice": "yaml", "yaml": []}},
+            "send_message_invalid_content",
+        ),
+    ],
+)
+async def test_send_message_rejects_incomplete_content(
+    hass, enable_custom_integrations, data, error
+) -> None:
+    """Prevent missing or invalid message choices from reaching the app."""
+    client = AsyncMock(spec=WhatsappClient)
+    _entry_with_client(hass, client)
+    assert await async_setup(hass, {})
+    target = {"clientId": "default", "to": "12025550123@s.whatsapp.net"}
+    with pytest.raises(ServiceValidationError) as exc_info:
+        await hass.services.async_call(
+            DOMAIN, "send_message", {**target, **data}, blocking=True
+        )
+    assert exc_info.value.translation_key == error
+    client.async_send_message.assert_not_awaited()
 
 
 async def test_get_group_info_action_success(hass, enable_custom_integrations) -> None:
@@ -572,7 +761,15 @@ def test_service_descriptions_are_complete() -> None:
         assert translations[service_name]["name"]
         assert translations[service_name]["description"]
         translated_fields = translations[service_name].get("fields", {})
-        for field_name, field in service.get("fields", {}).items():
+        fields = {}
+        for key, field in service.get("fields", {}).items():
+            if "fields" in field:
+                assert translations[service_name]["sections"][key]["name"]
+                fields.update(field["fields"])
+            else:
+                fields[key] = field
+        for field_name, field in fields.items():
+            selector.validate_selector(field["selector"])
             if field_name in translated_fields:
                 assert "name" not in field
                 assert "description" not in field

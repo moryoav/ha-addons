@@ -29,13 +29,22 @@
           "name": "Target",
           "description": "The WhatsApp phone, LID, group, or broadcast JID to receive the message."
         },
-        "body": {
-          "name": "Body",
-          "description": "The message payload accepted by the WhatsApp app."
+        "message": {
+          "name": "Message type",
+          "description": "Choose what to send. Use Custom YAML to enter a WhatsApp payload."
+        },
+        "reply_to": {
+          "name": "Quote the incoming WhatsApp message",
+          "description": "Use with a `new_whatsapp_message` trigger. To quote an earlier send, replace the template with its `sent_message` response."
         },
         "options": {
-          "name": "Options",
-          "description": "Optional Baileys send options, such as quoted message data."
+          "name": "Custom options (YAML)",
+          "description": "Additional Baileys send options as YAML."
+        }
+      },
+      "sections": {
+        "advanced_send_options": {
+          "name": "Advanced send options"
         }
       }
     },
@@ -159,6 +168,61 @@
       "fields": {}
     }
   },
+  "selector": {
+    "message_type": {
+      "choices": {
+        "text": "Text",
+        "image": "Image",
+        "video": "Video",
+        "sticker": "Sticker",
+        "location": "Location",
+        "audio": "Audio",
+        "document": "Document",
+        "poll": "Poll",
+        "yaml": "Custom YAML"
+      }
+    },
+    "message_media": {
+      "fields": {
+        "url": {
+          "name": "File URL",
+          "description": "Enter a direct link the WhatsApp app can download."
+        },
+        "caption": {
+          "name": "Caption"
+        },
+        "ptt": {
+          "name": "Send as voice note"
+        },
+        "file_name": {
+          "name": "Filename"
+        },
+        "mimetype": {
+          "name": "MIME type",
+          "description": "Enter the file's media type if needed, such as application/pdf."
+        }
+      }
+    },
+    "message_sticker": {
+      "fields": {
+        "url": {
+          "name": "Sticker URL",
+          "description": "Use a 512 x 512 WebP file with a transparent background and a file size under 100 KB."
+        }
+      }
+    },
+    "message_poll": {
+      "fields": {
+        "name": {
+          "name": "Question"
+        },
+        "values": {
+          "name": "Answer choices",
+          "description": "Enter at least two choices."
+        }
+      }
+    }
+  },
   "exceptions": {
     "addon_too_old": {
       "message": "The installed WhatsApp app does not support this action. Update the app and try again."
@@ -177,6 +241,15 @@
     },
     "invalid_call_reference": {
       "message": "Enter the callId and from values of a whatsapp_call_update event. from must be the caller's phone JID or LID, not a phone number or group."
+    },
+    "send_message_content_required": {
+      "message": "Choose a message type and fill in its fields, or provide a YAML body."
+    },
+    "send_message_invalid_content": {
+      "message": "Check the fields for the selected message type ({error})."
+    },
+    "send_message_invalid_quote": {
+      "message": "To quote a message, use a new_whatsapp_message trigger or the sent_message response from a previous send action."
     },
     "invalid_group_target": {
       "message": "Enter a WhatsApp group JID ending in @g.us, such as the key.remoteJid of a received group message. Phone numbers, LIDs, and broadcasts are not groups."

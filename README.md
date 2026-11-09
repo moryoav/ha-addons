@@ -47,6 +47,8 @@ account if that risk matters to you.
 
 ## Installation
 
+The WhatsApp integration requires Home Assistant 2026.1.0 or later.
+
 ### 1. Install the add-on
 
 [![Add the WhatsApp add-on repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmoryoav%2Fha-addons)
@@ -264,6 +266,11 @@ The integration registers these Home Assistant actions under the `whatsapp` doma
 - `whatsapp.get_contacts`: fetch a fresh saved-contact snapshot for the selected
   account, with original contact fields including names and LIDs when supplied.
   Requires `response_variable`. See the [saved contact example](https://moryoav.github.io/ha-addons/examples/recipients/#get-saved-contacts).
+
+`whatsapp.send_message` has a **Message type** picker in the automation editor.
+Choose **Custom YAML** for a raw message payload. Open **Advanced send options**
+to quote an incoming WhatsApp message or add custom Baileys options. Existing
+YAML actions can continue to use `data.body` and `data.options`.
 
 `whatsapp.send_message` can return response data when called with
 `response_variable`; it also fires the event
