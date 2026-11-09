@@ -7,6 +7,11 @@ on:
     types:
       - published
   workflow_dispatch:
+    inputs:
+      publish_latest:
+        description: Also publish the latest image tag
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       publish_latest:
@@ -112,9 +117,29 @@ jobs:
           driver-opts: image=moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
 
       - name: Install Cosign
+        if: matrix.arch != 'aarch64'
         uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22  # v4.1.0
         with:
           cosign-release: v2.5.3
+
+      - name: Install verified Cosign for arm64
+        if: matrix.arch == 'aarch64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign_dir="$(mktemp -d "$RUNNER_TEMP/cosign.XXXXXX")"
+          # Cosign v2.5.3 linux-arm64, verified against Sigstore's release key.
+          curl --fail --silent --show-error --location \
+            --retry 8 --retry-all-errors --retry-max-time 300 \
+            --connect-timeout 15 --max-time 120 \
+            --header 'Accept: application/octet-stream' \
+            --output "$cosign_dir/cosign" \
+            https://api.github.com/repos/sigstore/cosign/releases/assets/273874671
+          printf '%s  %s\n' \
+            'bffabe4cf183122b7de3111257a863c99e7dc6cf1093bfd7bf961de1795589b8' \
+            "$cosign_dir/cosign" | sha256sum --check
+          chmod 0755 "$cosign_dir/cosign"
+          printf '%s\n' "$cosign_dir" >> "$GITHUB_PATH"
 
       - name: Prepare image tags and creation time
         id: metadata
