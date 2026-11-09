@@ -42,7 +42,6 @@ from .const import (
     ATTR_CLIENT_ID,
     ATTR_FROM,
     ATTR_MESSAGE,
-    ATTR_OPTIONS,
     ATTR_STATUS,
     ATTR_TO,
     ATTR_TYPE,
@@ -70,6 +69,7 @@ from .coordinator import WhatsappStatusCoordinator
 from .entity import app_device_identifier
 from .inbox import WhatsAppInboxView
 from .media import WhatsAppMediaView
+from .message import SEND_MESSAGE_SCHEMA, prepare_send_message
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
@@ -82,15 +82,6 @@ class WhatsappRuntimeData:
     coordinator: WhatsappStatusCoordinator | None = None
     app_device_id: str | None = None
 
-
-SEND_MESSAGE_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_CLIENT_ID): cv.string,
-        vol.Required(ATTR_TO): cv.string,
-        vol.Required(ATTR_BODY): dict,
-        vol.Optional(ATTR_OPTIONS): dict,
-    }
-)
 
 CHECK_NUMBER_SCHEMA = vol.Schema(
     {
@@ -194,17 +185,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async def async_send_message(call: ServiceCall) -> dict[str, Any] | None:
         """Send a message and expose its result to event listeners and callers."""
+        data = prepare_send_message(call.data)
         result = await _async_call_api(
             hass,
             SERVICE_SEND_MESSAGE,
-            call.data,
+            data,
             lambda client, data: client.async_send_message(data),
         )
 
         event_data = {
-            "client_id": call.data[ATTR_CLIENT_ID],
-            "to": call.data[ATTR_TO],
-            "body": call.data[ATTR_BODY],
+            "client_id": data[ATTR_CLIENT_ID],
+            "to": data[ATTR_TO],
+            "body": data[ATTR_BODY],
             "sent_message": result,
         }
 

@@ -1,6 +1,8 @@
 # Messages and media
 
-Use `whatsapp.send_message` with the body for the message type you need.
+In the automation editor, choose **Message type** in `whatsapp.send_message`.
+Choose **Custom YAML** to paste a raw body. In a YAML automation, you can use
+`data.body` and `data.options` as shown in the examples below.
 See [recipients and number lookup](recipients.md) for target formats.
 
 For file examples, replace `https://files.example.com/...` with a URL the
@@ -320,6 +322,10 @@ to an edit/delete operation identifies that protocol operation.
 Use `whatsapp.send_message` for both edit and delete payloads.
 
 ## Reply to a notification with a sticker
+
+In the editor, open **Advanced send options** and enable **Quote the incoming
+WhatsApp message**. For a reply to a previous send, replace the preset template
+with the earlier action's `sent_message` response.
 
 Use `options.quoted` to attach a follow-up to a notification sent earlier.
 Quoting needs the full `sent_message` object; a reaction uses its `key`.

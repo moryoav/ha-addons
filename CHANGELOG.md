@@ -2,6 +2,17 @@
 
 All notable changes to this repository are documented here.
 
+## Unreleased
+
+- Added a message type picker for text, media, locations, polls, and custom
+  YAML in the WhatsApp send action. Existing YAML actions keep working.
+- Fixed the message picker to send numeric and boolean template results as
+  text in messages, captions, filenames, and polls.
+- Moved custom send options into a collapsed section and added a shortcut
+  for quoting an incoming WhatsApp message.
+- Raised the minimum Home Assistant version to 2026.1.0 for the message type
+  picker.
+
 ## 3.4.0
 
 - Added a WhatsApp account dropdown to Home Assistant actions and prefilled the

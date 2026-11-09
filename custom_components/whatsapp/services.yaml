@@ -12,16 +12,100 @@ send_message:
       example: 12025550123@s.whatsapp.net
       selector:
         text:
-    body:
+    message:
       required: true
-      advanced: true
       selector:
-        object:
-    options:
-      required: false
-      advanced: true
-      selector:
-        object:
+        choose:
+          # Choice keys remain visible when the editor opens before translations load.
+          choices:
+            Text:
+              selector:
+                text:
+                  multiline: true
+            Image:
+              selector: &image_video
+                object:
+                  translation_key: message_media
+                  label_field: url
+                  fields:
+                    url: &media_url
+                      required: true
+                      selector:
+                        text:
+                          type: url
+                    caption: &media_caption
+                      selector:
+                        text:
+                          multiline: true
+            Video:
+              selector: *image_video
+            Sticker:
+              selector:
+                object:
+                  translation_key: message_sticker
+                  label_field: url
+                  fields:
+                    url: *media_url
+            Location:
+              selector:
+                location:
+            Audio:
+              selector:
+                object:
+                  translation_key: message_media
+                  label_field: url
+                  fields:
+                    url: *media_url
+                    ptt:
+                      selector:
+                        boolean:
+            Document:
+              selector:
+                object:
+                  translation_key: message_media
+                  label_field: file_name
+                  fields:
+                    url: *media_url
+                    file_name:
+                      required: true
+                      selector:
+                        text:
+                    caption: *media_caption
+                    mimetype:
+                      selector:
+                        text:
+            Poll:
+              selector:
+                object:
+                  translation_key: message_poll
+                  label_field: name
+                  fields:
+                    name:
+                      required: true
+                      selector:
+                        text:
+                    values:
+                      required: true
+                      selector:
+                        text:
+                          multiple: true
+            Custom YAML:
+              selector:
+                object:
+    advanced_send_options:
+      collapsed: true
+      fields:
+        reply_to:
+          selector:
+            constant:
+              label: Use the triggering message
+              value: >-
+                {{ trigger.event.data if trigger is defined and trigger.platform
+                == 'event' and trigger.event.event_type == 'new_whatsapp_message'
+                else none }}
+        options:
+          selector:
+            object:
 
 check_number:
   fields:
